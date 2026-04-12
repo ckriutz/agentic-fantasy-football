@@ -1,0 +1,2 @@
+# Yahoo token file - contains sensitive OAuth tokens
+.yahoo_tokens.json
