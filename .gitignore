@@ -1,2 +1,53 @@
+# -----------------------------
+# Security / secrets
+# -----------------------------
 # Yahoo token file - contains sensitive OAuth tokens
 .yahoo_tokens.json
+
+# Local environment files
+.env
+.env.*
+
+# -----------------------------
+# .NET / C# build artifacts
+# -----------------------------
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# -----------------------------
+# Python artifacts
+# -----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# -----------------------------
+# Editor / OS files
+# -----------------------------
+.vscode/
+.idea/
+.DS_Store
+
+# -----------------------------
+# Logs / runtime files
+# -----------------------------
+*.log
+*.pid
+
+# -----------------------------
+# Docker / local volume-style data
+# -----------------------------
+src/PlayerDatabase/data/sleeper/

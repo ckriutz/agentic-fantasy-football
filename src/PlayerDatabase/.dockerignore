@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+
+# User/editor files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Git
+.git/
+.gitignore
+
+# OS files
+.DS_Store
+
+# Local env files
+.env
+.env.*
+
+# Documentation and notes not needed for image build
+README.MD
