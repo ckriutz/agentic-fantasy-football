@@ -19,11 +19,13 @@ Sleeper has a free API that allows a JSON download of data of all the players:
 https://api.sleeper.app/v1/players/nfl
 ```
 
-What we need to do is hit that API, and save the data to a database. Use SQL server here:
+What we need to do is hit that API, and save the data to a database. Use PostgreSQL here:
 
 ```
-https://hub.docker.com/r/microsoft/mssql-server
+https://hub.docker.com/_/postgres
 ```
+
+PostgreSQL was chosen over SQL Server because it runs natively on ARM (MacBook M2, Raspberry Pi) without emulation. The .NET ecosystem supports it well via Npgsql / EF Core.
 
 Once this is created, we will create both an API, and an MCP server that will allows the agents to:
 - Get a list of players by position.

@@ -50,4 +50,4 @@ venv/
 # -----------------------------
 # Docker / local volume-style data
 # -----------------------------
-src/PlayerDatabase/data/sleeper/
+src/LeagueAPI/data/sleeper/
