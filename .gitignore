@@ -3,6 +3,7 @@
 # -----------------------------
 # Yahoo token file - contains sensitive OAuth tokens
 .yahoo_tokens.json
+src/LeagueAPI/appsettings.Development.json
 
 # Local environment files
 .env
@@ -50,4 +51,4 @@ venv/
 # -----------------------------
 # Docker / local volume-style data
 # -----------------------------
-src/LeagueAPI/data/sleeper/
+src/LeagueAPI/Data/sleeper/

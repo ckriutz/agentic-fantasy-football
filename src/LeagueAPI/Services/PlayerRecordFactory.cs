@@ -37,7 +37,8 @@ public static class PlayerRecordFactory
                 ?? $"{player.FirstName} {player.LastName}"),
             FantasyPositionsTokenized = BuildFantasyPositionsTokenized(fantasyPositions),
             RawJson = JsonSerializer.Serialize(player, SerializerOptions),
-            Data = player
+            Data = player,
+            FantasyDataId = player.FantasyDataId
         };
     }
 

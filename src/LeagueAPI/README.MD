@@ -8,8 +8,8 @@ Right now, the project is designed to work well **without committing to a final 
 
 - Downloads the Sleeper NFL players payload from:
   - `https://api.sleeper.app/v1/players/nfl`
-- Saves one raw JSON snapshot per day under `data/sleeper/`
-- Tracks the latest sync status in `data/sleeper/latest-sync.json`
+- Saves one raw JSON snapshot per day under `Data/sleeper/`
+- Tracks the latest sync status in `Data/sleeper/latest-sync.json`
 - Avoids re-pulling Sleeper more than once per day unless you force a sync
 - Exposes player lookup and search endpoints over HTTP
 - Exposes the same player lookup capabilities as MCP tools on `/mcp`
@@ -55,8 +55,8 @@ With the current config, **no connection string means snapshot mode**.
 
 By default, the app writes:
 
-- `data/sleeper/players-YYYY-MM-DD.json` - the latest raw Sleeper payload for that day
-- `data/sleeper/latest-sync.json` - metadata about the most recent sync
+- `Data/sleeper/players-YYYY-MM-DD.json` - the latest raw Sleeper payload for that day
+- `Data/sleeper/latest-sync.json` - metadata about the most recent sync
 
 The snapshot directory is ignored in git.
 
@@ -72,8 +72,8 @@ Configuration lives in `appsettings.json`.
   "RunOnStartup": true,
   "DailySyncHourUtc": 6,
   "PlayersEndpoint": "https://api.sleeper.app/v1/players/nfl",
-  "SnapshotDirectory": "data/sleeper",
-  "StateFilePath": "data/sleeper/latest-sync.json"
+  "SnapshotDirectory": "Data/sleeper",
+  "StateFilePath": "Data/sleeper/latest-sync.json"
 }
 ```
 

@@ -57,8 +57,44 @@ public sealed class SnapshotPlayerCatalogReader(
                     string.Equals(position, normalizedPosition, StringComparison.OrdinalIgnoreCase)));
         }
 
-        return filteredPlayers
-            .OrderBy(player => player.FullName ?? player.SleeperPlayerId, StringComparer.OrdinalIgnoreCase)
+        if (query.ByeWeek.HasValue)
+        {
+            filteredPlayers = filteredPlayers.Where(player => player.ByeWeek == query.ByeWeek.Value);
+        }
+
+        if (query.MinProjectedPoints.HasValue)
+        {
+            filteredPlayers = filteredPlayers.Where(player =>
+                player.ProjectedFantasyPoints >= query.MinProjectedPoints.Value);
+        }
+
+        if (query.MaxAverageDraftPosition.HasValue)
+        {
+            filteredPlayers = filteredPlayers.Where(player =>
+                player.AverageDraftPosition.HasValue
+                && player.AverageDraftPosition <= query.MaxAverageDraftPosition.Value);
+        }
+
+        IEnumerable<PlayerRecord> sortedPlayers = query.SortBy?.ToLowerInvariant() switch
+        {
+            "projectedpoints" => query.SortDescending
+                ? filteredPlayers.OrderByDescending(p => p.ProjectedFantasyPoints)
+                : filteredPlayers.OrderBy(p => p.ProjectedFantasyPoints),
+            "adp" => query.SortDescending
+                ? filteredPlayers.OrderByDescending(p => p.AverageDraftPosition)
+                : filteredPlayers.OrderBy(p => p.AverageDraftPosition),
+            "lastseasonpoints" => query.SortDescending
+                ? filteredPlayers.OrderByDescending(p => p.LastSeasonFantasyPoints)
+                : filteredPlayers.OrderBy(p => p.LastSeasonFantasyPoints),
+            "auctionvalue" => query.SortDescending
+                ? filteredPlayers.OrderByDescending(p => p.AuctionValue)
+                : filteredPlayers.OrderBy(p => p.AuctionValue),
+            _ => query.SortDescending
+                ? filteredPlayers.OrderByDescending(p => p.FullName ?? p.SleeperPlayerId)
+                : filteredPlayers.OrderBy(p => p.FullName ?? p.SleeperPlayerId, StringComparer.OrdinalIgnoreCase)
+        };
+
+        return sortedPlayers
             .Take(limit)
             .ToArray();
     }

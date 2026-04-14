@@ -1,6 +1,8 @@
 using ModelContextProtocol.Server;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using LeagueAPI.Configuration;
+using LeagueAPI.Data;
 using LeagueAPI.HostedServices;
 using LeagueAPI.Models;
 using LeagueAPI.Services;
@@ -11,14 +13,29 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<SleeperSyncOptions>(
     builder.Configuration.GetSection(SleeperSyncOptions.SectionName));
 
+builder.Services.Configure<SportsDataSyncOptions>(
+    builder.Configuration.GetSection(SportsDataSyncOptions.SectionName));
+
 builder.Services.AddMemoryCache();
 
 builder.Services.AddHttpClient("SleeperApi");
+builder.Services.AddHttpClient("SportsDataApi");
+builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("LeagueAPI");
+
+    if (!string.IsNullOrWhiteSpace(connectionString))
+    {
+        options.UseNpgsql(connectionString);
+    }
+});
 
 builder.Services.AddSingleton<JsonFileSyncStateStore>();
 builder.Services.AddSingleton<FileSleeperSnapshotStore>();
 builder.Services.AddSingleton<SleeperApiClient>();
 builder.Services.AddSingleton<SleeperPlayerSyncService>();
+builder.Services.AddSingleton<SportsDataApiClient>();
+builder.Services.AddSingleton<SportsDataPlayerSyncService>();
 
 var sleeperSyncOptions =
     builder.Configuration
@@ -29,12 +46,12 @@ var effectivePlayerCatalogMode = ResolvePlayerCatalogMode(sleeperSyncOptions, bu
 
 switch (effectivePlayerCatalogMode)
 {
-    case PlayerCatalogStorageMode.SqlServer:
-        builder.Services.AddSingleton<SqlServerPlayerCatalogStore>();
+    case PlayerCatalogStorageMode.Postgres:
+        builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
         builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
-            serviceProvider.GetRequiredService<SqlServerPlayerCatalogStore>());
+            serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
         builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
-            serviceProvider.GetRequiredService<SqlServerPlayerCatalogStore>());
+            serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
         break;
     default:
         builder.Services.AddSingleton<IPlayerCatalogReader, SnapshotPlayerCatalogReader>();
@@ -42,6 +59,7 @@ switch (effectivePlayerCatalogMode)
 }
 
 builder.Services.AddHostedService<NightlySleeperSyncService>();
+builder.Services.AddHostedService<NightlySportsDataSyncService>();
 
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
@@ -59,9 +77,10 @@ app.MapGet("/", (IOptions<SleeperSyncOptions> options) => Results.Ok(new
         "/mcp",
         "/api/players/{sleeperPlayerId}",
         "/api/players/by-yahoo/{yahooId}",
-        "/api/players?name=&team=&position=&limit=",
+        "/api/players?name=&team=&position=&byeWeek=&minProjectedPoints=&maxAverageDraftPosition=&sortBy=&sortDescending=&limit=",
         "/api/sync/sleeper/latest",
-        "/api/sync/sleeper?force=true"
+        "/api/sync/sleeper?force=true",
+        "/api/sync/sportsdata/latest"
     }
 }));
 
@@ -87,6 +106,11 @@ app.MapGet("/api/players", async (
     string? name,
     string? team,
     string? position,
+    int? byeWeek,
+    decimal? minProjectedPoints,
+    decimal? maxAverageDraftPosition,
+    string? sortBy,
+    bool? sortDescending,
     int? limit,
     IPlayerCatalogReader playerCatalogReader,
     CancellationToken cancellationToken) =>
@@ -96,6 +120,11 @@ app.MapGet("/api/players", async (
         Name = name,
         Team = team,
         Position = position,
+        ByeWeek = byeWeek,
+        MinProjectedPoints = minProjectedPoints,
+        MaxAverageDraftPosition = maxAverageDraftPosition,
+        SortBy = sortBy,
+        SortDescending = sortDescending ?? false,
         Limit = limit ?? 25
     };
 
@@ -120,6 +149,14 @@ app.MapPost("/api/sync/sleeper", async (
     return Results.Ok(result);
 });
 
+app.MapGet("/api/sync/sportsdata/latest", async (
+    SportsDataPlayerSyncService sportsDataPlayerSyncService,
+    CancellationToken cancellationToken) =>
+{
+    var state = await sportsDataPlayerSyncService.GetLatestSyncRunAsync(cancellationToken);
+    return state is null ? Results.NotFound() : Results.Ok(state);
+});
+
 app.MapMcp("/mcp");
 
 app.Run();
@@ -132,7 +169,7 @@ static PlayerCatalogStorageMode ResolvePlayerCatalogMode(
     {
         PlayerCatalogStorageMode.Auto
             when !string.IsNullOrWhiteSpace(configuration.GetConnectionString("LeagueAPI")) =>
-            PlayerCatalogStorageMode.SqlServer,
+            PlayerCatalogStorageMode.Postgres,
         PlayerCatalogStorageMode.Auto => PlayerCatalogStorageMode.SnapshotOnly,
         _ => options.Mode
     };

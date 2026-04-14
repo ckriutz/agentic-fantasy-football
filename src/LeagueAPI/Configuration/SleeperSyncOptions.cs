@@ -8,9 +8,9 @@ public sealed class SleeperSyncOptions
 
     public string PlayersEndpoint { get; init; } = "https://api.sleeper.app/v1/players/nfl";
 
-    public string SnapshotDirectory { get; init; } = "data/sleeper";
+    public string SnapshotDirectory { get; init; } = "Data/sleeper";
 
-    public string StateFilePath { get; init; } = "data/sleeper/latest-sync.json";
+    public string StateFilePath { get; init; } = "Data/sleeper/latest-sync.json";
 
     public int DailySyncHourUtc { get; init; } = 6;
 
@@ -23,5 +23,5 @@ public enum PlayerCatalogStorageMode
 {
     Auto,
     SnapshotOnly,
-    SqlServer
+    Postgres
 }
