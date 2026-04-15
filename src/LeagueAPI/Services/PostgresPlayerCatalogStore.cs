@@ -137,11 +137,24 @@ public sealed class PostgresPlayerCatalogStore(
         DateTimeOffset persistedAtUtc,
         CancellationToken cancellationToken)
     {
+        var filteredPlayers = players
+            .Where(player => !PlayerRecordFactory.ShouldIgnore(player))
+            .ToArray();
+
+        var ignoredPlayerCount = players.Count - filteredPlayers.Length;
+        if (ignoredPlayerCount > 0)
+        {
+            _logger.LogInformation(
+                "Ignoring {IgnoredPlayerCount} Sleeper placeholder players before persistence (sync run: {SyncRunId})",
+                ignoredPlayerCount,
+                syncRunId);
+        }
+
         _logger.LogInformation("Starting to persist {PlayerCount} players to database (sync run: {SyncRunId})", 
-            players.Count, syncRunId);
+            filteredPlayers.Length, syncRunId);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var sleeperPlayerIds = players.Select(player => player.SleeperPlayerId).ToArray();
+        var sleeperPlayerIds = filteredPlayers.Select(player => player.SleeperPlayerId).ToArray();
 
         var existingPlayersById = await dbContext.Players
             .Where(entity => sleeperPlayerIds.Contains(entity.SleeperPlayerId))
@@ -150,7 +163,7 @@ public sealed class PostgresPlayerCatalogStore(
         var newPlayerCount = 0;
         var updatedPlayerCount = 0;
 
-        foreach (var player in players)
+        foreach (var player in filteredPlayers)
         {
             if (!existingPlayersById.TryGetValue(player.SleeperPlayerId, out var entity))
             {
@@ -188,7 +201,7 @@ public sealed class PostgresPlayerCatalogStore(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Successfully persisted {TotalPlayers} players: {NewCount} new, {UpdatedCount} updated (sync run: {SyncRunId})", 
-            players.Count, newPlayerCount, updatedPlayerCount, syncRunId);
+            filteredPlayers.Length, newPlayerCount, updatedPlayerCount, syncRunId);
     }
 
     public async Task RecordSyncCompletedAsync(SleeperSyncState syncState, CancellationToken cancellationToken)

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LeagueAPI.Models;
+using Microsoft.Extensions.Logging;
 
 namespace LeagueAPI.Services;
 
@@ -7,12 +8,14 @@ public sealed class SleeperPlayerSyncService(
     SleeperApiClient sleeperApiClient,
     FileSleeperSnapshotStore sleeperSnapshotStore,
     JsonFileSyncStateStore syncStateStore,
-    IEnumerable<IPlayerCatalogPersistence> playerCatalogPersistenceServices)
+    IEnumerable<IPlayerCatalogPersistence> playerCatalogPersistenceServices,
+    ILogger<SleeperPlayerSyncService> logger)
 {
     private readonly SleeperApiClient _sleeperApiClient = sleeperApiClient;
     private readonly FileSleeperSnapshotStore _sleeperSnapshotStore = sleeperSnapshotStore;
     private readonly JsonFileSyncStateStore _syncStateStore = syncStateStore;
     private readonly IPlayerCatalogPersistence? _playerCatalogPersistence = playerCatalogPersistenceServices.FirstOrDefault();
+    private readonly ILogger<SleeperPlayerSyncService> _logger = logger;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public async Task<SleeperSyncExecutionResult> SyncPlayersAsync(bool force, CancellationToken cancellationToken)
@@ -46,8 +49,18 @@ public sealed class SleeperPlayerSyncService(
                     cancellationToken);
 
                 var players = playersResponse
+                    .Where(pair => !PlayerRecordFactory.ShouldIgnore(pair.Value))
                     .Select(pair => PlayerRecordFactory.Create(pair.Key, pair.Value))
                     .ToArray();
+
+                var ignoredPlayerCount = playersResponse.Count - players.Length;
+                if (ignoredPlayerCount > 0)
+                {
+                    _logger.LogInformation(
+                        "Ignored {IgnoredPlayerCount} Sleeper placeholder players during sync run {SyncRunId}.",
+                        ignoredPlayerCount,
+                        syncRunId);
+                }
 
                 if (_playerCatalogPersistence is not null)
                     await _playerCatalogPersistence.PersistPlayersAsync(

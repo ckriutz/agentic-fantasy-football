@@ -125,7 +125,7 @@ public sealed class SnapshotPlayerCatalogReader(
             var playersResponse = JsonSerializer.Deserialize<SleeperPlayersResponse>(json) ?? [];
 
             return playersResponse
-                .Where(pair => pair.Value.Active)
+                .Where(pair => pair.Value.Active && !PlayerRecordFactory.ShouldIgnore(pair.Value))
                 .Select(pair => PlayerRecordFactory.Create(pair.Key, pair.Value))
                 .OrderBy(player => player.FullName ?? player.SleeperPlayerId, StringComparer.OrdinalIgnoreCase)
                 .ToArray();

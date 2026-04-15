@@ -52,3 +52,4 @@ venv/
 # Docker / local volume-style data
 # -----------------------------
 src/LeagueAPI/Data/sleeper/
+src/LeagueAPI/Data/yahoo/

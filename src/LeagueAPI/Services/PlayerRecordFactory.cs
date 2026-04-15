@@ -5,6 +5,7 @@ namespace LeagueAPI.Services;
 
 public static class PlayerRecordFactory
 {
+    private const string IgnoredSleeperFullName = "Duplicate Player";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public static PlayerRecord Create(string sleeperPlayerId, SleeperPlayer player)
@@ -40,6 +41,22 @@ public static class PlayerRecordFactory
             Data = player,
             FantasyDataId = player.FantasyDataId
         };
+    }
+
+    public static bool ShouldIgnore(SleeperPlayer player)
+    {
+        return string.Equals(
+            player.FullName?.Trim(),
+            IgnoredSleeperFullName,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool ShouldIgnore(PlayerRecord player)
+    {
+        return string.Equals(
+            player.FullName?.Trim(),
+            IgnoredSleeperFullName,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public static string NormalizeName(string? value)
