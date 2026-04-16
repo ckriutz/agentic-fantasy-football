@@ -19,4 +19,6 @@ public interface IPlayerCatalogPersistence
         DateTimeOffset failedAtUtc,
         string errorMessage,
         CancellationToken cancellationToken);
+
+    Task<SleeperSyncState> GetLatestSyncStateAsync(CancellationToken cancellationToken);
 }

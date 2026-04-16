@@ -1,16 +1,16 @@
 # LeagueAPI
 
-`LeagueAPI` is the Step 1 service for the fantasy football project. It pulls the NFL player catalog from the Sleeper API, stores a daily raw snapshot locally, tracks sync state, and exposes the stored data through both a normal HTTP API and an MCP endpoint.
+`LeagueAPI` is the Step 1 service for the fantasy football project. It pulls the NFL player catalog from the Sleeper API, stores it in PostgreSQL, tracks sync runs in the database, and exposes the stored data through both a normal HTTP API and an MCP endpoint.
 
-Right now, the project is designed to work well **without committing to a final database choice yet**. If no database connection string is configured, it runs in snapshot-backed mode and serves data from the latest saved Sleeper snapshot.
+The service is Postgres-only. You must provide a connection string via `ConnectionStrings:LeagueAPI` (or the `ConnectionStrings__LeagueAPI` environment variable) — for local development this typically points at a Postgres docker container, but any reachable Postgres host works.
 
 ## What it does
 
 - Downloads the Sleeper NFL players payload from:
   - `https://api.sleeper.app/v1/players/nfl`
-- Saves one raw JSON snapshot per day under `Data/sleeper/`
-- Tracks the latest sync status in `Data/sleeper/latest-sync.json`
-- Supports Yahoo OAuth bootstrap and token refresh for authenticated Fantasy Sports API access
+- Persists players into the `players` table in Postgres
+- Records each sync attempt in the `sleeper_sync_runs` table
+- Supports Yahoo OAuth bootstrap and token refresh for authenticated Fantasy Sports API access (tokens are stored in the `yahoo_oauth_state` table)
 - Supports manual Yahoo weekly stat syncs into the database for later scoring and reads
 - Avoids re-pulling Sleeper more than once per day unless you force a sync
 - Exposes player lookup and search endpoints over HTTP
@@ -26,41 +26,12 @@ The app has three main layers:
    - It calls Sleeper through `SleeperApiClient`.
 
 2. **Persistence layer**
-   - `FileSleeperSnapshotStore` writes the raw daily JSON snapshot.
-   - `JsonFileSyncStateStore` stores the latest sync metadata.
-   - A SQL-backed persistence path exists in the codebase, but it is optional and only activates when a connection string is configured.
+   - `PostgresPlayerCatalogStore` persists players and sync-run metadata to Postgres.
+   - `PostgresYahooAuthStateStore` persists Yahoo OAuth tokens to Postgres.
 
 3. **Read layer**
-   - The HTTP API exposes player queries.
+   - The HTTP API exposes player queries backed by Postgres.
    - MCP tools expose the same read functionality at `/mcp`.
-   - In snapshot mode, reads are served from the latest saved Sleeper snapshot.
-
-## Storage modes
-
-The app supports these storage modes through `PlayerCatalog:Mode`:
-
-- `Auto` - default; uses SQL if `ConnectionStrings:LeagueAPI` is present, otherwise uses snapshot mode
-- `SnapshotOnly` - always read from the saved Sleeper snapshot
-- `SqlServer` - force SQL-backed persistence and reads
-
-Current default:
-
-```json
-"PlayerCatalog": {
-  "Mode": "Auto"
-}
-```
-
-With the current config, **no connection string means snapshot mode**.
-
-## Files created by the service
-
-By default, the app writes:
-
-- `Data/sleeper/players-YYYY-MM-DD.json` - the latest raw Sleeper payload for that day
-- `Data/sleeper/latest-sync.json` - metadata about the most recent sync
-
-The snapshot directory is ignored in git.
 
 ## Configuration
 
@@ -71,7 +42,7 @@ Configuration lives in `appsettings.json`.
 The service respects these environment variables (prefer these over editing config files):
 
 **Database:**
-- `ConnectionStrings__LeagueAPI` - PostgreSQL connection string. Leave empty or unset for snapshot-only mode. Required for Yahoo sync and reads.
+- `ConnectionStrings__LeagueAPI` - **Required.** PostgreSQL connection string. The service fails fast on startup if this is missing or empty.
 
 **Yahoo OAuth:**
 - `YAHOO_CLIENT_ID` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
@@ -104,13 +75,11 @@ dotnet run
   "Enabled": true,
   "RunOnStartup": true,
   "DailySyncHourUtc": 6,
-  "PlayersEndpoint": "https://api.sleeper.app/v1/players/nfl",
-  "SnapshotDirectory": "Data/sleeper",
-  "StateFilePath": "Data/sleeper/latest-sync.json"
+  "PlayersEndpoint": "https://api.sleeper.app/v1/players/nfl"
 }
 ```
 
-### Optional database connection
+### Database connection
 
 ```json
 "ConnectionStrings": {
@@ -118,7 +87,7 @@ dotnet run
 }
 ```
 
-Leave this empty for now if you want to stay snapshot-only while deciding on the long-term database.
+Required. The service fails fast on startup if this is missing. Prefer setting it via the `ConnectionStrings__LeagueAPI` environment variable so it can point at any Postgres host (local docker, managed Postgres, etc.).
 
 ### Yahoo OAuth settings
 
@@ -129,10 +98,11 @@ Leave this empty for now if you want to stay snapshot-only while deciding on the
   "RedirectUri": "https://localhost:3000",
   "AuthorizationUrl": "https://api.login.yahoo.com/oauth2/request_auth",
   "TokenUrl": "https://api.login.yahoo.com/oauth2/get_token",
-  "FantasyApiBaseUrl": "https://fantasysports.yahooapis.com/fantasy/v2",
-  "StateFilePath": "Data/yahoo/auth-state.json"
+  "FantasyApiBaseUrl": "https://fantasysports.yahooapis.com/fantasy/v2"
 }
 ```
+
+Yahoo OAuth tokens are persisted to the `yahoo_oauth_state` Postgres table, so the database must be reachable before running the Yahoo authorization flow.
 
 Prefer setting `ClientId` and `ClientSecret` with environment variables:
 
@@ -186,7 +156,7 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 ### Optional runtime configuration
 
 - `ASPNETCORE_URLS` - ASP.NET Core listening URL. Example: `http://127.0.0.1:5181`
-- `ConnectionStrings__LeagueAPI` - PostgreSQL connection string (replaces config value if set). Required for Yahoo sync and reads.
+- `ConnectionStrings__LeagueAPI` - PostgreSQL connection string (replaces config value if set). Required; the service fails fast without it.
 
 ### Example startup command
 
@@ -202,7 +172,7 @@ dotnet run
 
 When the service starts:
 
-1. It reads the configured storage mode.
+1. It validates that `ConnectionStrings:LeagueAPI` is configured and fails fast if it is not.
 2. If `SleeperSync:Enabled` is `true`, the hosted sync service starts.
 3. If `SleeperSync:RunOnStartup` is `true`, it attempts an immediate sync.
 4. If a successful sync already happened today, the sync is skipped.
@@ -214,7 +184,7 @@ When the service starts:
 
 `GET /`
 
-Returns a small summary of the service, the configured/effective storage mode, and the key routes.
+Returns a small summary of the service and the key routes.
 
 ### Get player by Sleeper ID
 
@@ -578,7 +548,6 @@ Use your MCP client against `POST /mcp` and call:
 ### Expected current limitations
 
 - Yahoo OAuth bootstrap is still manual copy/paste of the redirect URL.
-- Yahoo sync and Yahoo reads require the SQL-backed path; snapshot-only mode is not enough.
 - Scoring templates must currently be inserted manually.
 
 ## MCP endpoint
@@ -605,20 +574,20 @@ This route is meant for MCP clients, not normal browser navigation. A plain `GET
 
 ## Important implementation notes
 
-- Player reads are based on **stored data**, not live calls to Sleeper.
-- The once-per-day guard is based on the last successful sync date in UTC.
-- The raw Sleeper payload is preserved so later ingestion changes can be made without losing the original snapshot.
+- Player reads are based on **stored data** in Postgres, not live calls to Sleeper.
+- The once-per-day guard is based on the last successful sync date in UTC, read from `sleeper_sync_runs`.
+- The full raw Sleeper payload for each player is preserved on the `players.RawJson` column so later ingestion changes can be made without losing the original data.
 - The model already includes `yahoo_id`, so cross-provider lookups are supported when Sleeper includes the mapping.
-- Yahoo OAuth tokens are stored in a local JSON state file by default so the service can bootstrap auth before a database-backed Yahoo implementation exists.
+- Yahoo OAuth tokens are stored in the `yahoo_oauth_state` Postgres table.
 - Yahoo weekly sync stores one raw player payload per player/week plus normalized stat rows and recalculated points for every active scoring template.
 - Yahoo read endpoints intentionally return normalized stat and point data, not the stored `RawJson` audit payload.
 
 ## Current status
 
-Today, the most stable way to use this project is:
+The service is Postgres-backed. To use it:
 
-1. Run it in snapshot-backed mode.
-2. Let it sync and save the daily Sleeper player snapshot.
-3. Use the HTTP API or MCP tools to query the stored player catalog.
-
-The SQL-backed path is present in the code, but the project is intentionally not tied to a final database choice yet.
+1. Have a Postgres database reachable (locally, the repo's `docker-compose.yml` starts one).
+2. Set `ConnectionStrings__LeagueAPI` to point at it.
+3. Run `dotnet ef database update` from `src/LeagueAPI` to apply migrations.
+4. Start the service. The Sleeper sync will populate the `players` table on first run.
+5. Query the HTTP API or MCP tools.

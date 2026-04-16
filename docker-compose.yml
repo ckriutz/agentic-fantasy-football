@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # LeagueAPI - Player data aggregation service
+  leagueapi:
+    build:
+      context: ./src/LeagueAPI
+      dockerfile: Dockerfile
+    ports:
+      - "${LEAGUEAPI_PORT:-8080}:8080"
+    environment:
+      # Database connection (optional - auto-detected if provided)
+      - ConnectionStrings__LeagueAPI=Server=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-leagueapi};User Id=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD};
+      
+      # Sleeper API configuration
+      - SleeperSync__Mode=Auto
+      - SleeperSync__Enabled=true
+      - SleeperSync__RunOnStartup=false
+      - SleeperSync__DailySyncHourUtc=6
+      - SleeperSync__PlayersEndpoint=https://api.sleeper.app/v1/players/nfl
+      - SleeperSync__SnapshotDirectory=/data/sleeper
+      - SleeperSync__StateFilePath=/data/sleeper/latest-sync.json
+      
+      # SportsData.io configuration
+      - SportsDataSync__Enabled=${SPORTSDATA_ENABLED:-true}
+      - SportsDataSync__RunOnStartup=false
+      - SportsDataSync__DailySyncHourUtc=7
+      - SportsDataSync__BaseUrl=https://api.sportsdata.io/v3/nfl/stats/json
+      - SportsDataSync__FantasyPlayersEndpoint=FantasyPlayers
+      - SportsDataSync__ApiKey=${SPORTSDATA_API_KEY:?SportsData API key required}
+      
+      # Yahoo Fantasy configuration
+      - YahooOAuth__ClientId=${YAHOO_CLIENT_ID:?Yahoo OAuth client ID required}
+      - YahooOAuth__ClientSecret=${YAHOO_CLIENT_SECRET:?Yahoo OAuth client secret required}
+      - YahooOAuth__RedirectUri=${YAHOO_REDIRECT_URI:-http://localhost:3000}
+      - YahooOAuth__AuthorizationUrl=https://api.login.yahoo.com/oauth2/request_auth
+      - YahooOAuth__TokenUrl=https://api.login.yahoo.com/oauth2/get_token
+      - YahooOAuth__FantasyApiBaseUrl=https://fantasysports.yahooapis.com/fantasy/v2
+      - YahooOAuth__StateFilePath=/data/yahoo/auth-state.json
+      
+      # Yahoo sync configuration
+      - YahooSync__Enabled=${YAHOO_SYNC_ENABLED:-true}
+      - YahooSync__DefaultGameKey=461
+      - YahooSync__DefaultSeason=2025
+      - YahooSync__PageSize=25
+      
+      # Logging
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__Microsoft.AspNetCore=Warning
+    
+    volumes:
+      # Persist data files (snapshots, state, auth tokens)
+      - leagueapi-data:/data
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    networks:
+      - leagueapi-net
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL database (optional but recommended)
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-leagueapi}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Postgres password required}
+      - POSTGRES_HOST_AUTH_METHOD=md5
+    
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    
+    networks:
+      - leagueapi-net
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  leagueapi-data:
+  postgres-data:
+
+networks:
+  leagueapi-net:
+    driver: bridge

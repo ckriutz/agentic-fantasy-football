@@ -8,11 +8,11 @@ namespace LeagueAPI.Tools;
 [McpServerToolType]
 public sealed class PlayerCatalogTools(
     IPlayerCatalogReader playerCatalogReader,
-    JsonFileSyncStateStore syncStateStore,
+    IPlayerCatalogPersistence playerCatalogPersistence,
     SportsDataPlayerSyncService sportsDataPlayerSyncService)
 {
     private readonly IPlayerCatalogReader _playerCatalogReader = playerCatalogReader;
-    private readonly JsonFileSyncStateStore _syncStateStore = syncStateStore;
+    private readonly IPlayerCatalogPersistence _playerCatalogPersistence = playerCatalogPersistence;
     private readonly SportsDataPlayerSyncService _sportsDataPlayerSyncService = sportsDataPlayerSyncService;
 
     [McpServerTool, Description("Get an NFL player by Sleeper player ID.")]
@@ -60,7 +60,7 @@ public sealed class PlayerCatalogTools(
     [McpServerTool, Description("Get the latest Sleeper player sync status.")]
     public Task<SleeperSyncState> GetLatestSleeperSyncStatus()
     {
-        return _syncStateStore.GetLatestStateAsync(CancellationToken.None);
+        return _playerCatalogPersistence.GetLatestSyncStateAsync(CancellationToken.None);
     }
 
     [McpServerTool, Description("Get the latest SportsData player sync status.")]

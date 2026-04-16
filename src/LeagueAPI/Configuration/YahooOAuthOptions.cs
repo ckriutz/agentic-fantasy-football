@@ -17,6 +17,4 @@ public sealed class YahooOAuthOptions
     public string FantasyApiBaseUrl { get; init; } = "https://fantasysports.yahooapis.com/fantasy/v2";
 
     public string Scope { get; init; } = "fspt-r";
-
-    public string StateFilePath { get; init; } = "Data/yahoo/auth-state.json";
 }

@@ -178,20 +178,8 @@ namespace LeagueAPI.Migrations
                     b.Property<string>("ErrorMessage")
                         .HasColumnType("text");
 
-                    b.Property<string>("PayloadSha256")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<int?>("RecordCount")
                         .HasColumnType("integer");
-
-                    b.Property<string>("SnapshotFileName")
-                        .HasMaxLength(260)
-                        .HasColumnType("character varying(260)");
-
-                    b.Property<string>("SnapshotRelativePath")
-                        .HasMaxLength(520)
-                        .HasColumnType("character varying(520)");
 
                     b.Property<DateTimeOffset>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -423,6 +411,46 @@ namespace LeagueAPI.Migrations
                     b.HasIndex("StatId");
 
                     b.ToTable("weekly_player_stat_values", (string)null);
+                });
+
+            modelBuilder.Entity("LeagueAPI.Models.YahooOAuthStateEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AccessToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("AccessTokenExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AuthorizationState")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int?>("ExpiresInSeconds")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("IssuedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastRefreshedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RefreshToken")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Scope")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("TokenType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("yahoo_oauth_state", (string)null);
                 });
 
             modelBuilder.Entity("LeagueAPI.Models.YahooSyncRun", b =>

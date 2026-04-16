@@ -25,6 +25,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<ScoringTemplateRule> ScoringTemplateRules => Set<ScoringTemplateRule>();
 
+    public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PlayerEntity>(entity =>
@@ -57,9 +59,6 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasKey(syncRun => syncRun.SyncRunId);
 
             entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
-            entity.Property(syncRun => syncRun.SnapshotFileName).HasMaxLength(260);
-            entity.Property(syncRun => syncRun.SnapshotRelativePath).HasMaxLength(520);
-            entity.Property(syncRun => syncRun.PayloadSha256).HasMaxLength(64);
         });
 
         modelBuilder.Entity<SportsDataFantasyPlayerEntity>(entity =>
@@ -167,6 +166,18 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(template => template.Description).HasMaxLength(1000);
 
             entity.HasIndex(template => template.IsActive);
+        });
+
+        modelBuilder.Entity<YahooOAuthStateEntity>(entity =>
+        {
+            entity.ToTable("yahoo_oauth_state");
+            entity.HasKey(row => row.Id);
+            entity.Property(row => row.Id).ValueGeneratedNever();
+            entity.Property(row => row.AccessToken).HasColumnType("text");
+            entity.Property(row => row.RefreshToken).HasColumnType("text");
+            entity.Property(row => row.TokenType).HasMaxLength(50);
+            entity.Property(row => row.Scope).HasMaxLength(500);
+            entity.Property(row => row.AuthorizationState).HasMaxLength(128);
         });
 
         modelBuilder.Entity<ScoringTemplateRule>(entity =>

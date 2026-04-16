@@ -9,13 +9,13 @@ namespace LeagueAPI.Services;
 
 public sealed class YahooOAuthService(
     IHttpClientFactory httpClientFactory,
-    JsonFileYahooAuthStateStore authStateStore,
+    PostgresYahooAuthStateStore authStateStore,
     IOptions<YahooOAuthOptions> yahooOAuthOptions)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
-    private readonly JsonFileYahooAuthStateStore _authStateStore = authStateStore;
+    private readonly PostgresYahooAuthStateStore _authStateStore = authStateStore;
     private readonly YahooOAuthOptions _yahooOAuthOptions = yahooOAuthOptions.Value;
     private readonly SemaphoreSlim _authLock = new(1, 1);
 

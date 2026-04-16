@@ -28,19 +28,21 @@ builder.Services.AddHttpClient("SleeperApi");
 builder.Services.AddHttpClient("SportsDataApi");
 builder.Services.AddHttpClient("YahooOAuth");
 builder.Services.AddHttpClient("YahooFantasyApi");
+
+var connectionString = builder.Configuration.GetConnectionString("LeagueAPI");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "ConnectionStrings:LeagueAPI is required. Set it in configuration or via the ConnectionStrings__LeagueAPI environment variable to point at your Postgres database.");
+}
+
 builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
 {
-    var connectionString = builder.Configuration.GetConnectionString("LeagueAPI");
-
-    if (!string.IsNullOrWhiteSpace(connectionString))
-    {
-        options.UseNpgsql(connectionString);
-    }
+    options.UseNpgsql(connectionString);
 });
 
-builder.Services.AddSingleton<JsonFileSyncStateStore>();
-builder.Services.AddSingleton<JsonFileYahooAuthStateStore>();
-builder.Services.AddSingleton<FileSleeperSnapshotStore>();
+builder.Services.AddSingleton<PostgresYahooAuthStateStore>();
 builder.Services.AddSingleton<SleeperApiClient>();
 builder.Services.AddSingleton<SleeperPlayerSyncService>();
 builder.Services.AddSingleton<SportsDataApiClient>();
@@ -51,26 +53,11 @@ builder.Services.AddSingleton<ScoringService>();
 builder.Services.AddSingleton<YahooPlayerSyncService>();
 builder.Services.AddSingleton<YahooReadService>();
 
-var sleeperSyncOptions =
-    builder.Configuration
-        .GetSection(SleeperSyncOptions.SectionName)
-        .Get<SleeperSyncOptions>() ?? new SleeperSyncOptions();
-
-var effectivePlayerCatalogMode = ResolvePlayerCatalogMode(sleeperSyncOptions, builder.Configuration);
-
-switch (effectivePlayerCatalogMode)
-{
-    case PlayerCatalogStorageMode.Postgres:
-        builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
-        builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
-            serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
-        builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
-            serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
-        break;
-    default:
-        builder.Services.AddSingleton<IPlayerCatalogReader, SnapshotPlayerCatalogReader>();
-        break;
-}
+builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
+builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
+builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
 
 builder.Services.AddHostedService<NightlySleeperSyncService>();
 builder.Services.AddHostedService<NightlySportsDataSyncService>();
@@ -82,11 +69,10 @@ builder.Services.AddMcpServer()
 
 var app = builder.Build();
 
-app.MapGet("/", (IOptions<SleeperSyncOptions> options) => Results.Ok(new
+app.MapGet("/", () => Results.Ok(new
 {
     service = "LeagueAPI",
-    configuredStorageMode = options.Value.Mode.ToString(),
-    effectiveStorageMode = ResolvePlayerCatalogMode(options.Value, app.Configuration).ToString(),
+    storageMode = "Postgres",
     endpoints = new[]
     {
         "/mcp",
@@ -165,10 +151,10 @@ app.MapGet("/api/players", async (
 });
 
 app.MapGet("/api/sync/sleeper/latest", async (
-    JsonFileSyncStateStore syncStateStore,
+    IPlayerCatalogPersistence playerCatalogPersistence,
     CancellationToken cancellationToken) =>
 {
-    var state = await syncStateStore.GetLatestStateAsync(cancellationToken);
+    var state = await playerCatalogPersistence.GetLatestSyncStateAsync(cancellationToken);
     return Results.Ok(state);
 });
 
@@ -426,17 +412,3 @@ app.MapGet("/api/yahoo/auth/test-connection", async (
 app.MapMcp("/mcp");
 
 app.Run();
-
-static PlayerCatalogStorageMode ResolvePlayerCatalogMode(
-    SleeperSyncOptions options,
-    IConfiguration configuration)
-{
-    return options.Mode switch
-    {
-        PlayerCatalogStorageMode.Auto
-            when !string.IsNullOrWhiteSpace(configuration.GetConnectionString("LeagueAPI")) =>
-            PlayerCatalogStorageMode.Postgres,
-        PlayerCatalogStorageMode.Auto => PlayerCatalogStorageMode.SnapshotOnly,
-        _ => options.Mode
-    };
-}

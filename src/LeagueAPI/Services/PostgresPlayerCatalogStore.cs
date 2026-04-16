@@ -209,8 +209,8 @@ public sealed class PostgresPlayerCatalogStore(
         var syncRunId = syncState.SyncRunId
             ?? throw new InvalidOperationException("A completed sync state must include a sync run ID.");
 
-        _logger.LogInformation("Sync completed successfully: {SyncRunId}, {RecordCount} records (snapshot: {SnapshotFile})", 
-            syncRunId, syncState.RecordCount, syncState.SnapshotFileName);
+        _logger.LogInformation("Sync completed successfully: {SyncRunId}, {RecordCount} records",
+            syncRunId, syncState.RecordCount);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -221,9 +221,6 @@ public sealed class PostgresPlayerCatalogStore(
         syncRun.CompletedAtUtc = syncState.LastSuccessfulSyncAtUtc ?? DateTimeOffset.UtcNow;
         syncRun.Status = syncState.Status;
         syncRun.RecordCount = syncState.RecordCount;
-        syncRun.SnapshotFileName = syncState.SnapshotFileName;
-        syncRun.SnapshotRelativePath = syncState.SnapshotRelativePath;
-        syncRun.PayloadSha256 = syncState.PayloadSha256;
         syncRun.ErrorMessage = syncState.ErrorMessage;
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -248,6 +245,38 @@ public sealed class PostgresPlayerCatalogStore(
         syncRun.ErrorMessage = errorMessage;
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<SleeperSyncState> GetLatestSyncStateAsync(CancellationToken cancellationToken)
+    {
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var latestRun = await dbContext.SleeperSyncRuns
+            .AsNoTracking()
+            .OrderByDescending(run => run.StartedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestRun is null)
+        {
+            return new SleeperSyncState();
+        }
+
+        var latestSuccessfulAtUtc = await dbContext.SleeperSyncRuns
+            .AsNoTracking()
+            .Where(run => run.Status == "Succeeded")
+            .OrderByDescending(run => run.CompletedAtUtc)
+            .Select(run => (DateTimeOffset?)run.CompletedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new SleeperSyncState
+        {
+            SyncRunId = latestRun.SyncRunId,
+            Status = latestRun.Status,
+            LastAttemptedAtUtc = latestRun.StartedAtUtc,
+            LastSuccessfulSyncAtUtc = latestSuccessfulAtUtc,
+            RecordCount = latestRun.RecordCount,
+            ErrorMessage = latestRun.ErrorMessage
+        };
     }
 
     private static PlayerRecord MapPlayer(PlayerEntity entity)
