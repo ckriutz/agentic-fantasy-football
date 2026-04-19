@@ -7,43 +7,333 @@ The goal is to create a system where AI agents will autonomously play fantasy fo
 - The Sleeper API will be used to gather all the players. This information will be stored in a database.
 - Weekly scores will be retrieved from the Yahoo API, this will give us player points.
 - A draft will be conducted, and 17 players will be drafted by each team. The agents will draft players autonomously based on their own strategy.
-- Each agent will be given access to sonar as part of perplexity for search, allowing them to keep up with things to help make decisions.
+- Each agent will be given access to sonar as part of perplexity for search, allowing them to keep up with player news to help make decisions.
+- There may be an API available that will allow me to see player news and updates, and the agents will have access to this as well. Also, if there is a player injury, we want to get that info as well.
+- If I player health status changes, the agents should be able to react to that and make decisions accordingly. So when we do a player status update, as the database is updated we can see if that player is owned by an agent, and if so we can trigger that agent to re-evaluate their roster and make any necessary changes. This may mean we need to run some sort of sync more often than nightly.
 - I will want to simulate the 2025 season as best as I can, over and over again to make sure things work.
-- Decisions will be added to a decision log that will allow me to coumb though for interesting things to write about.
+- Decisions will be added to a decision log that will allow me to coumb though for interesting things to write about. The agents will need a tool for this logging and lilely some database work as well.
 - I should create some sort of casual front-end so I can see what's going on.
 
 ### Step 1 - Create the players database from sleeper API
-Sleeper has a free API that allows a JSON download of data of all the players:
+✅ This is complete.
 
-```
-https://api.sleeper.app/v1/players/nfl
-```
+The player database is the foundation for everything else. It lives in the `src/LeagueAPI/` project — a .NET ASP.NET Core minimal API that also runs as an MCP server.
 
-What we need to do is hit that API, and save the data to a database. Use PostgreSQL here:
+#### Data sources
 
-```
-https://hub.docker.com/_/postgres
-```
+**Sleeper API** — the primary source for NFL player data.
+- Endpoint: `https://api.sleeper.app/v1/players/nfl`
+- Returns a large JSON blob of all NFL players. We fetch this and persist it to PostgreSQL.
+- Each player has a `FantasyDataId` field that links to SportsDataIO.
+
+**SportsDataIO** — enriches Sleeper players with fantasy-relevant metrics.
+- Endpoint: `FantasyPlayers` (requires API key, stored as environment variable — never committed).
+- Key enrichment fields copied onto each player: **AverageDraftPosition**, **ByeWeek**, **LastSeasonFantasyPoints**, **ProjectedFantasyPoints**, **AuctionValue**.
+- Linkage: `players.FantasyDataId == sportsdata_fantasy_players.SportsDataPlayerId`. No hard FK — if a Sleeper player has no `FantasyDataId`, enrichment fields stay null.
+- SportsData records also live in their own table (`sportsdata_fantasy_players`) with full raw JSON for future use.
+- True "last week fantasy points" is **out of scope** here and comes from Yahoo integration (Step 2).
+
+#### Database design (PostgreSQL)
 
 PostgreSQL was chosen over SQL Server because it runs natively on ARM (MacBook M2, Raspberry Pi) without emulation. The .NET ecosystem supports it well via Npgsql / EF Core.
 
-Once this is created, we will create both an API, and an MCP server that will allows the agents to:
-- Get a list of players by position.
-- Get a list of players by team.
-- Get a list of available players.
-- Get a player by yahoo id.
-- Get a player by sleeper id.
-- Get a player by name.
+Tables:
+- `players` — the unified player table. Contains Sleeper fields plus the 5 SportsData enrichment columns (nullable).
+- `sleeper_sync_runs` — tracks each Sleeper sync (start time, status, record count, errors).
+- `sportsdata_fantasy_players` — raw SportsData records keyed by `SportsDataPlayerId`.
+- `sportsdata_sync_runs` — tracks each SportsData sync.
 
-Question... what other endpoints would be useful?
+Key indexes: `ByeWeek`, `FantasyDataId`, `Team + Position`.
 
-Concern - What if the Sleeper API doesn't contain the Yahoo Id's?
-Answer - Sleeper does contain Yahoo Id's, so we should be good. Need to check to make sure they match as part of some tests.
+#### Architecture: Entity vs Record
+
+- **`PlayerEntity`** is the EF Core database row — maps directly to the `players` table.
+- **`PlayerRecord`** is the API/MCP-facing DTO — what gets serialized and returned to callers.
+- Both have the same 5 SportsData enrichment fields. This separation keeps the DB schema decoupled from the public contract.
+
+#### Sync services
+
+Both syncs follow the same pattern: API client fetches raw JSON → sync service deserializes and upserts → sync run is recorded.
+
+- **`SleeperApiClient`** / **`SleeperPlayerSyncService`** — fetches Sleeper players, upserts into `players` table.
+- **`SportsDataApiClient`** / **`SportsDataPlayerSyncService`** — fetches SportsData, upserts into `sportsdata_fantasy_players`, then cross-references by `FantasyDataId` to copy the 5 enrichment fields onto matching `players` rows.
+- **`NightlySleeperSyncService`** / **`NightlySportsDataSyncService`** — `BackgroundService` implementations that run on a configurable UTC hour. Both support `RunOnStartup` and `Enabled` flags via options classes.
+- SportsData sync is configured via `SportsDataSyncOptions` (`Enabled`, `BaseUrl`, `FantasyPlayersEndpoint`, `DailySyncHourUtc`, `RunOnStartup`, `ApiKey`).
+
+#### API surface (REST)
+
+```
+GET  /api/players/{sleeperPlayerId}         — get a single player by Sleeper ID
+GET  /api/players/by-yahoo/{yahooId}        — get a single player by Yahoo ID
+GET  /api/players?name=&team=&position=     — search/filter players
+      &byeWeek=&minProjectedPoints=
+      &maxAverageDraftPosition=
+      &sortBy=&sortDescending=&limit=
+GET  /api/sync/sleeper/latest               — latest Sleeper sync status
+POST /api/sync/sleeper?force=true           — trigger a Sleeper sync
+GET  /api/sync/sportsdata/latest            — latest SportsData sync status
+```
+
+Sort options for `sortBy`: `projectedPoints`, `adp`, `lastSeasonPoints`, `auctionValue`, `name` (default).
+
+#### MCP tools (for agents)
+
+```
+GetPlayerBySleeperId(sleeperPlayerId)
+GetPlayerByYahooId(yahooId)
+SearchPlayers(name, team, position, byeWeek, minProjectedPoints,
+              maxAverageDraftPosition, sortBy, sortDescending, limit)
+GetLatestSleeperSyncStatus()
+GetLatestSportsDataSyncStatus()
+```
+
+All player responses include SportsData enrichment fields automatically (nullable, backward-compatible). There are no separate SportsData-specific player endpoints — agents query one unified player surface.
 
 ### Step 2 - Create the Yahoo API connection for scores
-Yahoo has an API that allows you to get fantasy football scores. We will need to connect to that API and store the scores in our database as well. This will allow us to calculate the points for each player and team.
+✅ This is complete.
 
-Once we have the scores, we can use this to calculate the points for each player and team. We will need to create a function that takes in the player ID and the week number, and returns the points for that player for that week.
+Yahoo is used as a provider of weekly player-level stat data that feeds this project's own scoring engine. The project does **not** sync or manage a Yahoo fantasy league — Yahoo is purely a data source. All Yahoo integration lives in `src/LeagueAPI/` alongside the existing Sleeper and SportsData providers.
+
+#### Design decisions
+
+- Yahoo is accessed through OAuth 2.0 (authorization code flow).
+- The system ingests raw weekly player stats and calculates fantasy points locally using configurable scoring templates, rather than depending on Yahoo's league-specific scoring.
+- `PlayerEntity.YahooId` is the primary join key from Yahoo data to the canonical Sleeper-based player catalog.
+- Unmatched Yahoo players (no matching `YahooId` in the Sleeper catalog) are logged and preserved — never silently discarded.
+
+#### OAuth authentication
+
+Yahoo requires OAuth 2.0. The flow has two phases:
+
+- **Bootstrap auth** (one-time, manual): Generate an authorization URL, approve in a browser, then exchange the redirect URL for access + refresh tokens. This is interactive — the user must copy-paste the redirect URL.
+- **Runtime auth** (automatic): The system automatically refreshes tokens before they expire. Tokens are persisted to PostgreSQL (`yahoo_oauth_state` table) so they survive restarts.
+
+The implementation lives in `YahooOAuthService.cs` and `PostgresYahooAuthStateStore.cs`. Thread-safe via semaphore locking.
+
+Auth endpoints:
+
+```
+POST /api/yahoo/auth/authorize-url    — generate OAuth URL to open in browser
+POST /api/yahoo/auth/exchange         — exchange code or redirect URL for tokens
+POST /api/yahoo/auth/refresh          — manual token refresh
+GET  /api/yahoo/auth/status           — check token state and expiry
+GET  /api/yahoo/auth/test-connection  — verify token works against Yahoo API
+```
+
+Configuration via environment variables (never committed):
+
+```bash
+export YAHOO_CLIENT_ID="your-client-id"
+export YAHOO_CLIENT_SECRET="your-client-secret"
+export YAHOO_REDIRECT_URI="https://localhost:3000"
+```
+
+Or via `appsettings.json` under the `YahooOAuth` section.
+
+#### Database design
+
+Yahoo adds the following tables to the PostgreSQL database:
+
+- `yahoo_oauth_state` — singleton row (ID=1) storing access token, refresh token, expiry, scope, last refreshed timestamp.
+- `yahoo_sync_runs` — tracks each Yahoo sync (game key, season, week, status, record count, matched/unmatched player counts, error message, timestamps).
+- `weekly_player_stats` — one row per player per week. Contains Yahoo player ID, matched Sleeper player ID (nullable), player name, team, position, season, week, and `RawJson` audit column preserving the original Yahoo payload.
+- `weekly_player_stat_values` — normalized child rows of `weekly_player_stats`. Each row is a single stat (stat ID, stat name, decimal value) for a player-week.
+- `weekly_player_points` — calculated fantasy points per player/week/scoring template, with a breakdown JSON showing per-rule contributions.
+- `scoring_templates` — defines scoring rule sets (template key, name, description, active flag).
+- `scoring_template_rules` — individual stat modifiers per template (stat ID, stat name, multiplier).
+
+Key indexes on (GameKey, Season, Week), (Season, Week, YahooPlayerId), and (TemplateKey).
+
+#### Sync pipeline
+
+The sync fetches weekly player stats from Yahoo and writes them to the database. It follows the same pattern as Sleeper and SportsData syncs.
+
+Flow: `YahooFantasyApiClient` fetches paginated JSON → `YahooPlayerSyncService` parses and upserts stats → `ScoringService` recalculates points for all active templates → sync run is recorded.
+
+Key behaviors:
+- Paginates through Yahoo API results (configurable page size, default 25).
+- Parses Yahoo's nested JSON with recursive node traversal. Maps 85+ stat IDs to names.
+- Cross-references Yahoo player IDs to Sleeper player IDs via `PlayerEntity.YahooId`.
+- Idempotent upserts — safe to re-run for the same week.
+- Once-per-day guard: skips re-syncing the same week if already synced today (unless `force=true`).
+- Concurrency-safe via `SemaphoreSlim`.
+
+Manual sync endpoint:
+
+```
+POST /api/sync/yahoo/weekly?week=1&season=2025&gameKey=461&force=true
+GET  /api/sync/yahoo/latest?gameKey=461&season=2025&week=1
+```
+
+All parameters are optional and fall back to defaults from `YahooSync` config.
+
+#### Nightly scheduled sync
+
+`NightlyYahooSyncService` is a `BackgroundService` that runs the Yahoo sync automatically on a daily schedule, following the same pattern as `NightlySleeperSyncService` and `NightlySportsDataSyncService`.
+
+Configuration (`appsettings.json` under `YahooSync`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Enabled` | `true` | Master enable/disable for Yahoo sync |
+| `RunOnStartup` | `false` | Run a sync immediately when the service starts |
+| `DailySyncHourUtc` | `6` | Hour (0–23 UTC) to run the nightly sync |
+| `DefaultGameKey` | `"461"` | Yahoo game key for the target season |
+| `DefaultSeason` | `2025` | NFL season year |
+| `DefaultWeek` | `1` | Which week to sync (update as season progresses) |
+| `PageSize` | `25` | Number of players per Yahoo API page |
+
+**Important**: `DefaultWeek` must be updated manually as the season progresses. The nightly service syncs the configured week each day.
+
+#### Scoring system
+
+Fantasy points are calculated locally, not sourced from Yahoo. The `ScoringService` multiplies each stat value by the corresponding rule modifier from the active scoring template(s), then stores the result with a per-rule breakdown.
+
+Scoring templates must currently be seeded manually via SQL. Example full-PPR template:
+
+```sql
+INSERT INTO scoring_templates ("TemplateKey", "Name", "Description", "IsActive", "UpdatedAtUtc")
+VALUES ('full-ppr', 'Full PPR', 'Baseline full-PPR scoring.', TRUE, NOW())
+ON CONFLICT ("TemplateKey") DO UPDATE
+SET "Name" = EXCLUDED."Name",
+    "Description" = EXCLUDED."Description",
+    "IsActive" = EXCLUDED."IsActive",
+    "UpdatedAtUtc" = EXCLUDED."UpdatedAtUtc";
+
+INSERT INTO scoring_template_rules ("TemplateKey", "StatId", "StatName", "Modifier")
+VALUES
+  ('full-ppr', 4,  'Passing Yards',              0.04),
+  ('full-ppr', 5,  'Passing Touchdowns',          4),
+  ('full-ppr', 6,  'Interceptions',               -1),
+  ('full-ppr', 9,  'Rushing Yards',               0.1),
+  ('full-ppr', 10, 'Rushing Touchdowns',          6),
+  ('full-ppr', 11, 'Receptions',                  1.0),
+  ('full-ppr', 12, 'Receiving Yards',             0.1),
+  ('full-ppr', 13, 'Receiving Touchdowns',        6),
+  ('full-ppr', 15, '2-Point Conversion (Pass)',   2),
+  ('full-ppr', 16, '2-Point Conversion (Rush)',   2),
+  ('full-ppr', 17, 'Fumbles Lost',                -1),
+  ('full-ppr', 19, '2-Point Conversion (Rec)',    2),
+  ('full-ppr', 57, 'PAT Made',                   1),
+  ('full-ppr', 58, 'PAT Missed',                 -1),
+  ('full-ppr', 59, 'FG Made 0-19 Yards',         3),
+  ('full-ppr', 60, 'FG Made 20-29 Yards',        3),
+  ('full-ppr', 61, 'FG Made 30-39 Yards',        3),
+  ('full-ppr', 62, 'FG Made 40-49 Yards',        4),
+  ('full-ppr', 63, 'FG Made 50+ Yards',          5),
+  ('full-ppr', 64, 'FG Missed 0-19 Yards',       -2),
+  ('full-ppr', 65, 'FG Missed 20-29 Yards',      0),
+  ('full-ppr', 66, 'FG Missed 30-39 Yards',      0),
+  ('full-ppr', 67, 'FG Missed 40-49 Yards',      0),
+  ('full-ppr', 68, 'FG Missed 50+ Yards',        0),
+  ('full-ppr', 45, 'Sack',                       1),
+  ('full-ppr', 46, 'Defensive Interception',     2),
+  ('full-ppr', 47, 'Fumble Recovery',            2),
+  ('full-ppr', 48, 'Defensive/ST Touchdown',     6),
+  ('full-ppr', 49, 'Safety',                     2),
+  ('full-ppr', 50, 'Blocked Kick',               2),
+  ('full-ppr', 52, 'Points Allowed 0',           10),
+  ('full-ppr', 53, 'Points Allowed 1-6',         7),
+  ('full-ppr', 54, 'Points Allowed 7-13',        4),
+  ('full-ppr', 55, 'Points Allowed 14-20',       1),
+  ('full-ppr', 56, 'Points Allowed 21-27',       0),
+  ('full-ppr', 57, 'Points Allowed 28-34',       -1),
+  ('full-ppr', 58, 'Points Allowed 35+',         -4)
+ON CONFLICT ("TemplateKey", "StatId") DO UPDATE
+SET "StatName" = EXCLUDED."StatName",
+    "Modifier" = EXCLUDED."Modifier";
+```
+
+#### API surface (REST)
+
+Raw stats:
+```
+GET /api/yahoo/stats/{season}/{week}?position=&limit=
+GET /api/yahoo/stats/player/{sleeperPlayerId}/{season}/week/{week}
+GET /api/yahoo/stats/by-yahoo/{yahooId}/{season}/week/{week}
+```
+
+Scored points:
+```
+GET /api/yahoo/points/{season}/{week}?templateKey=&position=&limit=
+GET /api/yahoo/points/player/{sleeperPlayerId}/{season}/week/{week}?templateKey=
+GET /api/yahoo/points/by-yahoo/{yahooId}/{season}/week/{week}?templateKey=
+GET /api/yahoo/points/player/{sleeperPlayerId}/{season}?templateKey=
+GET /api/yahoo/points/by-yahoo/{yahooId}/{season}?templateKey=
+```
+
+Templates and sync:
+```
+GET  /api/yahoo/scoring-templates?activeOnly=true
+POST /api/sync/yahoo/weekly?week=&season=&gameKey=&force=
+GET  /api/sync/yahoo/latest?gameKey=&season=&week=
+```
+
+League info:
+```
+GET /api/yahoo/league/{leagueKey}/settings/raw
+```
+
+Template key auto-resolves to the first active template if omitted. Position filtering and configurable limits are supported on leaderboard endpoints.
+
+#### MCP tools (for agents)
+
+```
+GetPlayerWeeklyStats(yahooId, season, week)
+GetPlayerWeeklyPoints(yahooId, season, week, templateKey?)
+GetTopScorersByWeek(season, week, templateKey?, position?, limit)
+GetPlayerSeasonPoints(yahooId, season, templateKey?)
+GetScoringTemplates(activeOnly)
+GetLatestYahooSyncStatus(gameKey?, season?, week?)
+```
+
+#### Validation steps
+
+To fully test the Yahoo pipeline end-to-end:
+
+1. Set `ConnectionStrings:LeagueAPI` to a real Postgres database.
+2. Run migrations: `dotnet ef database update` from `src/LeagueAPI`.
+3. Configure Yahoo OAuth credentials (environment variables or appsettings).
+4. Start the API: `ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run`
+5. Bootstrap Yahoo auth:
+   - `POST /api/yahoo/auth/authorize-url` → open URL in browser → approve
+   - `POST /api/yahoo/auth/exchange` with the redirect URL
+   - `GET /api/yahoo/auth/test-connection` to verify
+6. Seed at least one active scoring template (SQL above).
+7. Trigger a sync: `POST /api/sync/yahoo/weekly?week=1&season=2024&gameKey=449&force=true`
+8. Check sync status: `GET /api/sync/yahoo/latest?gameKey=449&season=2024&week=1` — expect `Status = "Succeeded"`, `RecordCount > 0`, `MatchedPlayerCount > 0`.
+9. Verify raw stats: `GET /api/yahoo/stats/2024/1?position=QB&limit=5`
+10. Verify scored points: `GET /api/yahoo/points/2024/1?templateKey=full-ppr&position=QB&limit=5`
+11. Verify MCP tools respond correctly.
+
+#### Known limitations
+
+- Yahoo OAuth bootstrap is manual (copy-paste redirect URL from browser). Future improvement: add a callback endpoint for headless/Docker deployments.
+- Scoring templates must be inserted via SQL — no auto-seeding or admin API yet.
+- `DefaultWeek` in config must be updated manually as the season progresses.
+- If no active scoring template exists, stat syncs succeed but point reads return empty.
+
+#### Risks and mitigations
+
+- **Yahoo data availability**: Yahoo may not expose all desired stats outside league-specific context. Mitigation: store raw payloads for parser iteration, calculate points locally.
+- **Auth expiry**: If refresh tokens expire or are revoked, bootstrap auth must be repeated. Mitigation: tokens are persisted durably, runtime refresh is automatic.
+- **Player mapping gaps**: Some Yahoo players may not have matching `YahooId` in the Sleeper catalog. Mitigation: unmatched rows are logged and preserved in sync metadata.
+
+#### File-level implementation map
+
+- `Configuration/YahooOAuthOptions.cs` — OAuth settings
+- `Configuration/YahooSyncOptions.cs` — Sync settings (enable, defaults, schedule)
+- `Services/YahooOAuthService.cs` — OAuth flow (authorize, exchange, refresh)
+- `Services/PostgresYahooAuthStateStore.cs` — Token persistence
+- `Services/YahooFantasyApiClient.cs` — Authenticated Yahoo API calls
+- `Services/YahooPlayerSyncService.cs` — Sync orchestration, JSON parsing, upserts
+- `Services/YahooReadService.cs` — All read queries (stats, points, templates)
+- `Services/ScoringService.cs` — Points calculation engine
+- `HostedServices/NightlyYahooSyncService.cs` — Scheduled daily sync
+- `Models/` — Yahoo entities (`YahooSyncRun`, `WeeklyPlayerStat`, `WeeklyPlayerStatValue`, `WeeklyPlayerPoint`, `ScoringTemplate`, `ScoringTemplateRule`, `YahooOAuthStateEntity`) and DTOs
+- `Tools/YahooReadTools.cs` — 6 MCP tools
+- `Migrations/` — Schema migrations for all Yahoo tables
+- `Program.cs` — Service registration, HttpClient factories, route mapping
 
 ### Step 3 - Create the agents
 We will create 10 agents, each with a different backing LLM from OpenRouter. Each agent will have its own strategy for drafting players and making decisions throughout the season. We will need to define the strategies for each agent, and then implement those strategies in code. Each agent will need to be able to access the player database and the scores database in order to make informed decisions.
@@ -90,3 +380,6 @@ Once we have all the pieces in place, we will want to simulate the 2025 season u
 
 ### Step 7 - Create a front-end to visualize the league
 To make it easier to see what's going on in the league, we will want to create a front-end that allows us to visualize the teams, players, scores, and standings. This could be a web application that displays the information in a user-friendly way. We could use a framework like React to build the front-end, and we could use a library like D3.js to create visualizations of the data. The front-end should allow us to see the teams and their players, the scores for each week, and the overall standings in the league. We could also include features that
+
+Stuff that I still need to do:
+- Determine the best location for external prompt/context files for FantasyAgent (for example: content files in the project vs embedded resources), balancing editability during development with reliability in published builds.
