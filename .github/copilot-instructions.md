@@ -12,10 +12,13 @@
 
 - .NET (C#) for backend services
 - ASP.NET Core minimal APIs
-- SQL Server for persistence
+- Postgres for persistence
 - Sleeper API for player data sync
 
 ## Project Structure
 
 - `src/LeagueAPI/` — Player data service with Sleeper API integration
 - `src/AgenticLeague/` — Agent configuration and models
+
+## Casey's Notes
+- Often misspells Leauge as League. Be mindful of this when working on the codebase.

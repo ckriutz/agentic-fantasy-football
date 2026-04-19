@@ -30,10 +30,21 @@ public class AgentProfile
     /// <summary>
     /// When the agent profile was first created.
     /// </summary>
-    public DateTime CreatedAt { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+
+    /// <summary>
+    /// When the agent last updated its profile (e.g., after a strategy change).
+    /// </summary>
+    public DateTime LastUpdatedAt { get; set; }
 
     /// <summary>
     /// True after the agent has generated strategy, team name, and logo.
     /// </summary>
-    public bool IsInitialized { get; set; }
+    public bool IsBootstrapped { get; set; }
+
+     /// <summary>
+    /// Relative or absolute path to the bootstrap markdown file.
+    /// </summary>
+    public string BootstrapPath { get; set; } = string.Empty;
+
 }

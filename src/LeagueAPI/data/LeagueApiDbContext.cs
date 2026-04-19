@@ -25,6 +25,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<ScoringTemplateRule> ScoringTemplateRules => Set<ScoringTemplateRule>();
 
+    public DbSet<RosterAssignmentEntity> RosterAssignments => Set<RosterAssignmentEntity>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -166,6 +168,24 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(template => template.Description).HasMaxLength(1000);
 
             entity.HasIndex(template => template.IsActive);
+        });
+
+        modelBuilder.Entity<RosterAssignmentEntity>(entity =>
+        {
+            entity.ToTable("roster_assignments");
+            entity.HasKey(assignment => assignment.RosterAssignmentId);
+
+            entity.Property(assignment => assignment.AgentId).HasMaxLength(100);
+            entity.Property(assignment => assignment.SleeperPlayerId).HasMaxLength(50);
+            entity.Property(assignment => assignment.AcquisitionSource).HasMaxLength(32);
+
+            entity.HasIndex(assignment => assignment.AgentId);
+            entity.HasIndex(assignment => assignment.SleeperPlayerId).IsUnique();
+
+            entity.HasOne<PlayerEntity>()
+                .WithMany()
+                .HasForeignKey(assignment => assignment.SleeperPlayerId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

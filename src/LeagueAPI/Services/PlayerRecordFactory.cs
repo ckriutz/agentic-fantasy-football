@@ -43,6 +43,40 @@ public static class PlayerRecordFactory
         };
     }
 
+    public static PlayerRecord Map(PlayerEntity entity)
+    {
+        var sleeperPlayer =
+            JsonSerializer.Deserialize<SleeperPlayer>(entity.RawJson)
+            ?? throw new InvalidOperationException(
+                $"Unable to deserialize stored player payload for {entity.SleeperPlayerId}.");
+
+        return new PlayerRecord
+        {
+            SleeperPlayerId = entity.SleeperPlayerId,
+            YahooId = entity.YahooId,
+            FantasyDataId = entity.FantasyDataId,
+            FullName = entity.FullName,
+            FirstName = entity.FirstName,
+            LastName = entity.LastName,
+            Team = entity.Team,
+            TeamAbbr = entity.TeamAbbr,
+            Position = entity.Position,
+            FantasyPositions = ParseFantasyPositions(entity.FantasyPositionsTokenized),
+            Status = entity.Status,
+            Active = entity.Active,
+            Sport = entity.Sport,
+            SearchFullNameNormalized = entity.SearchFullNameNormalized,
+            FantasyPositionsTokenized = entity.FantasyPositionsTokenized,
+            RawJson = entity.RawJson,
+            Data = sleeperPlayer,
+            AverageDraftPosition = entity.AverageDraftPosition,
+            ByeWeek = entity.ByeWeek,
+            LastSeasonFantasyPoints = entity.LastSeasonFantasyPoints,
+            ProjectedFantasyPoints = entity.ProjectedFantasyPoints,
+            AuctionValue = entity.AuctionValue
+        };
+    }
+
     public static bool ShouldIgnore(SleeperPlayer player)
     {
         return string.Equals(
@@ -82,5 +116,12 @@ public static class PlayerRecordFactory
     {
         var tokens = positions.Where(position => !string.IsNullOrWhiteSpace(position)).ToArray();
         return tokens.Length == 0 ? string.Empty : $"|{string.Join('|', tokens)}|";
+    }
+
+    private static IReadOnlyList<string> ParseFantasyPositions(string tokenizedFantasyPositions)
+    {
+        return tokenizedFantasyPositions.Split(
+            '|',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
