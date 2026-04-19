@@ -10,5 +10,11 @@ public sealed class YahooSyncOptions
 
     public int DefaultSeason { get; init; } = 2025;
 
+    public int DefaultWeek { get; init; } = 1;
+
     public int PageSize { get; init; } = 25;
+
+    public int DailySyncHourUtc { get; init; } = 6;
+
+    public bool RunOnStartup { get; init; } = false;
 }

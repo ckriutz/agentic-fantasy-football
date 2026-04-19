@@ -53,6 +53,12 @@ builder.Services.AddSingleton<ScoringService>();
 builder.Services.AddSingleton<YahooPlayerSyncService>();
 builder.Services.AddSingleton<YahooReadService>();
 
+builder.Services.AddSingleton<PostgresRosterStore>();
+builder.Services.AddSingleton<IRosterReader>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresRosterStore>());
+builder.Services.AddSingleton<IRosterWriter>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresRosterStore>());
+
 builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
 builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
@@ -61,11 +67,13 @@ builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
 
 builder.Services.AddHostedService<NightlySleeperSyncService>();
 builder.Services.AddHostedService<NightlySportsDataSyncService>();
+builder.Services.AddHostedService<NightlyYahooSyncService>();
 
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<PlayerCatalogTools>()
-    .WithTools<YahooReadTools>();
+    .WithTools<YahooReadTools>()
+    .WithTools<RosterTools>();
 
 var app = builder.Build();
 
@@ -77,8 +85,13 @@ app.MapGet("/", () => Results.Ok(new
     {
         "/mcp",
         "/api/players/{sleeperPlayerId}",
+        "/api/players/{sleeperPlayerId}/availability",
         "/api/players/by-yahoo/{yahooId}",
         "/api/players?name=&team=&position=&byeWeek=&minProjectedPoints=&maxAverageDraftPosition=&sortBy=&sortDescending=&limit=",
+        "/api/players/roster-status?name=&team=&position=&byeWeek=&minProjectedPoints=&maxAverageDraftPosition=&sortBy=&sortDescending=&limit=",
+        "/api/players/available?name=&team=&position=&byeWeek=&minProjectedPoints=&maxAverageDraftPosition=&sortBy=&sortDescending=&limit=",
+        "/api/rosters/{agentId}",
+        "/api/rosters/{agentId}/players/{sleeperPlayerId}?acquisitionSource=",
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper?force=true",
         "/api/sync/sportsdata/latest",
@@ -101,6 +114,192 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/auth/test-connection"
     }
 }));
+
+static PlayerQuery BuildPlayerQuery(
+    string? name,
+    string? team,
+    string? position,
+    int? byeWeek,
+    decimal? minProjectedPoints,
+    decimal? maxAverageDraftPosition,
+    string? sortBy,
+    bool? sortDescending,
+    int? limit)
+{
+    return new PlayerQuery
+    {
+        Name = name,
+        Team = team,
+        Position = position,
+        ByeWeek = byeWeek,
+        MinProjectedPoints = minProjectedPoints,
+        MaxAverageDraftPosition = maxAverageDraftPosition,
+        SortBy = sortBy,
+        SortDescending = sortDescending ?? false,
+        Limit = limit ?? 25
+    };
+}
+
+static IResult CreateRosterErrorResult(Exception exception)
+{
+    return exception switch
+    {
+        ArgumentException argumentException => Results.BadRequest(new { error = argumentException.Message }),
+        RosterPlayerNotFoundException notFoundException => Results.NotFound(new { error = notFoundException.Message }),
+        RosterConflictException conflictException => Results.Conflict(new { error = conflictException.Message }),
+        _ => Results.Problem(exception.Message)
+    };
+}
+
+app.MapGet("/api/players/roster-status", async (
+    string? name,
+    string? team,
+    string? position,
+    int? byeWeek,
+    decimal? minProjectedPoints,
+    decimal? maxAverageDraftPosition,
+    string? sortBy,
+    bool? sortDescending,
+    int? limit,
+    IRosterReader rosterReader,
+    CancellationToken cancellationToken) =>
+{
+    var players = await rosterReader.QueryPlayersAsync(
+        BuildPlayerQuery(
+            name,
+            team,
+            position,
+            byeWeek,
+            minProjectedPoints,
+            maxAverageDraftPosition,
+            sortBy,
+            sortDescending,
+            limit),
+        cancellationToken);
+
+    return Results.Ok(players);
+});
+
+app.MapGet("/api/players/available", async (
+    string? name,
+    string? team,
+    string? position,
+    int? byeWeek,
+    decimal? minProjectedPoints,
+    decimal? maxAverageDraftPosition,
+    string? sortBy,
+    bool? sortDescending,
+    int? limit,
+    IRosterReader rosterReader,
+    CancellationToken cancellationToken) =>
+{
+    var players = await rosterReader.GetAvailablePlayersAsync(
+        BuildPlayerQuery(
+            name,
+            team,
+            position,
+            byeWeek,
+            minProjectedPoints,
+            maxAverageDraftPosition,
+            sortBy,
+            sortDescending,
+            limit),
+        cancellationToken);
+
+    return Results.Ok(players);
+});
+
+app.MapGet("/api/rosters/{agentId}", async (
+    string agentId,
+    IRosterReader rosterReader,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var roster = await rosterReader.GetRosterAsync(agentId, cancellationToken);
+        return Results.Ok(roster);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
+
+app.MapGet("/api/players/{sleeperPlayerId}/availability", async (
+    string sleeperPlayerId,
+    IRosterReader rosterReader,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var availability = await rosterReader.GetPlayerAvailabilityAsync(sleeperPlayerId, cancellationToken);
+        return availability is null ? Results.NotFound() : Results.Ok(availability);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
+    string agentId,
+    string sleeperPlayerId,
+    string? acquisitionSource,
+    IRosterWriter rosterWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var player = await rosterWriter.AddPlayerToRosterAsync(
+            agentId,
+            sleeperPlayerId,
+            string.IsNullOrWhiteSpace(acquisitionSource) ? "manual" : acquisitionSource,
+            cancellationToken);
+
+        return Results.Ok(player);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterPlayerNotFoundException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterConflictException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
+
+app.MapDelete("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
+    string agentId,
+    string sleeperPlayerId,
+    IRosterWriter rosterWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var player = await rosterWriter.RemovePlayerFromRosterAsync(
+            agentId,
+            sleeperPlayerId,
+            cancellationToken);
+
+        return Results.Ok(player);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterPlayerNotFoundException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterConflictException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
 
 app.MapGet("/api/players/{sleeperPlayerId}", async (
     string sleeperPlayerId,
@@ -133,18 +332,16 @@ app.MapGet("/api/players", async (
     IPlayerCatalogReader playerCatalogReader,
     CancellationToken cancellationToken) =>
 {
-    var query = new PlayerQuery
-    {
-        Name = name,
-        Team = team,
-        Position = position,
-        ByeWeek = byeWeek,
-        MinProjectedPoints = minProjectedPoints,
-        MaxAverageDraftPosition = maxAverageDraftPosition,
-        SortBy = sortBy,
-        SortDescending = sortDescending ?? false,
-        Limit = limit ?? 25
-    };
+    var query = BuildPlayerQuery(
+        name,
+        team,
+        position,
+        byeWeek,
+        minProjectedPoints,
+        maxAverageDraftPosition,
+        sortBy,
+        sortDescending,
+        limit);
 
     var players = await playerCatalogReader.QueryAsync(query, cancellationToken);
     return Results.Ok(players);
