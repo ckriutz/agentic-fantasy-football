@@ -28,10 +28,11 @@ public static class PlayerRecordFactory
             Team = player.Team,
             TeamAbbr = player.TeamAbbr,
             Position = player.Position,
-            FantasyPositions = fantasyPositions,
+            SearchRank = player.SearchRank,
+            InjuryStatus = player.InjuryStatus,
+            InjuryNotes = player.InjuryNotes,
             Status = player.Status,
             Active = player.Active,
-            Sport = player.Sport,
             SearchFullNameNormalized = NormalizeName(
                 player.SearchFullName
                 ?? player.FullName
@@ -61,10 +62,11 @@ public static class PlayerRecordFactory
             Team = entity.Team,
             TeamAbbr = entity.TeamAbbr,
             Position = entity.Position,
-            FantasyPositions = ParseFantasyPositions(entity.FantasyPositionsTokenized),
+            SearchRank = sleeperPlayer.SearchRank,
+            InjuryStatus = sleeperPlayer.InjuryStatus,
+            InjuryNotes = sleeperPlayer.InjuryNotes,
             Status = entity.Status,
             Active = entity.Active,
-            Sport = entity.Sport,
             SearchFullNameNormalized = entity.SearchFullNameNormalized,
             FantasyPositionsTokenized = entity.FantasyPositionsTokenized,
             RawJson = entity.RawJson,

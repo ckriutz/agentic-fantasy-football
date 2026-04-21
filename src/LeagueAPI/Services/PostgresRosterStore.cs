@@ -82,22 +82,24 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         var filteredPlayers = PlayerCatalogQueryBuilder.ApplyFilters(
             dbContext.Players.AsNoTracking().Where(entity => entity.Active),
             query);
-        var orderedPlayers = PlayerCatalogQueryBuilder.ApplyOrdering(filteredPlayers, query)
-            .ThenBy(entity => entity.SleeperPlayerId);
 
         var players = await (
-            from player in orderedPlayers
+            from player in filteredPlayers
             join assignment in dbContext.RosterAssignments.AsNoTracking()
                 on player.SleeperPlayerId equals assignment.SleeperPlayerId into assignmentGroup
             from assignment in assignmentGroup.DefaultIfEmpty()
             where assignment == null
             select player)
-            .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
         return players
+            .Select(PlayerRecordFactory.Map)
+            .OrderBy(player => player.SearchRank ?? int.MaxValue)
+            .ThenBy(player => player.FullName ?? player.SleeperPlayerId)
+            .ThenBy(player => player.SleeperPlayerId)
+            .Take(normalizedLimit)
             .Select(player => new RosterPlayerResult(
-                PlayerRecordFactory.Map(player),
+                player,
                 OwnerAgentId: null,
                 IsAvailable: true,
                 AcquiredAtUtc: null,

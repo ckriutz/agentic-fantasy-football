@@ -22,13 +22,15 @@ public sealed class PlayerRecord
 
     public string? Position { get; init; }
 
-    public IReadOnlyList<string> FantasyPositions { get; init; } = Array.Empty<string>();
+    public int? SearchRank { get; init; }
+
+    public string? InjuryStatus { get; init; }
+
+    public string? InjuryNotes { get; init; }
 
     public string? Status { get; init; }
 
     public bool Active { get; init; }
-
-    public string? Sport { get; init; }
 
     public required SleeperPlayer Data { get; init; }
 

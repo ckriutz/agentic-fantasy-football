@@ -40,14 +40,29 @@ public sealed class PostgresPlayerCatalogStore(
     public async Task<IReadOnlyList<PlayerRecord>> QueryAsync(PlayerQuery query, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var normalizedLimit = PlayerCatalogQueryBuilder.NormalizeLimit(query.Limit);
         var playersQuery = PlayerCatalogQueryBuilder.ApplyFilters(
             dbContext.Players.AsNoTracking().Where(entity => entity.Active),
             query);
+
+        if (string.IsNullOrWhiteSpace(query.SortBy))
+        {
+            var matchedPlayers = await playersQuery.ToListAsync(cancellationToken);
+
+            return matchedPlayers
+                .Select(PlayerRecordFactory.Map)
+                .OrderBy(player => player.SearchRank ?? int.MaxValue)
+                .ThenBy(player => player.FullName ?? player.SleeperPlayerId)
+                .ThenBy(player => player.SleeperPlayerId)
+                .Take(normalizedLimit)
+                .ToArray();
+        }
+
         var orderedQuery = PlayerCatalogQueryBuilder.ApplyOrdering(playersQuery, query);
 
         var players = await orderedQuery
             .ThenBy(entity => entity.SleeperPlayerId)
-            .Take(PlayerCatalogQueryBuilder.NormalizeLimit(query.Limit))
+            .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
         return players.Select(PlayerRecordFactory.Map).ToArray();
@@ -134,7 +149,7 @@ public sealed class PostgresPlayerCatalogStore(
             entity.FantasyPositionsTokenized = player.FantasyPositionsTokenized;
             entity.Status = player.Status;
             entity.Active = player.Active;
-            entity.Sport = player.Sport;
+            entity.Sport = player.Data.Sport;
             entity.RawJson = player.RawJson;
             entity.UpdatedAtUtc = persistedAtUtc;
         }

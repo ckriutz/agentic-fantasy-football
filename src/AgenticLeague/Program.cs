@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,22 +11,28 @@ var builder = Host.CreateApplicationBuilder(args);
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
+List<AIAgent> agents = new List<AIAgent>();
+
 //var dsa = await new DataStatusAgent().CreateDataStatusAgentAsync();
-//var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.1-fast");
-//var player1Response = await player1.RunAsync("You're being initilized. Check to see if you're bootstrapped, and if not, begin that process. Respond back with your team name and quick summary of your strategy.");
-//Console.WriteLine(player1Response);
+var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.20");
+var player2 = await new FantasyAgent().CreateFantasyAgentAsync("player-02", "google/gemma-4-26b-a4b-it");
+var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "anthropic/claude-sonnet-4.6");
+var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "moonshotai/kimi-k2.6");
+var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
+agents.Add(player1);
+agents.Add(player2);
+agents.Add(player3);
+agents.Add(player4);
+agents.Add(player5);
 
-//var play
+foreach(var agent in agents)
+{
+    var response = await agent.RunAsync("You're being initilized. Check to see if you're bootstrapped, and if not, begin that process. Respond back with your team name and quick summary of your strategy.");
+    logger.LogInformation("Agent {agentName} response: {Response}", agent.Name, response);
+}
 
-//AgenticLeague.Models.AgentProfile? player2Profile = new AgenticLeague.Models.AgentProfile
-//{
-    //AgentId = "player-02",
-    //ModelName = "google/gemma-4-31b-it",
-//};
-//var player2 = await new FantasyAgent().CreateFantasyAgentAsync(player2Profile);
-//var player2Response = await player2.RunAsync("You're being initilized. Check to see if you're bootstrapped, and if not, begin that process. Respond back with your team name and quick summary of your strategy.");
-//Console.WriteLine(player2Response);
-
-var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "x-ai/grok-4.1-fast");
-var player3Response = await player3.RunAsync("You're being initilized. Check to see if you're bootstrapped, and if not, begin that process. Respond back with your team name and quick summary of your strategy.");
-Console.WriteLine(player3Response);
+foreach(var agent in agents)
+{
+    var response = await agent.RunAsync("Look at your roster and identify if you have room for additional players. If so, use the tools available to you to do research and find a player to add to your roster. Then use the tools to add that player to your roster. Select ONE player only. Respond with the name of the player you added and why you chose that player based on your strategy and team needs.");
+    logger.LogInformation("Agent {agentName} response: {Response}", agent.Name, response);
+}

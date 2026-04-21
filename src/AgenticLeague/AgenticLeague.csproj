@@ -25,7 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
-  <Content Include="Agents\FantasyAgent.league.md">
+  <Content Include="Prompts\FantasyAgent.league.md">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
+    <Content Include="Prompts\FantasyAgent.how-to-play.md">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </Content>
 </ItemGroup>

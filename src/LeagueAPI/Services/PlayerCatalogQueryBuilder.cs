@@ -36,19 +36,6 @@ internal static class PlayerCatalogQueryBuilder
             playersQuery = playersQuery.Where(entity => entity.ByeWeek == query.ByeWeek.Value);
         }
 
-        if (query.MinProjectedPoints.HasValue)
-        {
-            playersQuery = playersQuery.Where(entity =>
-                entity.ProjectedFantasyPoints >= query.MinProjectedPoints.Value);
-        }
-
-        if (query.MaxAverageDraftPosition.HasValue)
-        {
-            playersQuery = playersQuery.Where(entity =>
-                entity.AverageDraftPosition != null
-                && entity.AverageDraftPosition <= query.MaxAverageDraftPosition.Value);
-        }
-
         return playersQuery;
     }
 

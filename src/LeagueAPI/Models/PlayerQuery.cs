@@ -10,10 +10,6 @@ public sealed class PlayerQuery
 
     public int? ByeWeek { get; init; }
 
-    public decimal? MinProjectedPoints { get; init; }
-
-    public decimal? MaxAverageDraftPosition { get; init; }
-
     public string? SortBy { get; init; }
 
     public bool SortDescending { get; init; }
