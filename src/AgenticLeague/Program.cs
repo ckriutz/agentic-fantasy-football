@@ -16,14 +16,14 @@ List<AIAgent> agents = new List<AIAgent>();
 //var dsa = await new DataStatusAgent().CreateDataStatusAgentAsync();
 var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.20");
 var player2 = await new FantasyAgent().CreateFantasyAgentAsync("player-02", "google/gemma-4-26b-a4b-it");
-var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "anthropic/claude-sonnet-4.6");
-var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "moonshotai/kimi-k2.6");
-var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
+//var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "anthropic/claude-sonnet-4.6");
+//var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "moonshotai/kimi-k2.6");
+//var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
 agents.Add(player1);
 agents.Add(player2);
-agents.Add(player3);
-agents.Add(player4);
-agents.Add(player5);
+//agents.Add(player3);
+//agents.Add(player4);
+//agents.Add(player5);
 
 foreach(var agent in agents)
 {

@@ -19,6 +19,7 @@ public class FantasyAgent
         var agentProfileTools = new AgentProfileTools();
         var bootstrapTools = new BootstrapTools();
         var imageGenerationTool = new ImageGenerationTool();
+        var searchTool = new SearchTool();
         
         var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
         var howToPlayPrompt = LoadPrompt("Prompts/FantasyAgent.how-to-play.md");
@@ -56,6 +57,8 @@ public class FantasyAgent
 
         Here are instructions on how to play fantasy football and manage your team:
         {howToPlayPrompt}
+
+        Use the SearchWeb tool whenever you need current external research about players, injuries, depth charts, rankings, or matchup context before making a move.
         """;
 
         _agent = new ChatClient(modelName, new ApiKeyCredential(apiKey),
@@ -72,6 +75,7 @@ public class FantasyAgent
                 AIFunctionFactory.Create(bootstrapTools.ReadAgentBootstrap),
                 AIFunctionFactory.Create(bootstrapTools.WriteAgentBootstrap),
                 AIFunctionFactory.Create(imageGenerationTool.GenerateImage),
+                AIFunctionFactory.Create(searchTool.SearchWeb),
                 ..mcpTools
             ]);
 

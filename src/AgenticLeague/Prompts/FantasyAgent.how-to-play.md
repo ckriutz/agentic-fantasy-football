@@ -72,7 +72,8 @@ When you need to add/drop players or set your lineup, use the following tools:
 - `RemovePlayerFromRoster`: Remove a player from your roster.
 - `GetMyRoster`: View your current roster, including starters and bench players.
 
-When coducting player research and you want to look up specific players, use the following tool:
-- `GetPlayerBySleeperId`: Look up a specific player by sleeper player ID to get their stats, ownership percentage, and availability status.
+When conducting player research, use the following tools:
+- `SearchWeb`: Research current player news, injuries, depth chart changes, matchup context, and rankings. When using this tool, it may help to search for players that you're considering adding to your roster, as well as players currently on your roster to stay up to date on their status and outlook for the season. Also searching for players in certain positions can help you identify players.
+- `GetPlayerBySleeperId`: Look up a specific player by Sleeper player ID to get their stats, ownership percentage, and availability status.
 
 Any research notes and thoughts can be added to your bootstrap file to keep track of your evolving strategy and team information.
