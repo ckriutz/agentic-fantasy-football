@@ -1,8 +1,7 @@
 namespace AgenticLeague.Models;
 
 /// <summary>
-/// A single agent decision event.
-/// Appended to decisions.jsonl in the agent's workspace.
+/// A single agent decision event, persisted to Postgres via LeagueAPI.
 /// </summary>
 public class Decision
 {
@@ -17,19 +16,14 @@ public class Decision
     public string AgentId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Which NFL week this decision pertains to.
+    /// Which NFL week this decision pertains to (0 for pre-season/draft).
     /// </summary>
     public int Week { get; set; }
 
     /// <summary>
-    /// Decision category (e.g., "draft_pick", "waiver_claim", "bench_swap", "start_sit").
+    /// Decision category (e.g., "draft_pick", "roster_add", "roster_drop", "bench_swap", "start_sit").
     /// </summary>
     public string Type { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Context snapshot (e.g., available players, current roster, scores).
-    /// </summary>
-    public string Context { get; set; } = string.Empty;
 
     /// <summary>
     /// Agent's stated reasoning for the decision.
@@ -40,9 +34,4 @@ public class Decision
     /// The action taken (e.g., "Drafted player X (sleeper_id: 1234)").
     /// </summary>
     public string Action { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Outcome (null until week completes; e.g., "scored 18.5 points").
-    /// </summary>
-    public string? Outcome { get; set; }
 }

@@ -23,6 +23,11 @@ Returns: all unowned players with stats and availability metadata.
 
 Returns: all players currently on your roster with stats and availability metadata.
 
+### `SearchWeb`
+**Use when**: You need to look up players, teams, positions, and fantasy football guidance. Very helpful for researching players.
+
+Returns: Research data.
+
 ---
 
 ## Player Data Reference

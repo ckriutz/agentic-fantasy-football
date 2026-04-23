@@ -59,6 +59,12 @@ builder.Services.AddSingleton<IRosterReader>(serviceProvider =>
 builder.Services.AddSingleton<IRosterWriter>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresRosterStore>());
 
+builder.Services.AddSingleton<PostgresDecisionStore>();
+builder.Services.AddSingleton<IDecisionReader>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresDecisionStore>());
+builder.Services.AddSingleton<IDecisionWriter>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresDecisionStore>());
+
 builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
 builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
@@ -111,9 +117,70 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/auth/authorize-url",
         "/api/yahoo/auth/exchange",
         "/api/yahoo/auth/refresh",
-        "/api/yahoo/auth/test-connection"
+        "/api/yahoo/auth/test-connection",
+        "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
+        "/api/decisions/{agentId} (GET: list decisions for agent)"
     }
 }));
+
+// --- Decisions ---
+
+app.MapPost("/api/decisions", async (
+    LogDecisionRequest request,
+    IDecisionWriter decisionWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var decision = await decisionWriter.LogDecisionAsync(
+            request.AgentId,
+            request.Week,
+            request.Type,
+            request.Reasoning,
+            request.Action,
+            cancellationToken);
+
+        return Results.Created($"/api/decisions/{decision.DecisionId}", decision);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/decisions/{agentId}", async (
+    string agentId,
+    IDecisionReader decisionReader,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var decisions = await decisionReader.GetDecisionsByAgentAsync(agentId, cancellationToken);
+        return Results.Ok(decisions);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/decisions", async (
+    string? agentId,
+    string? type,
+    int? week,
+    int? limit,
+    IDecisionReader decisionReader,
+    CancellationToken cancellationToken) =>
+{
+    var decisions = await decisionReader.GetAllDecisionsAsync(
+        agentId,
+        type,
+        week,
+        limit ?? 50,
+        cancellationToken);
+
+    return Results.Ok(decisions);
+});
 
 static PlayerQuery BuildPlayerQuery(
     string? name,

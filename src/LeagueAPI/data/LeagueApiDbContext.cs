@@ -27,6 +27,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<RosterAssignmentEntity> RosterAssignments => Set<RosterAssignmentEntity>();
 
+    public DbSet<DecisionEntity> Decisions => Set<DecisionEntity>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -186,6 +188,20 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
                 .WithMany()
                 .HasForeignKey(assignment => assignment.SleeperPlayerId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DecisionEntity>(entity =>
+        {
+            entity.ToTable("decisions");
+            entity.HasKey(decision => decision.DecisionId);
+
+            entity.Property(decision => decision.AgentId).HasMaxLength(100);
+            entity.Property(decision => decision.Type).HasMaxLength(50);
+            entity.Property(decision => decision.Reasoning).HasColumnType("text");
+            entity.Property(decision => decision.Action).HasColumnType("text");
+
+            entity.HasIndex(decision => decision.AgentId);
+            entity.HasIndex(decision => decision.CreatedAtUtc);
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

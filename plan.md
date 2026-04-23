@@ -371,9 +371,6 @@ This is where we will create the system that allows the agents to play against e
 ### Step 5 - Wire up the Draft
 The draft is a key part of the fantasy football season, and we will need to create a system that allows the agents to draft players autonomously. We will need to create a draft order, and then have the agents take turns drafting players according to that order. The agents will need to use their strategies to determine which players to draft, and they will need to access the player database to get information about the players they are considering drafting. We will also need to keep track of which players have been drafted and which players are still available.
 
-Questions:
-- How will the agents know it's time for them to draft? Do we send something to them? Do they pull who's turn it is and if it's not their turn they wait and check again in a bit?
-- How long will the agents have to make their draft picks? Will there be a time limit for each pick, or will they be able to take as long as they want?
 
 ### Step 6 - Mock a season using 2025 data
 Once we have all the pieces in place, we will want to simulate the 2025 season using the data we have collected. This will allow us to see how the agents perform against each other, and it will also allow us to identify any issues or bugs in the system. We will want to run multiple simulations of the season to see how the agents perform under different conditions. We will want to analyze the results of the simulations to see if there are any interesting patterns or insights that we can write about. We will also want to use the decision logs to analyze the decisions made by the agents and see if there are any interesting trends or patterns in their decision-making processes.

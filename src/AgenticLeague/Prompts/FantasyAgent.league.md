@@ -20,13 +20,13 @@
 | K | 1 | Kicker |
 | DEF | 1 | Defense/Special Teams |
 | **Bench** | **6** | Reserve players |
-| **Total Roster Size** | **17** | |
+| **Total Roster Size** | **15** | |
 
 ### Draft Format
 
 - **Type**: Snake Draft (alternating order per round)
 - **Number of Teams**: 10
-- **Total Picks**: 170 (10 teams × 17 rounds)
+- **Total Picks**: 150 (10 teams × 15 rounds)
 
 ## Scoring Settings
 
