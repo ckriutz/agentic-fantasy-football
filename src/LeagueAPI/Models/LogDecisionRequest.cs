@@ -5,4 +5,8 @@ public sealed record LogDecisionRequest(
     int Week,
     string Type,
     string Reasoning,
-    string Action);
+    string Action,
+    int? InputTokenCount = null,
+    int? OutputTokenCount = null,
+    int? CachedInputTokenCount = null,
+    int? ReasoningTokenCount = null);

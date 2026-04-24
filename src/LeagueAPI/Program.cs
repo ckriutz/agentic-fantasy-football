@@ -138,6 +138,10 @@ app.MapPost("/api/decisions", async (
             request.Type,
             request.Reasoning,
             request.Action,
+            request.InputTokenCount,
+            request.OutputTokenCount,
+            request.CachedInputTokenCount,
+            request.ReasoningTokenCount,
             cancellationToken);
 
         return Results.Created($"/api/decisions/{decision.DecisionId}", decision);

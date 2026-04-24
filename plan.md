@@ -359,6 +359,18 @@ Questions to answer:
 - In what way will the agents learn and adapt their strategies over time? Will they use some sort of reinforcement learning, or will they simply analyze past decisions and outcomes to make adjustments?
 - Where will memory be stored for the agents? Will it be in a database, or will it be in files?
 
+** Real qucik, this is how the decisions API works:
+```
+GET /api/decisions is already there and supports these query params:
+
+ - ?agentId= — filter by agent
+ - ?type= — filter by decision type
+ - ?week= — filter by week
+ - ?limit= — results to return (default 50, max 200)
+
+Results come back ordered by CreatedAtUtc descending (newest first). Give it a try!
+```
+
 ### Step 4 - Create the League System
 This is where we will create the system that allows the agents to play against each other. We will need to:
 
@@ -380,3 +392,10 @@ To make it easier to see what's going on in the league, we will want to create a
 
 Stuff that I still need to do:
 - Determine the best location for external prompt/context files for FantasyAgent (for example: content files in the project vs embedded resources), balancing editability during development with reliability in published builds.
+
+### Runtime Notes:
+April 24th - Using the new deepseek/deepseek-v4-flash model fails bootstrapping. Falling back on the deepseek/deepseek-v3.2 model, which works.
+April 24th - A Full bootstrap of 10 players costs about $0.60, which isn't bad.
+April 24th - arcee-ai/trinity-large-thinking didnt select a player and that makes me think this model is not qualified to play. Going to swap it out.
+April 24th - xiaomi/mimo-v2.5 us also failing bootstrapping, swapping out with 
+April 24th - Starting credits before a test daft: $13.82.

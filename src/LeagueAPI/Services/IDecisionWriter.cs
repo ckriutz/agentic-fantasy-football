@@ -10,5 +10,9 @@ public interface IDecisionWriter
         string type,
         string reasoning,
         string action,
+        int? inputTokenCount,
+        int? outputTokenCount,
+        int? cachedInputTokenCount,
+        int? reasoningTokenCount,
         CancellationToken cancellationToken);
 }

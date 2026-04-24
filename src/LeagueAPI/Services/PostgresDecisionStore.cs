@@ -14,6 +14,10 @@ public sealed class PostgresDecisionStore(IDbContextFactory<LeagueApiDbContext> 
         string type,
         string reasoning,
         string action,
+        int? inputTokenCount,
+        int? outputTokenCount,
+        int? cachedInputTokenCount,
+        int? reasoningTokenCount,
         CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeRequired(agentId, nameof(agentId));
@@ -26,7 +30,11 @@ public sealed class PostgresDecisionStore(IDbContextFactory<LeagueApiDbContext> 
             Type = normalizedType,
             Reasoning = reasoning?.Trim() ?? string.Empty,
             Action = action?.Trim() ?? string.Empty,
-            CreatedAtUtc = DateTimeOffset.UtcNow
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            InputTokenCount = inputTokenCount,
+            OutputTokenCount = outputTokenCount,
+            CachedInputTokenCount = cachedInputTokenCount,
+            ReasoningTokenCount = reasoningTokenCount
         };
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);

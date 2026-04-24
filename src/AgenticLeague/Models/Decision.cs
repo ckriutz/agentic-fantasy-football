@@ -34,4 +34,24 @@ public class Decision
     /// The action taken (e.g., "Drafted player X (sleeper_id: 1234)").
     /// </summary>
     public string Action { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Number of input tokens consumed by the LLM call.
+    /// </summary>
+    public int? InputTokenCount { get; set; }
+
+    /// <summary>
+    /// Number of output tokens produced by the LLM call.
+    /// </summary>
+    public int? OutputTokenCount { get; set; }
+
+    /// <summary>
+    /// Number of cached input tokens (prompt-cache hits).
+    /// </summary>
+    public int? CachedInputTokenCount { get; set; }
+
+    /// <summary>
+    /// Number of reasoning/thinking tokens used by the LLM call.
+    /// </summary>
+    public int? ReasoningTokenCount { get; set; }
 }
