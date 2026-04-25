@@ -336,6 +336,7 @@ To fully test the Yahoo pipeline end-to-end:
 - `Program.cs` — Service registration, HttpClient factories, route mapping
 
 ### Step 3 - Create the agents
+✅ This is complete.
 We will create 10 agents, each with a different backing LLM from OpenRouter. Each agent will have its own strategy for drafting players and making decisions throughout the season. We will need to define the strategies for each agent, and then implement those strategies in code. Each agent will need to be able to access the player database and the scores database in order to make informed decisions.
 
 Right now, we assume the agents will all be inside the same project, and the main program will trigger them to do things either by event or time driven, or both.
@@ -354,10 +355,7 @@ Each agent needs to have the following capabilities:
 - Make decisions based on its strategy and the information it has access to.
 - When it makes a decision, it should log that decision in a decision log for later analysis.
 
-Questions to answer:
-- How will we trigger the agents? Will they run on a schedule, or will they be event-driven?
-- In what way will the agents learn and adapt their strategies over time? Will they use some sort of reinforcement learning, or will they simply analyze past decisions and outcomes to make adjustments?
-- Where will memory be stored for the agents? Will it be in a database, or will it be in files?
+This is mostly done. The agents are created and they define their own strategy, team name, and logo. They also have access to the player database and the scores database. They can make decisions based on their strategy and the information they have access to. They also log their decisions in a decision log for later analysis.
 
 ** Real qucik, this is how the decisions API works:
 ```
@@ -383,6 +381,8 @@ This is where we will create the system that allows the agents to play against e
 ### Step 5 - Wire up the Draft
 The draft is a key part of the fantasy football season, and we will need to create a system that allows the agents to draft players autonomously. We will need to create a draft order, and then have the agents take turns drafting players according to that order. The agents will need to use their strategies to determine which players to draft, and they will need to access the player database to get information about the players they are considering drafting. We will also need to keep track of which players have been drafted and which players are still available.
 
+This has been completed but some testing needs to be done. If we stop a draft in the middle, can we restart and draft again? This needs to be tested.
+
 
 ### Step 6 - Mock a season using 2025 data
 Once we have all the pieces in place, we will want to simulate the 2025 season using the data we have collected. This will allow us to see how the agents perform against each other, and it will also allow us to identify any issues or bugs in the system. We will want to run multiple simulations of the season to see how the agents perform under different conditions. We will want to analyze the results of the simulations to see if there are any interesting patterns or insights that we can write about. We will also want to use the decision logs to analyze the decisions made by the agents and see if there are any interesting trends or patterns in their decision-making processes.
@@ -392,6 +392,14 @@ To make it easier to see what's going on in the league, we will want to create a
 
 Stuff that I still need to do:
 - Determine the best location for external prompt/context files for FantasyAgent (for example: content files in the project vs embedded resources), balancing editability during development with reliability in published builds.
+
+# Some things to add, change, or refactor:
+- We may want to create a BootstrapService that handles all the bootstrapping logic for the agents, including strategy definition, team name/logo creation, and initial player research. This would help keep the main program cleaner and more focused on orchestration.
+- As part of the BootstrapService, I want to find a way to read in the profile.json file to see if the agent has already been bootstrapped, and if so, skip the bootstrapping process. This will save us on tokens.
+- Lets move the bootstrap.md, and profile.md files out of the Agents folder. This will help keep the Agents folder cleaner and more focused on the agent code itself. We can create a new folder called "AgentData" or something similar to store these files. Can we store them in Azure Blob Storage or something like that? This would allow us to easily access and update the files without having to worry about file paths and permissions on different machines.
+- When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
+- When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.
+- I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
 
 ### Runtime Notes:
 April 24th - Using the new deepseek/deepseek-v4-flash model fails bootstrapping. Falling back on the deepseek/deepseek-v3.2 model, which works.

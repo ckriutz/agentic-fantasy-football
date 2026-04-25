@@ -4,6 +4,7 @@
 # Yahoo token file - contains sensitive OAuth tokens
 .yahoo_tokens.json
 src/LeagueAPI/appsettings.Development.json
+/src/AgenticLeague/AgentData/**
 
 # Local environment files
 .env

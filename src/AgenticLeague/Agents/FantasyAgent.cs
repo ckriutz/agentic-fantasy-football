@@ -63,7 +63,7 @@ public class FantasyAgent
         """;
 
         _agent = new ChatClient(modelName, new ApiKeyCredential(apiKey),
-            new OpenAIClientOptions {Endpoint = new Uri(endpoint)})
+            new OpenAIClientOptions { Endpoint = new Uri(endpoint), NetworkTimeout = TimeSpan.FromMinutes(5) })
             .AsIChatClient()
             .AsAIAgent(name: agentId, instructions: agentInstructions,
             tools:

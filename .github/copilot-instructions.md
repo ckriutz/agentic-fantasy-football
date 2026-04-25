@@ -20,5 +20,30 @@
 - `src/LeagueAPI/` — Player data service with Sleeper API integration
 - `src/AgenticLeague/` — Agent configuration and models
 
+## Note on creating functions/nmethods
+Casey prefers to have the function/method to be on one line:
+
+Example of what not to do:
+```csharp
+static async Task RunDraftPickWithRetriesAsync(
+    AIAgent agent,
+    string draftPrompt,
+    int round,
+    int pick,
+    int maxAttempts,
+    IReadOnlyList<TimeSpan> retryBackoffs,
+    ILogger logger)
+{
+}
+```
+
+Example of what to do:
+```csharp
+static async Task RunDraftPickWithRetriesAsync(AIAgent agent, string draftPrompt, int round, int pick, int maxAttempts, IReadOnlyList<TimeSpan> retryBackoffs, ILogger logger)
+{
+}
+```
+
+
 ## Casey's Notes
 - Often misspells Leauge as League. Be mindful of this when working on the codebase.
