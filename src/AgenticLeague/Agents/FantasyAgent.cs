@@ -18,7 +18,7 @@ public class FantasyAgent
     {
         var agentProfileTools = new AgentProfileTools();
         var bootstrapTools = new BootstrapTools();
-        var imageGenerationTool = new ImageGenerationTool();
+        var imageGenerationTool = new ImageGenerationTool(agentId);
         var searchTool = new SearchTool();
         
         var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
@@ -38,13 +38,13 @@ public class FantasyAgent
         You are {agentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
         You are using the {modelName} model to help you make decisions and manage your team.
         
-        First, check to see if you've already bootstrapped yourself by looking for the file Agents/{agentId}/bootstrap.md.
+        First, check to see if you've already bootstrapped yourself by looking for the file AgentData/{agentId}/bootstrap.md.
         If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
         - Your first task is to create the bootstrap.md file if it doesn't exist.
         - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file and your agent profile.
         - Create a strategy for how you will win your league this season.
         - Include any information you think is relevant, such as your league settings, your team name, your draft strategy, and anything else you think is important to include in your bootstrap file.
-        - Generate a logo for your team using the image generation tool. You can use the team name and your strategy as inspiration for your logo. The logo should be simple and something that would look good on a fantasy football website. Save the logo URL in your bootstrap file as well.
+        - Generate a logo for your team using the image generation tool. You can use the team name and your strategy as inspiration for your logo. The logo should be simple and something that would look good on a fantasy football website. Save the filename in your bootstrap file as well.
         - Run the InitializeAgentProfile tool to initialize your agent profile.
         - Use the SetTeamName, SetLogoPath, and SetBootstrapStatus tools to save your team name, logo path, and bootstrap status in your profile.
         

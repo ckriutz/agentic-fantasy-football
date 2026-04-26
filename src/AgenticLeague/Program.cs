@@ -15,26 +15,26 @@ var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Pr
 List<AIAgent> agents = new List<AIAgent>();
 
 //var dsa = await new DataStatusAgent().CreateDataStatusAgentAsync();
-var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.20");
-var player2 = await new FantasyAgent().CreateFantasyAgentAsync("player-02", "google/gemini-3-flash-preview");
+//var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.20");
+//var player2 = await new FantasyAgent().CreateFantasyAgentAsync("player-02", "google/gemini-3-flash-preview");
 var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "anthropic/claude-sonnet-4.6");
-var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "nvidia/nemotron-3-super-120b-a12b");
-var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
-var player6 = await new FantasyAgent().CreateFantasyAgentAsync("player-06", "moonshotai/kimi-k2.6");
-var player7 = await new FantasyAgent().CreateFantasyAgentAsync("player-07", "z-ai/glm-5.1");
-var player8 = await new FantasyAgent().CreateFantasyAgentAsync("player-08", "deepseek/deepseek-v3.2");
-var player9 = await new FantasyAgent().CreateFantasyAgentAsync("player-09", "minimax/minimax-m2.7");
-var player10 = await new FantasyAgent().CreateFantasyAgentAsync("player-10", "mistralai/mistral-small-2603");
-agents.Add(player1);
-agents.Add(player2);
+//var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "nvidia/nemotron-3-super-120b-a12b");
+//var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
+//var player6 = await new FantasyAgent().CreateFantasyAgentAsync("player-06", "moonshotai/kimi-k2.6");
+//var player7 = await new FantasyAgent().CreateFantasyAgentAsync("player-07", "z-ai/glm-5.1");
+//var player8 = await new FantasyAgent().CreateFantasyAgentAsync("player-08", "deepseek/deepseek-v3.2");
+//var player9 = await new FantasyAgent().CreateFantasyAgentAsync("player-09", "minimax/minimax-m2.7");
+//var player10 = await new FantasyAgent().CreateFantasyAgentAsync("player-10", "mistralai/mistral-small-2603");
+//agents.Add(player1);
+//agents.Add(player2);
 agents.Add(player3);
-agents.Add(player4);
-agents.Add(player5);
-agents.Add(player6);
-agents.Add(player7);
-agents.Add(player8);
-agents.Add(player9);
-agents.Add(player10);
+//agents.Add(player4);
+//agents.Add(player5);
+//agents.Add(player6);
+//agents.Add(player7);
+//agents.Add(player8);
+//agents.Add(player9);
+//agents.Add(player10);
 
 // First step is to have each agent check if they're bootstrapped, and if not, begin that process.
 //This will involve them creating a bootstrap file with their team name, strategy, and logo, and initializing their profile with this information.
@@ -60,7 +60,7 @@ foreach(var agent in agents)
     }
 }
 
-
+return;
 logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 
 // Going to simulate the draft. Since this is a snake draft, the order will reverse every other round.

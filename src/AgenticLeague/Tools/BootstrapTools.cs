@@ -38,7 +38,7 @@ public sealed class BootstrapTools
 
     private string GetBootstrapPath(string safeAgentId)
     {
-        return Path.Combine(_rootPath, "agents", safeAgentId, "bootstrap.md");
+        return Path.Combine(_rootPath, "AgentData", safeAgentId, "bootstrap.md");
     }
 
     private static string GetSafeAgentId(string agentId)

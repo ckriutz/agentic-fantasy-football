@@ -372,11 +372,25 @@ Results come back ordered by CreatedAtUtc descending (newest first). Give it a t
 ### Step 4 - Create the League System
 This is where we will create the system that allows the agents to play against each other. We will need to:
 
-- Create a schedule for the season, and then have the agents play their games according to that schedule.
+- Create a schedule for the season, and then have the agents play their games according to that schedule. The players on the teams are real football players who play their games Thursday, Saturday, Sunday, or Monday night.
 - Calculate the points for each player and team, and then determine the winner of each game.
 - Keep track of the standings throughout the season.
 - Track key events and decisions made by the agents, and log those for later analysis and writing.
-- Keep track of what players belong to which teams.
+- Allow a system for waver wire, dropping players, adding players and trading players.
+- Create a service where the agents are pompted on a schedule to manage their roster for things like moving players on and off the bench, checking for injuries, bye week players, and looking at available players to see if they should drop a player, or add one.
+
+The flow for the application is:
+- Bootstrap agents.
+- Draft.
+- Run the season.
+
+Things to figure out:
+- How often should we prompt the agents to manage their roster?
+- Is there a way to determine if a player is questionable and prompt only the agent that player is on?
+- How do we manage a trade system?
+- We need to understand what the waver-wire looks like, the rules, and how we add it to the system, and when it gets processed.
+
+**This entire system shoud run on it's own with no input from me.**
 
 ### Step 5 - Wire up the Draft
 The draft is a key part of the fantasy football season, and we will need to create a system that allows the agents to draft players autonomously. We will need to create a draft order, and then have the agents take turns drafting players according to that order. The agents will need to use their strategies to determine which players to draft, and they will need to access the player database to get information about the players they are considering drafting. We will also need to keep track of which players have been drafted and which players are still available.
@@ -400,6 +414,7 @@ Stuff that I still need to do:
 - When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
 - When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.
 - I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
+- Need some items in place to ensure an agent can't add more people than they have for the roster.
 
 ### Runtime Notes:
 April 24th - Using the new deepseek/deepseek-v4-flash model fails bootstrapping. Falling back on the deepseek/deepseek-v3.2 model, which works.

@@ -161,7 +161,7 @@ public sealed class AgentProfileTools
 
     private string GetAgentFolder(string safeAgentId)
     {
-        return Path.Combine(_rootPath, "agents", safeAgentId);
+        return Path.Combine(_rootPath, "AgentData", safeAgentId);
     }
 
     private string GetProfilePath(string safeAgentId)
