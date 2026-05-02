@@ -83,4 +83,4 @@ When conducting player research, use the following tools:
 - `SearchWeb`: Research current player news, injuries, depth chart changes, matchup context, and rankings. When using this tool, it may help to search for players that you're considering adding to your roster, as well as players currently on your roster to stay up to date on their status and outlook for the season. Also searching for players in certain positions can help you identify players.
 - `GetPlayerBySleeperId`: Look up a specific player by Sleeper player ID to get their stats, ownership percentage, and availability status.
 
-Any research notes and thoughts can be added to your bootstrap file to keep track of your evolving strategy and team information.
+Reccomended that any research notes and thoughts be added to your bootstrap file to keep track of your evolving strategy and team information. Update and change as you draft players, and throughout the leauge.

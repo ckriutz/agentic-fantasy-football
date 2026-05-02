@@ -5,7 +5,6 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
-using Microsoft.Identity.Client;
 
 public class FantasyAgent
 {
@@ -83,12 +82,14 @@ public class FantasyAgent
             ]);
     }
 
-    public async Task EnsureBootstrappedAsync()
+    // Since there is a possibility that the bootstrapping process could fail or be incomplete, we can try it again.
+    // We're also doing this recursively to make it simple, but we don't want to do it forever.
+    // So we can set a max number of attempts, and if we exceed that, we can log an error and move on, since we don't want one agent to hold up the entire league.
+    public async Task EnsureBootstrappedAsync(int attempt = 1, int maxAttempts = 3)
     {
         // We can check for sure to see if the agent is bootstrapped by looking at the profile file in the AgentData/{agentId} folder.
         // If it exists, we can assume the agent is bootstrapped, but we can check the IsBootstrapped field to be certain.
         // If it doesn't exist, we need to run the bootstrapping process.
-
         // First, check if the file exists, and if so, read the profile and check the IsBootstrapped field.
         var profile = await GetAgentProfileAsync();
 
@@ -123,6 +124,18 @@ public class FantasyAgent
         {
             var response = await RunAsync(bootstrapPrompt);
             Console.WriteLine($"Agent {_agentId} response: {response.Text}");
+
+            profile = await GetAgentProfileAsync();
+            if (profile == null || !profile.IsBootstrapped)
+            {
+                if (attempt >= maxAttempts)
+                {
+                    Console.WriteLine($"Agent {_agentId} exceeded maximum bootstrap attempts ({maxAttempts}). Moving on.");
+                    return;
+                }
+                Console.WriteLine($"Agent {_agentId} did not complete bootstrap (attempt {attempt}/{maxAttempts}). Retrying...");
+                await EnsureBootstrappedAsync(attempt + 1, maxAttempts);
+            }
         }
         catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
         {

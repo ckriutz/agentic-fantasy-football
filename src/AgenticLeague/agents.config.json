@@ -29,11 +29,11 @@
     },
     {
         "agentName": "player-08",
-        "model": "amazon/nova-2-lite-v1"
+        "model": "deepseek/deepseek-v4-flash"
     },
     {
         "agentName": "player-09",
-        "model": "ibm-granite/granite-4.1-8b"
+        "model": "minimax/minimax-m2.7"
     },
     {
         "agentName": "player-10",

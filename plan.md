@@ -421,5 +421,5 @@ Stuff that I still need to do:
 April 24th - Using the new deepseek/deepseek-v4-flash model fails bootstrapping. Falling back on the deepseek/deepseek-v3.2 model, which works.
 April 24th - A Full bootstrap of 10 players costs about $0.60, which isn't bad.
 April 24th - arcee-ai/trinity-large-thinking didnt select a player and that makes me think this model is not qualified to play. Going to swap it out.
-April 24th - xiaomi/mimo-v2.5 us also failing bootstrapping, swapping out with 
+April 24th - xiaomi/mimo-v2.5 us also failing bootstrapping, swapping out with ibm-granite/granite-4.1-8b. While I liked ibm-granite/granite-4.1-8b, it's really bad at this so I might swap it out as well. Also, amazon/nova-2-lite-v1 is not doing well, so I will swap that out too.
 April 24th - Starting credits before a test daft: $13.82.
