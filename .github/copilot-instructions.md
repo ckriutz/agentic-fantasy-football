@@ -20,7 +20,10 @@
 - `src/LeagueAPI/` — Player data service with Sleeper API integration
 - `src/AgenticLeague/` — Agent configuration and models
 
-## Note on creating functions/nmethods
+## Testing
+Right now, testing is mostly manual. We will run the program and observe the agents' behavior and the draft process. In the future, we may want to add automated tests for some of the components, but for now, we will focus on manual testing and observation. Do not create automated tests unless explicitly asked to do so.
+
+## Note on creating functions/methods
 Casey prefers to have the function/method to be on one line:
 
 Example of what not to do:
@@ -43,7 +46,6 @@ static async Task RunDraftPickWithRetriesAsync(AIAgent agent, string draftPrompt
 {
 }
 ```
-
 
 ## Casey's Notes
 - Often misspells Leauge as League. Be mindful of this when working on the codebase.

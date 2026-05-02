@@ -408,8 +408,8 @@ Stuff that I still need to do:
 - Determine the best location for external prompt/context files for FantasyAgent (for example: content files in the project vs embedded resources), balancing editability during development with reliability in published builds.
 
 # Some things to add, change, or refactor:
-- We may want to create a BootstrapService that handles all the bootstrapping logic for the agents, including strategy definition, team name/logo creation, and initial player research. This would help keep the main program cleaner and more focused on orchestration.
-- As part of the BootstrapService, I want to find a way to read in the profile.json file to see if the agent has already been bootstrapped, and if so, skip the bootstrapping process. This will save us on tokens.
+- ✅ We may want to create a BootstrapService that handles all the bootstrapping logic for the agents, including strategy definition, team name/logo creation, and initial player research. This would help keep the main program cleaner and more focused on orchestration.
+- ✅As part of the BootstrapService, I want to find a way to read in the profile.json file to see if the agent has already been bootstrapped, and if so, skip the bootstrapping process. This will save us on tokens.
 - ✅ DONE: Lets move the bootstrap.md, and profile.md files out of the Agents folder. This will help keep the Agents folder cleaner and more focused on the agent code itself. We can create a new folder called "AgentData" or something similar to store these files. 
 - ✅ DONE: When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
 - When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.

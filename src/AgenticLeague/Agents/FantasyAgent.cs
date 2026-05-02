@@ -5,20 +5,33 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using OpenAI.Chat;
+using Microsoft.Identity.Client;
 
 public class FantasyAgent
 {
     private static readonly string endpoint = Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1";
     private static readonly string apiKey = GetRequiredEnvironmentVariable("OPENROUTER_API_KEY");
-    public AIAgent? _agent;
+    private AIAgent? _agent;
     HttpClient httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5000/") };
     private McpClient? _leagueApiMcpClient;
+    private readonly string _modelName;
+    private readonly string _agentId;
 
-    public async Task<AIAgent> CreateFantasyAgentAsync(string agentId, string modelName)
+    public FantasyAgent(string agentId, string modelName)
     {
+        _agentId = agentId;
+        _modelName = modelName;
+    }
+
+    public string GetAgentName() => _agentId;
+
+    public async Task InitializeAsync()
+    {
+        if (_agent != null) { return; } // Already initialized, no need to do it again.
+
         var agentProfileTools = new AgentProfileTools();
         var bootstrapTools = new BootstrapTools();
-        var imageGenerationTool = new ImageGenerationTool(agentId);
+        var imageGenerationTool = new ImageGenerationTool(_agentId);
         var searchTool = new SearchTool();
         
         var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
@@ -35,37 +48,26 @@ public class FantasyAgent
 
         var agentInstructions =
         $"""
-        You are {agentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
-        You are using the {modelName} model to help you make decisions and manage your team.
+        You are {_agentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
+        You are using the {_modelName} model to help you make decisions and manage your team.
         
-        First, check to see if you've already bootstrapped yourself by looking for the file AgentData/{agentId}/bootstrap.md.
-        If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
-        - Your first task is to create the bootstrap.md file if it doesn't exist.
-        - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file and your agent profile.
-        - Create a strategy for how you will win your league this season.
-        - Include any information you think is relevant, such as your league settings, your team name, your draft strategy, and anything else you think is important to include in your bootstrap file.
-        - Generate a logo for your team using the image generation tool. You can use the team name and your strategy as inspiration for your logo. The logo should be simple and something that would look good on a fantasy football website. Save the filename in your bootstrap file as well.
-        - Run the InitializeAgentProfile tool to initialize your agent profile.
-        - Use the SetTeamName, SetLogoPath, and SetBootstrapStatus tools to save your team name, logo path, and bootstrap status in your profile.
-        
-        If the bootstrap file exists, read it to get up to speed on your current team, league, and any other relevant information.
-        You can update this bootstrap file at any time to keep track of your evolving strategy and team information. This is encouraged as the season goes on and you learn more about your team and the league.
-        Just make sure to keep your profile updated with any changes you make to your bootstrap file.
-        If the bootstrap file is missing a logo, generate one based on your team name and strategy and update the bootstrap file and your profile with the new logo information.
+        Your current team name, strategy, status, and memory can be found by using `ReadAgentBootstrap` tool to read your bootstrapping file. Always read this file before making any decisions.
 
-        With this information, here are the fantasy football league rules and settings that you should be aware of:
+        Here are the fantasy football league rules and settings that you should be aware of:
         {leaguePrompt}
 
         Here are instructions on how to play fantasy football and manage your team:
         {howToPlayPrompt}
 
-        Use the SearchWeb tool whenever you need current external research about players, injuries, depth charts, rankings, or matchup context before making a move.
+        Use the `SearchWeb` tool whenever you need current external research about players, injuries, depth charts, rankings, or matchup context before making a move.
+        Use the `ReadAgentBootstrap` and `WriteAgentBootstrap` tools to read and write your bootstrap file, which contains your strategy, team name, logo path, and bootstrap status.
+        This is where you should keep any information about your team that you want to remember across interactions.
         """;
 
-        _agent = new ChatClient(modelName, new ApiKeyCredential(apiKey),
+        _agent = new ChatClient(_modelName, new ApiKeyCredential(apiKey),
             new OpenAIClientOptions { Endpoint = new Uri(endpoint), NetworkTimeout = TimeSpan.FromMinutes(5) })
             .AsIChatClient()
-            .AsAIAgent(name: agentId, instructions: agentInstructions,
+            .AsAIAgent(name: _agentId, instructions: agentInstructions,
             tools:
             [
                 AIFunctionFactory.Create(agentProfileTools.ReadAgentProfile),
@@ -79,14 +81,69 @@ public class FantasyAgent
                 AIFunctionFactory.Create(searchTool.SearchWeb),
                 ..mcpTools
             ]);
-
-        return _agent;
     }
 
-    public async Task<AgentProfile> GetAgentProfileAsync(string agentId)
+    public async Task EnsureBootstrappedAsync()
+    {
+        // We can check for sure to see if the agent is bootstrapped by looking at the profile file in the AgentData/{agentId} folder.
+        // If it exists, we can assume the agent is bootstrapped, but we can check the IsBootstrapped field to be certain.
+        // If it doesn't exist, we need to run the bootstrapping process.
+
+        // First, check if the file exists, and if so, read the profile and check the IsBootstrapped field.
+        var profile = await GetAgentProfileAsync();
+
+        // Lets ensure all parts of the bootstrap process are complete by checking the bootstrap file and the profile file.
+        // If any part is incompletewe should run the bootstrapping process again to ensure everything is complete and correct.
+
+        if (profile != null)
+        {
+            if (profile.TeamName != null && profile.LogoPath != null && profile.IsBootstrapped && profile.BootstrapPath != null)
+            {
+                Console.WriteLine($"Agent {_agentId} is already bootstrapped.");
+                return;
+            }
+            Console.WriteLine($"Agent {_agentId} is not fully bootstrapped.");
+        }
+
+        var bootstrapPrompt = $"""
+        Check to see if you've already bootstrapped yourself by looking for the file AgentData/{_agentId}/bootstrap.md.
+        If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
+        - Your first task is to create the bootstrap.md file if it doesn't exist.
+        - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file and your agent profile.
+        - Create a strategy for how you will win your league this season.
+        - Include any information you think is relevant, such as your league settings, your team name, your draft strategy, and anything else you think is important to include in your bootstrap file.
+        - Generate a logo for your team using the image generation tool. You can use the team name and your strategy as inspiration for your logo. The logo should be simple and something that would look good on a fantasy football website. Save the filename in your bootstrap file as well.
+        - Run the InitializeAgentProfile tool to initialize your agent profile.
+        - Use the SetTeamName, SetLogoPath, and SetBootstrapStatus tools to save your team name, logo path, and bootstrap status in your profile.
+        If you are already bootstrapped, just check to make sure the bootstrap.md file is complete and the profile.json file is correct and then respond with: ✅ (your team name) is bootstrapped and ready to go!
+        There is no need, if you're bootstrapped, to respond with your strategy again. Just confirm that you're bootstrapped and ready to go.
+        """;
+
+        try
+        {
+            var response = await RunAsync(bootstrapPrompt);
+            Console.WriteLine($"Agent {_agentId} response: {response.Text}");
+        }
+        catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
+        {
+            Console.WriteLine($"Agent {_agentId} returned unknown finish reason — skipping");
+        }
+    }
+
+    public async Task<AgentResponse> RunAsync(string input)
+    {
+        if (_agent == null)
+        {
+            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
+        }
+
+        return await _agent.RunAsync(input);
+    }
+
+    public async Task<AgentProfile> GetAgentProfileAsync()
     {
         var agentProfileTools = new AgentProfileTools();
-        return await agentProfileTools.ReadAgentProfile(agentId);
+        return await agentProfileTools.ReadAgentProfile(_agentId);
     }
 
     private static string LoadPrompt(string relativePath)

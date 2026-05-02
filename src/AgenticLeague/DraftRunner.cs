@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 public class DraftRunner
 {
-    private readonly List<AIAgent> _agents;
+    private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     const int maxDraftPickAttempts = 3;
     private DraftState _draftState = new();
@@ -14,7 +14,7 @@ public class DraftRunner
     // and orchestrate the drafting process. It will keep track of the draft state,
     // including which round and pick we're on, and the order of agents in the draft.
     // It will also handle saving and loading this state to a file so that we can resume if needed.
-    public DraftRunner(List<AIAgent> agents, ILogger logger)
+    public DraftRunner(List<FantasyAgent> agents, ILogger logger)
     {
         _agents = agents.ToList();
         _logger = logger;
@@ -43,7 +43,7 @@ public class DraftRunner
         }
         else
         {
-                        // If there is no draft-state.json file, we can create one to track the state of the draft as it progresses.
+            // If there is no draft-state.json file, we can create one to track the state of the draft as it progresses.
             // The draft order is determined here (randomized) and persisted so it stays consistent across runs/resumes.
             _logger.LogInformation("No existing draft state found. Starting new draft.");
 
@@ -56,7 +56,7 @@ public class DraftRunner
                 IsDraftComplete = false,
                 Round = 1,
                 Pick = 1,
-                DraftOrder = randomizedAgents.Select(a => a.Name ?? "unknown").ToList()
+                DraftOrder = randomizedAgents.Select(a => a.GetAgentName() ?? "unknown").ToList()
             };
 
             // Save the draft state so we can begin.
@@ -70,6 +70,7 @@ public class DraftRunner
 
         // Let loop though every round, giving each agent their chance to pick.
         // There are 15 rounds, so each player can fill their roster.
+        // Right now, for testing purposes, we're just doing 2 rounds, but we can increase this to 15 later.
         for(; _draftState.Round <= 2; _draftState.Round++)
         {
             _logger.LogInformation($"Starting round {_draftState.Round}");
@@ -105,7 +106,7 @@ public class DraftRunner
 
     // This is another helper method to get the list of agents in the order of the draft based on the draft state.
     // This might need some work we have to test it a little bit.
-    List<AIAgent> GetOrderedAgents()
+    List<FantasyAgent> GetOrderedAgents()
     {
         if (_draftState.DraftOrder.Count == 0)
         {
@@ -113,8 +114,8 @@ public class DraftRunner
         }
 
         var agentsByName = _agents
-            .Where(agent => !string.IsNullOrWhiteSpace(agent.Name))
-            .ToDictionary(agent => agent.Name!, StringComparer.OrdinalIgnoreCase);
+            .Where(agent => !string.IsNullOrWhiteSpace(agent.GetAgentName()))
+            .ToDictionary(agent => agent.GetAgentName(), StringComparer.OrdinalIgnoreCase);
 
         return _draftState.DraftOrder.Select(agentName =>
         {
@@ -130,7 +131,7 @@ public class DraftRunner
     // This where the real work is to draft a player.
     // We give the agent a prompt with the current round and pick, and ask them to use their tools to research and add a player to their roster.
     // This has the added benefit of a retry/backoff mechanism in case something goes wrong with the agent's response or tool use, which can happen sometimes!
-    async Task DraftPlayerAsync(AIAgent agent, int round, int pick, int maxAttempts)
+    async Task DraftPlayerAsync(FantasyAgent agent, int round, int pick, int maxAttempts)
     {
         // The main prompt being passed to the agent for drafting.
         var draftPrompt = $"""
@@ -145,7 +146,7 @@ public class DraftRunner
         var draftPickRetryBackoffs = new[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(90) };
         
         // Make sure the agent has a name for logging purposes, and then attempt to make the draft pick with retries and backoff in case of failure.
-        var agentName = agent.Name ?? throw new InvalidOperationException("Draft agent name is required before making picks.");
+        var agentName = agent.GetAgentName() ?? throw new InvalidOperationException("Draft agent name is required before making picks.");
 
         // So we do three attempts to make the draft pick. If it fails due to a timeout, transient error, or other issue, we catch that and retry after a delay.
         // If it continues to fail after the max attempts, we log that and skip the pick so the draft can continue.

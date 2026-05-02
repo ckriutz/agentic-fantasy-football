@@ -40,6 +40,8 @@ Returns: Research data.
 | `lastSeasonFantasyPoints` | Actual points scored last season | Use to validate projections; flag large discrepancies |
 | `averageDraftPosition` | Average pick position in drafts; lower = higher demand | Use to assess market consensus on a player |
 | `byeWeek` | Week the player's team has no game | **Never start a player on their bye week** |
+| `depth_chart_order` | Player's position on the depth chart; 1 = starter | Use to determine likely playing time |
+| `injuryStatus` | Injury status (e.g., null, "Questionable", "Out", "IR") | Bench players who are "Out"; monitor "Questionable" closely. IR mean the player will be out for an extended period of time. Null values mean no injury concerns currently reported |
 
 ---
 
@@ -55,7 +57,7 @@ Returns: Research data.
 
 **When setting a lineup:**
 1. Check each starter's `byeWeek` — bench any player on bye.
-2. Check injury/availability status — bench any player who is out.
+2. Check injury/availability status using the value `injuryStatus` — if a players is questionable you may not need to bench the player, but check constantly for updates on the player's status. If a player is out, bench them.
 3. Compare `projectedFantasyPoints` among eligible players at each position — start the highest projection.
 
 **When a roster spot is weak:**

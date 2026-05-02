@@ -1,66 +1,38 @@
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Cryptography;
-using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 var builder = Host.CreateApplicationBuilder(args);
 
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
-List<AIAgent> agents = new List<AIAgent>();
+logger.LogInformation("Starting Agentic Fantasy Football League...");
 
-//var dsa = await new DataStatusAgent().CreateDataStatusAgentAsync();
-//var player1 = await new FantasyAgent().CreateFantasyAgentAsync("player-01", "x-ai/grok-4.20");
-//var player2 = await new FantasyAgent().CreateFantasyAgentAsync("player-02", "google/gemini-3-flash-preview");
-var player3 = await new FantasyAgent().CreateFantasyAgentAsync("player-03", "anthropic/claude-sonnet-4.6");
-//var player4 = await new FantasyAgent().CreateFantasyAgentAsync("player-04", "nvidia/nemotron-3-super-120b-a12b");
-//var player5 = await new FantasyAgent().CreateFantasyAgentAsync("player-05", "openai/gpt-5.4");
-//var player6 = await new FantasyAgent().CreateFantasyAgentAsync("player-06", "moonshotai/kimi-k2.6");
-//var player7 = await new FantasyAgent().CreateFantasyAgentAsync("player-07", "z-ai/glm-5.1");
-//var player8 = await new FantasyAgent().CreateFantasyAgentAsync("player-08", "deepseek/deepseek-v3.2");
-//var player9 = await new FantasyAgent().CreateFantasyAgentAsync("player-09", "minimax/minimax-m2.7");
-//var player10 = await new FantasyAgent().CreateFantasyAgentAsync("player-10", "mistralai/mistral-small-2603");
-//agents.Add(player1);
-//agents.Add(player2);
-agents.Add(player3);
-//agents.Add(player4);
-//agents.Add(player5);
-//agents.Add(player6);
-//agents.Add(player7);
-//agents.Add(player8);
-//agents.Add(player9);
-//agents.Add(player10);
+List<FantasyAgent> agents = new List<FantasyAgent>();
 
-// First step is to have each agent check if they're bootstrapped, and if not, begin that process.
-//This will involve them creating a bootstrap file with their team name, strategy, and logo, and initializing their profile with this information.
-//They should respond back with their team name and a quick summary of their strategy.
-
-logger.LogInformation("Checking if agents are bootstrapped and bootstrapping if needed...");
-
-foreach(var agent in agents)
+// Load the agents.config.json file to get the list of agents and their corresponding models.
+var agentsConfigPath = Path.Combine(AppContext.BaseDirectory, "agents.config.json");
+if (!File.Exists(agentsConfigPath))
 {
-    var bootstrapPrompt = """
-        You're being initilized. Check to see if you're bootstrapped, and if not, begin that process. Once bootstrapped, respond back with your team name and quick summary of your strategy. 
-        If you are bootstrapped already, just check to make sure the bootstrap.md file is complete and the profile.json file is correct and then respond with: ✅ (your team name) is bootstrapped and ready to go!"
-        There is no need, if you're bootstrapped, to respond with your strategy again. Just confirm that you're bootstrapped and ready to go.
-    """;
-    try
-    {
-        var response = await agent.RunAsync(bootstrapPrompt);
-        logger.LogInformation("Agent {agentName} response: {Response}", agent.Name, response.Text);
-    }
-    catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
-    {
-        logger.LogWarning("Agent {agentName} returned unknown finish reason — skipping", agent.Name);
-    }
+    logger.LogError("Agents configuration file not found at '{path}'. Please create an agents.config.json file with the list of agents and their models.", agentsConfigPath);
+    return;
+}
+// Read in the agents configuration and initialize each agent accordingly.
+var agentsConfigJson = await File.ReadAllTextAsync(agentsConfigPath);
+var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, string>>>(agentsConfigJson);
+foreach(var agentConfig in agentsConfig)
+{
+    // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
+    // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
+    var agentName = agentConfig["agentName"].ToString()!;
+    var model = agentConfig["model"].ToString()!;
+    var fantasyAgent = new FantasyAgent(agentName, model);
+    await fantasyAgent.InitializeAsync();
+    await fantasyAgent.EnsureBootstrappedAsync();
+    agents.Add(fantasyAgent);
 }
 
-return;
 logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 
 // Going to simulate the draft. Since this is a snake draft, the order will reverse every other round.
@@ -69,18 +41,8 @@ logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 // If so, they'll use the tools available to them to do research and find a player to add to their roster.
 // Then they'll use the tools to add that player to their roster. They'll select ONE player only.
 // They'll respond with the name of the player they added and why they chose that player based on their strategy and team needs.
-logger.LogInformation("Starting the draft!");
-
 // To make things fair, lets randomize the order of the agents before starting the draft.
 // This will ensure that no agent has an inherent advantage based on their position in the draft order.
 DraftRunner draftRunner = new DraftRunner(agents, logger);
 await draftRunner.RunDraftAsync();
 logger.LogInformation("Draft is complete!");
-
-
-//foreach(var agent in agents)
-//{
-//    var response = await agent.RunAsync("Look at your roster and identify if you have room for additional players. If so, use the tools available to you to do research and find a player to add to your roster. Then use the tools to add that player to your roster. Select ONE player only. Respond with the name of the player you added and why you chose that player based on your strategy and team needs.");
-//    logger.LogInformation("Agent {agentName} response: {Response}", agent.Name, response);
-//    await LogDecisionAsync(agent.Name, 0, "AddPlayer", response.Text, "Draft", logger);
-//}
