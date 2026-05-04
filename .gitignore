@@ -5,6 +5,7 @@
 .yahoo_tokens.json
 src/LeagueAPI/appsettings.Development.json
 /src/AgenticLeague/AgentData/**
+/src/AgenticLeague/draft-state.json
 
 # Local environment files
 .env
