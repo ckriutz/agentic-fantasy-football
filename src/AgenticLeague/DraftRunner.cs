@@ -10,7 +10,7 @@ public class DraftRunner
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     const int maxDraftPickAttempts = 3;
-    const int totalRounds = 4;
+    const int totalRounds = 15;
     private DraftState _draftState = new();
 
     // We start by creating a DraftRunner class that will manage the state of the draft
@@ -160,14 +160,16 @@ public class DraftRunner
         var draftPrompt = $"""
             The leauge is drafting, and you're up to select a player! You are allowed to add exactly one player to your roster.
             This is currently round {round} of {totalRounds} total rounds, and this is pick {pick} of {totalRounds * _agents.Count} total picks.
-            Look at your roster and identify what player you need to draft next.
+            Look at your roster using the `GetMyRoster` tool and identify what player you need to draft next.
+            If you haven't already use the `ReadAgentBootstrap` tool to read your bootstrap file and see your strategy and roster needs.
             Call `GetAvailablePlayers` filtered by the needed position to see players who are still available.
             Use the `SearchWeb` tool to research the available players.
             Call `AddPlayerToRoster` exactly one time with agentId {agent.GetAgentName()} and acquisitionSource `draft`.
             Once `AddPlayerToRoster` succeeds, stop calling tools and respond.
             Do not add a backup/second player in this turn.
             If `AddPlayerToRoster` fails, choose a different available player and try again.
-            Respond with the name of the player you added and why.
+            Update your Bootstrap file using the `WriteAgentBootstrap` tool to update your roster, strategy, or insights on your next pick based on the player you drafted.
+            When you're done, respond with the name of the player you added and why.
         """;
 
         // Sometimes things go slow, the agent might not respond in time, or there might be transient errors.

@@ -30,7 +30,7 @@ The system models an NFL fantasy season: 14-week regular season, waiver processi
 
 ### 4.1 — Add Lineup Slot Model (LeagueAPI)
 
-**What:** Add a `SlotType` string column to `RosterAssignmentEntity` to enforce strict positional slots. Valid values: `QB1`, `RB1`, `RB2`, `WR1`, `WR2`, `TE1`, `FLEX1`, `K1`, `DEF1`, `BN1`–`BN6`. A player's slot determines if they're a starter (non-BN) or benched (BN*).
+**What:** Add a `SlotType` string column to `RosterAssignmentEntity` to enforce strict positional slots. Valid values: `QB1`, `RB1`, `RB2`, `WR1`, `WR2`, `TE1`, `FLEX1`, `K1`, `DEF1`, `BN1`–`BN15`. A player's slot determines if they're a starter (non-BN) or benched (BN*). It is possible for every player to be on the bench, which is likely after a draft since no starting lineup has been selected. Also, since there are injured players, or multiple players on a bye-week, there may be starting positions empty as well.
 
 **Why:** The current roster is a flat list. Fantasy scoring only counts starters. Agents need to "set their lineup" each week, and the scoring engine needs to know which players are active.
 
@@ -45,6 +45,7 @@ The system models an NFL fantasy season: 14-week regular season, waiver processi
 - New EF migration
 - Update `PostgresRosterStore` — slot validation, assignment, swap logic
 - New MCP tools: `SetPlayerSlot(agentId, sleeperPlayerId, slotType)`, `AutoSetLineup(agentId)` (best-projected auto-fill)
+- When `AutoSetLineup(agentId)` is used the best players for each position will be selected based on the searchrank.
 
 ### 4.2 — Schedule Generator (LeagueAPI)
 

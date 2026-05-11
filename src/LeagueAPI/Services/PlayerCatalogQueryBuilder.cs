@@ -11,6 +11,8 @@ internal static class PlayerCatalogQueryBuilder
         var normalizedTeam = PlayerRecordFactory.NormalizeToken(query.Team);
         var normalizedPosition = PlayerRecordFactory.NormalizeToken(query.Position);
 
+        playersQuery = playersQuery.Where(entity => entity.Team != null && entity.Team != string.Empty);
+
         if (!string.IsNullOrWhiteSpace(normalizedName))
         {
             playersQuery = playersQuery.Where(entity =>

@@ -13,7 +13,7 @@
     },
     {
         "agentName": "player-04",
-        "model": "nvidia/nemotron-3-super-120b-a12b"
+        "model": "ibm-granite/granite-4.1-8b"
     },
     {
         "agentName": "player-05",
@@ -37,6 +37,6 @@
     },
     {
         "agentName": "player-10",
-        "model": "mistralai/mistral-small-2603"
+        "model": "mistralai/mistral-large-2512"
     }
 ]

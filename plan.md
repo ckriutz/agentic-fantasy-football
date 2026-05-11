@@ -417,4 +417,4 @@ Stuff that I still need to do:
 - I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
 - Need some items in place to ensure an agent can't add more people than they have for the roster.
 - Move the bootstrap, image, and profile files into Azure Blob Storage. We have `BlobPlan.md` to help focus that energy.
-
+- Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.
