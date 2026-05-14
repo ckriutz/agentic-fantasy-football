@@ -1,3 +1,5 @@
+using System.Reflection.Metadata.Ecma335;
+using System.Xml.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -18,6 +20,7 @@ if (!File.Exists(agentsConfigPath))
     logger.LogError("Agents configuration file not found at '{path}'. Please create an agents.config.json file with the list of agents and their models.", agentsConfigPath);
     return;
 }
+
 // Read in the agents configuration and initialize each agent accordingly.
 var agentsConfigJson = await File.ReadAllTextAsync(agentsConfigPath);
 var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, string>>>(agentsConfigJson);
@@ -46,3 +49,9 @@ logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 DraftRunner draftRunner = new DraftRunner(agents, logger);
 await draftRunner.RunDraftAsync();
 logger.LogInformation("Draft is complete!");
+
+// Now that the draft is complete, the agentes need to review theitr rosters and place their players on the appropriate slots on their roster (e.g. starting lineup, bench, injured reserve, etc.) based on their strategy and the players they drafted.
+var postDraftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts/FantasyAgent.post-draft.md");
+var prompt = await File.ReadAllTextAsync(postDraftPromptPath);
+var postResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
+Console.WriteLine($"Post-draft response from Player 4: {postResponse}");

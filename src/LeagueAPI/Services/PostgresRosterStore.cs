@@ -1,6 +1,7 @@
 using LeagueAPI.Data;
 using LeagueAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace LeagueAPI.Services;
 
@@ -27,7 +28,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 Player = player,
                 assignment.AgentId,
                 assignment.AcquiredAtUtc,
-                assignment.AcquisitionSource
+                assignment.AcquisitionSource,
+                assignment.SlotType
             })
             .ToListAsync(cancellationToken);
 
@@ -37,7 +39,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 result.AgentId,
                 IsAvailable: false,
                 result.AcquiredAtUtc,
-                result.AcquisitionSource))
+                result.AcquisitionSource,
+                result.SlotType ?? RosterSlotRules.BenchSlot,
+                RosterSlotRules.IsStarterSlot(result.SlotType)))
             .ToList();
     }
 
@@ -63,7 +67,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 player,
                 assignment != null ? assignment.AgentId : null,
                 assignment != null ? assignment.AcquiredAtUtc : (DateTimeOffset?)null,
-                assignment != null ? assignment.AcquisitionSource : null))
+                assignment != null ? assignment.AcquisitionSource : null,
+                assignment != null ? assignment.SlotType : null))
             .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
@@ -103,7 +108,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 OwnerAgentId: null,
                 IsAvailable: true,
                 AcquiredAtUtc: null,
-                AcquisitionSource: null))
+                AcquisitionSource: null,
+                SlotType: null,
+                IsStarter: false))
             .ToList();
     }
 
@@ -125,7 +132,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 player,
                 assignment != null ? assignment.AgentId : null,
                 assignment != null ? assignment.AcquiredAtUtc : (DateTimeOffset?)null,
-                assignment != null ? assignment.AcquisitionSource : null))
+                assignment != null ? assignment.AcquisitionSource : null,
+                assignment != null ? assignment.SlotType : null))
             .FirstOrDefaultAsync(cancellationToken);
 
         return result is null ? null : MapPlayerResult(result);
@@ -151,6 +159,10 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             ?? throw new RosterPlayerNotFoundException(
                 $"Active player '{normalizedSleeperPlayerId}' was not found.");
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            System.Data.IsolationLevel.Serializable,
+            cancellationToken);
+
         var existingAssignment = await dbContext.RosterAssignments
             .AsNoTracking()
             .FirstOrDefaultAsync(
@@ -160,6 +172,16 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         if (existingAssignment is not null)
         {
             throw CreateConflictException(normalizedAgentId, normalizedSleeperPlayerId, existingAssignment.AgentId);
+        }
+
+        var currentRosterCount = await dbContext.RosterAssignments
+            .AsNoTracking()
+            .CountAsync(a => a.AgentId == normalizedAgentId, cancellationToken);
+
+        if (currentRosterCount >= RosterSlotRules.MaxRosterSize)
+        {
+            throw new RosterConflictException(
+                $"Agent '{normalizedAgentId}' already has {currentRosterCount} players on their roster. The maximum roster size is {RosterSlotRules.MaxRosterSize}.");
         }
 
         var acquiredAtUtc = DateTimeOffset.UtcNow;
@@ -176,21 +198,14 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException ex)
         {
-            var conflictingAssignment = await dbContext.RosterAssignments
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    assignment => assignment.SleeperPlayerId == normalizedSleeperPlayerId,
-                    cancellationToken);
-
-            if (conflictingAssignment is not null)
+            if (IsUniqueViolation(ex))
             {
-                throw CreateConflictException(
-                    normalizedAgentId,
-                    normalizedSleeperPlayerId,
-                    conflictingAssignment.AgentId,
+                throw new RosterConflictException(
+                    $"Player '{normalizedSleeperPlayerId}' was added to another roster before this request completed.",
                     ex);
             }
 
@@ -202,7 +217,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             normalizedAgentId,
             IsAvailable: false,
             acquiredAtUtc,
-            normalizedAcquisitionSource);
+            normalizedAcquisitionSource,
+            SlotType: RosterSlotRules.BenchSlot,
+            IsStarter: false);
     }
 
     public async Task<RosterPlayerResult> RemovePlayerFromRosterAsync(
@@ -247,7 +264,157 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             OwnerAgentId: null,
             IsAvailable: true,
             AcquiredAtUtc: null,
-            AcquisitionSource: null);
+            AcquisitionSource: null,
+            SlotType: null,
+            IsStarter: false);
+    }
+
+    public async Task<RosterPlayerResult> SetPlayerSlotAsync(string agentId, string sleeperPlayerId, string slotType, CancellationToken cancellationToken)
+    {
+        var normalizedAgentId = NormalizeAgentId(agentId);
+        var normalizedSleeperPlayerId = NormalizeSleeperPlayerId(sleeperPlayerId);
+        var normalizedSlotType = RosterSlotRules.NormalizeSlotType(slotType);
+
+        if (!RosterSlotRules.IsKnownSlotType(normalizedSlotType))
+        {
+            throw new ArgumentException(
+                $"'{normalizedSlotType}' is not a valid slot type. Valid starter slots are: {string.Join(", ", RosterSlotRules.StarterSlots)}. Use '{RosterSlotRules.BenchSlot}' for bench.",
+                nameof(slotType));
+        }
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var targetAssignment = await dbContext.RosterAssignments
+            .FirstOrDefaultAsync(a => a.SleeperPlayerId == normalizedSleeperPlayerId, cancellationToken);
+
+        if (targetAssignment is null)
+        {
+            throw new RosterPlayerNotFoundException(
+                $"Player '{normalizedSleeperPlayerId}' is not currently on a roster.");
+        }
+
+        if (!string.Equals(targetAssignment.AgentId, normalizedAgentId, StringComparison.Ordinal))
+        {
+            throw new RosterConflictException(
+                $"Player '{normalizedSleeperPlayerId}' is owned by agent '{targetAssignment.AgentId}', not '{normalizedAgentId}'.");
+        }
+
+        var player = await dbContext.Players
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.SleeperPlayerId == normalizedSleeperPlayerId, cancellationToken)
+            ?? throw new RosterPlayerNotFoundException(
+                $"Player '{normalizedSleeperPlayerId}' could not be loaded.");
+
+        if (!RosterSlotRules.CanPlayerOccupySlot(normalizedSlotType, player.Position, player.FantasyPositionsTokenized))
+        {
+            var eligible = RosterSlotRules.GetEligibleStarterSlots(player.Position, player.FantasyPositionsTokenized);
+            var eligibleDesc = eligible.Count > 0
+                ? string.Join(", ", eligible)
+                : RosterSlotRules.BenchSlot;
+            throw new ArgumentException(
+                $"Player '{player.FullName ?? normalizedSleeperPlayerId}' (position: {player.Position}) cannot be placed in slot '{normalizedSlotType}'. Eligible slots: {eligibleDesc}, {RosterSlotRules.BenchSlot}.",
+                nameof(slotType));
+        }
+
+        if (RosterSlotRules.IsStarterSlot(normalizedSlotType))
+        {
+            var occupyingAssignment = await dbContext.RosterAssignments
+                .FirstOrDefaultAsync(
+                    a => a.AgentId == normalizedAgentId
+                         && a.SlotType == normalizedSlotType
+                         && a.SleeperPlayerId != normalizedSleeperPlayerId,
+                    cancellationToken);
+
+            if (occupyingAssignment is not null)
+            {
+                occupyingAssignment.SlotType = RosterSlotRules.BenchSlot;
+            }
+        }
+
+        targetAssignment.SlotType = normalizedSlotType;
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            throw new RosterConflictException(
+                $"Slot '{normalizedSlotType}' is already occupied on roster '{normalizedAgentId}'.",
+                ex);
+        }
+
+        return new RosterPlayerResult(
+            PlayerRecordFactory.Map(player),
+            normalizedAgentId,
+            IsAvailable: false,
+            targetAssignment.AcquiredAtUtc,
+            targetAssignment.AcquisitionSource,
+            normalizedSlotType,
+            RosterSlotRules.IsStarterSlot(normalizedSlotType));
+    }
+
+    public async Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineupAsync(string agentId, CancellationToken cancellationToken)
+    {
+        var normalizedAgentId = NormalizeAgentId(agentId);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var rosterRows = await (
+            from assignment in dbContext.RosterAssignments
+            join player in dbContext.Players.AsNoTracking().Where(entity => entity.Active)
+                on assignment.SleeperPlayerId equals player.SleeperPlayerId
+            where assignment.AgentId == normalizedAgentId
+            select new RosterAssignmentPlayerRow(assignment, player))
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in rosterRows)
+        {
+            row.Assignment.SlotType = RosterSlotRules.BenchSlot;
+        }
+
+        var remainingPlayers = rosterRows
+            .Select(row => new AutoLineupCandidate(
+                row.Assignment,
+                row.Player,
+                PlayerRecordFactory.Map(row.Player)))
+            .OrderBy(candidate => candidate.PlayerRecord.SearchRank ?? int.MaxValue)
+            .ThenBy(candidate => candidate.PlayerRecord.FullName ?? candidate.PlayerRecord.SleeperPlayerId)
+            .ThenBy(candidate => candidate.PlayerRecord.SleeperPlayerId)
+            .ToList();
+
+        foreach (var slotType in RosterSlotRules.StarterSlots)
+        {
+            var selectedPlayer = remainingPlayers.FirstOrDefault(candidate =>
+                RosterSlotRules.CanPlayerOccupySlot(
+                    slotType,
+                    candidate.Player.Position,
+                    candidate.Player.FantasyPositionsTokenized));
+
+            if (selectedPlayer is null)
+            {
+                continue;
+            }
+
+            selectedPlayer.Assignment.SlotType = slotType;
+            remainingPlayers.Remove(selectedPlayer);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return rosterRows
+            .OrderBy(row => RosterSlotRules.IsBenchSlot(row.Assignment.SlotType) ? 1 : 0)
+            .ThenBy(row => GetSlotSortOrder(row.Assignment.SlotType))
+            .ThenBy(row => row.Player.FullName ?? row.Player.SleeperPlayerId)
+            .ThenBy(row => row.Player.SleeperPlayerId)
+            .Select(row => new RosterPlayerResult(
+                PlayerRecordFactory.Map(row.Player),
+                normalizedAgentId,
+                IsAvailable: false,
+                row.Assignment.AcquiredAtUtc,
+                row.Assignment.AcquisitionSource,
+                row.Assignment.SlotType ?? RosterSlotRules.BenchSlot,
+                RosterSlotRules.IsStarterSlot(row.Assignment.SlotType)))
+            .ToList();
     }
 
     private static RosterPlayerResult MapPlayerResult(PlayerOwnershipRow result)
@@ -257,7 +424,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             result.OwnerAgentId,
             result.OwnerAgentId is null,
             result.AcquiredAtUtc,
-            result.AcquisitionSource);
+            result.AcquisitionSource,
+            result.SlotType ?? (result.OwnerAgentId is null ? null : RosterSlotRules.BenchSlot),
+            RosterSlotRules.IsStarterSlot(result.SlotType));
     }
 
     private static string NormalizeAgentId(string agentId)
@@ -268,6 +437,22 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         }
 
         return agentId.Trim();
+    }
+
+    private static int GetSlotSortOrder(string? slotType)
+    {
+        var normalizedSlotType = RosterSlotRules.NormalizeSlotType(slotType);
+        var slotIndex = RosterSlotRules.StarterSlots
+            .Select((slot, index) => new { slot, index })
+            .FirstOrDefault(item => string.Equals(item.slot, normalizedSlotType, StringComparison.Ordinal));
+
+        return slotIndex?.index ?? int.MaxValue;
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException exception)
+    {
+        return exception.InnerException is PostgresException postgresException
+               && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
     }
 
     private static string NormalizeSleeperPlayerId(string sleeperPlayerId)
@@ -320,5 +505,15 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         PlayerEntity Player,
         string? OwnerAgentId,
         DateTimeOffset? AcquiredAtUtc,
-        string? AcquisitionSource);
+        string? AcquisitionSource,
+        string? SlotType);
+
+    private sealed record RosterAssignmentPlayerRow(
+        RosterAssignmentEntity Assignment,
+        PlayerEntity Player);
+
+    private sealed record AutoLineupCandidate(
+        RosterAssignmentEntity Assignment,
+        PlayerEntity Player,
+        PlayerRecord PlayerRecord);
 }

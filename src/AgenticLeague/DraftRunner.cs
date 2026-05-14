@@ -10,7 +10,7 @@ public class DraftRunner
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     const int maxDraftPickAttempts = 3;
-    const int totalRounds = 15;
+    const int totalRounds = 16;
     private DraftState _draftState = new();
 
     // We start by creating a DraftRunner class that will manage the state of the draft
@@ -169,7 +169,7 @@ public class DraftRunner
             Do not add a backup/second player in this turn.
             If `AddPlayerToRoster` fails, choose a different available player and try again.
             Update your Bootstrap file using the `WriteAgentBootstrap` tool to update your roster, strategy, or insights on your next pick based on the player you drafted.
-            When you're done, respond with the name of the player you added and why.
+            When you're done, respond with the name of the player you added and why. This is your team so the reasoning for your pick should come from your perspective as the agent making the pick, based on your strategy and team needs.
         """;
 
         // Sometimes things go slow, the agent might not respond in time, or there might be transient errors.

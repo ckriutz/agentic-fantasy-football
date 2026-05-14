@@ -5,4 +5,6 @@ public sealed record RosterPlayerResult(
     string? OwnerAgentId,
     bool IsAvailable,
     DateTimeOffset? AcquiredAtUtc,
-    string? AcquisitionSource);
+    string? AcquisitionSource,
+    string? SlotType,
+    bool IsStarter);

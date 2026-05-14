@@ -40,4 +40,23 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
             sleeperPlayerId,
             CancellationToken.None);
     }
+
+    [McpServerTool, Description("Move a rostered player into a lineup slot. Valid starter slots are QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1. Use BN for bench.")]
+    public Task<RosterPlayerResult> SetPlayerSlot(
+        [Description("The agent ID, such as player-01.")] string agentId,
+        [Description("The Sleeper player ID.")] string sleeperPlayerId,
+        [Description("The slot type, such as QB1, RB1, FLEX1, K1, DEF1, or BN.")] string slotType)
+    {
+        return _rosterWriter.SetPlayerSlotAsync(
+            agentId,
+            sleeperPlayerId,
+            slotType,
+            CancellationToken.None);
+    }
+
+    [McpServerTool, Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN.")]
+    public Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineup([Description("The agent ID, such as player-01.")] string agentId)
+    {
+        return _rosterWriter.AutoSetLineupAsync(agentId, CancellationToken.None);
+    }
 }

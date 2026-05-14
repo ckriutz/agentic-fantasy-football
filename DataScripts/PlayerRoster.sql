@@ -3,8 +3,10 @@ SELECT "AgentId",
          players."Position",
          players."Team",
          players."ByeWeek",
-       "AcquiredAtUtc",
-       "AcquisitionSource"
+         roster_assignments."SlotType",
+         roster_assignments."AcquiredAtUtc",
+         roster_assignments."AcquisitionSource"
 FROM public.roster_assignments
 JOIN public.players ON players."SleeperPlayerId" = roster_assignments."SleeperPlayerId"
-WHERE roster_assignments."AgentId" = 'player-04'
+WHERE roster_assignments."AgentId" = 'player-01'
+ORDER BY "AcquiredAtUtc"

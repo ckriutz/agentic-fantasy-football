@@ -98,6 +98,8 @@ app.MapGet("/", () => Results.Ok(new
         "/api/players/available?name=&team=&position=&byeWeek=&limit=",
         "/api/rosters/{agentId}",
         "/api/rosters/{agentId}/players/{sleeperPlayerId}?acquisitionSource=",
+        "/api/rosters/{agentId}/players/{sleeperPlayerId}/slot?slotType=",
+        "/api/rosters/{agentId}/lineup/auto",
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper?force=true",
         "/api/sync/sportsdata/latest",
@@ -343,6 +345,61 @@ app.MapDelete("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
             cancellationToken);
 
         return Results.Ok(player);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterPlayerNotFoundException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterConflictException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
+
+app.MapPut("/api/rosters/{agentId}/players/{sleeperPlayerId}/slot", async (
+    string agentId,
+    string sleeperPlayerId,
+    string slotType,
+    IRosterWriter rosterWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var player = await rosterWriter.SetPlayerSlotAsync(
+            agentId,
+            sleeperPlayerId,
+            slotType,
+            cancellationToken);
+
+        return Results.Ok(player);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterPlayerNotFoundException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+    catch (RosterConflictException ex)
+    {
+        return CreateRosterErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/rosters/{agentId}/lineup/auto", async (
+    string agentId,
+    IRosterWriter rosterWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var roster = await rosterWriter.AutoSetLineupAsync(agentId, cancellationToken);
+        return Results.Ok(roster);
     }
     catch (ArgumentException ex)
     {

@@ -180,9 +180,13 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(assignment => assignment.AgentId).HasMaxLength(100);
             entity.Property(assignment => assignment.SleeperPlayerId).HasMaxLength(50);
             entity.Property(assignment => assignment.AcquisitionSource).HasMaxLength(32);
+            entity.Property(assignment => assignment.SlotType).IsRequired().HasMaxLength(8).HasDefaultValue("BN");
 
             entity.HasIndex(assignment => assignment.AgentId);
             entity.HasIndex(assignment => assignment.SleeperPlayerId).IsUnique();
+            entity.HasIndex(assignment => new { assignment.AgentId, assignment.SlotType })
+                .IsUnique()
+                .HasFilter("\"SlotType\" <> 'BN'");
 
             entity.HasOne<PlayerEntity>()
                 .WithMany()

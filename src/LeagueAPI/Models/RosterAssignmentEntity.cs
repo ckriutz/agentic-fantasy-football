@@ -11,4 +11,6 @@ public sealed class RosterAssignmentEntity
     public DateTimeOffset AcquiredAtUtc { get; set; }
 
     public required string AcquisitionSource { get; set; }
+
+    public string SlotType { get; set; } = "BN";
 }

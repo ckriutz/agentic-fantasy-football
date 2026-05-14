@@ -19,14 +19,14 @@
 | FLEX | 1 | RB/WR/TE (any of three) |
 | K | 1 | Kicker |
 | DEF | 1 | Defense/Special Teams |
-| **Bench** | **6** | Reserve players |
-| **Total Roster Size** | **15** | |
+| **Bench** | **7** | Reserve players |
+| **Total Roster Size** | **17** | |
 
 ### Draft Format
 
 - **Type**: Snake Draft (alternating order per round)
 - **Number of Teams**: 10
-- **Total Picks**: 150 (10 teams × 15 rounds)
+- **Total Picks**: 160 (10 teams × 16 rounds)
 
 ## Scoring Settings
 

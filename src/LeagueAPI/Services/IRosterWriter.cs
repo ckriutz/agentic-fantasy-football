@@ -14,4 +14,14 @@ public interface IRosterWriter
         string agentId,
         string sleeperPlayerId,
         CancellationToken cancellationToken);
+
+    Task<RosterPlayerResult> SetPlayerSlotAsync(
+        string agentId,
+        string sleeperPlayerId,
+        string slotType,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineupAsync(
+        string agentId,
+        CancellationToken cancellationToken);
 }

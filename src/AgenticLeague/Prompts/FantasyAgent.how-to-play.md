@@ -24,9 +24,12 @@ Returns: all unowned players with stats and availability metadata.
 Returns: all players currently on your roster with stats and availability metadata.
 
 ### `SearchWeb`
-**Use when**: You need to look up players, teams, positions, and fantasy football guidance. Very helpful for researching players.
+**Use when**: You need to look up players, teams, positions, and fantasy football guidance. Very helpful for researching players. You can do this at any time.
 
 Returns: Research data.
+
+### `SetPlayerSlot`
+**Use when**: You need to place a player in a position on a starting slot. The valid slot values are: **QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1, BN**. You must use these exact slot names (including the number suffix).
 
 ---
 
