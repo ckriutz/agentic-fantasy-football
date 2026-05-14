@@ -393,6 +393,7 @@ Things to figure out:
 **This entire system shoud run on it's own with no input from me.**
 
 ### Step 5 - Wire up the Draft
+✅ This is complete.
 The draft is a key part of the fantasy football season, and we will need to create a system that allows the agents to draft players autonomously. We will need to create a draft order, and then have the agents take turns drafting players according to that order. The agents will need to use their strategies to determine which players to draft, and they will need to access the player database to get information about the players they are considering drafting. We will also need to keep track of which players have been drafted and which players are still available.
 
 This has been completed but some testing needs to be done. If we stop a draft in the middle, can we restart and draft again? This needs to be tested.
@@ -415,6 +416,6 @@ Stuff that I still need to do:
 - ✅ DONE: When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
 - When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.
 - I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
-- Need some items in place to ensure an agent can't add more people than they have for the roster.
+- ✅ Need some items in place to ensure an agent can't add more people than they have for the roster.
 - Move the bootstrap, image, and profile files into Azure Blob Storage. We have `BlobPlan.md` to help focus that energy.
 - Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.

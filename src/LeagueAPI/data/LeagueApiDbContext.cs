@@ -31,6 +31,12 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
+    public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
+
+    public DbSet<WaiverClaimEntity> WaiverClaims => Set<WaiverClaimEntity>();
+
+    public DbSet<WaiverProcessRunEntity> WaiverProcessRuns => Set<WaiverProcessRunEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PlayerEntity>(entity =>
@@ -233,6 +239,41 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
                 .WithMany(template => template.Rules)
                 .HasForeignKey(rule => rule.TemplateKey)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WaiverPriorityEntity>(entity =>
+        {
+            entity.ToTable("waiver_priority");
+            entity.HasKey(priority => priority.AgentId);
+
+            entity.Property(priority => priority.AgentId).HasMaxLength(100);
+            entity.HasIndex(priority => priority.Priority).IsUnique();
+        });
+
+        modelBuilder.Entity<WaiverClaimEntity>(entity =>
+        {
+            entity.ToTable("waiver_claims");
+            entity.HasKey(claim => claim.WaiverClaimId);
+
+            entity.Property(claim => claim.AgentId).HasMaxLength(100);
+            entity.Property(claim => claim.AddSleeperPlayerId).HasMaxLength(50);
+            entity.Property(claim => claim.DropSleeperPlayerId).HasMaxLength(50);
+            entity.Property(claim => claim.Status).HasMaxLength(32);
+            entity.Property(claim => claim.FailureReason).HasColumnType("text");
+
+            entity.HasIndex(claim => new { claim.Season, claim.Week, claim.Status });
+            entity.HasIndex(claim => new { claim.Season, claim.Week, claim.AgentId, claim.ClaimOrder });
+        });
+
+        modelBuilder.Entity<WaiverProcessRunEntity>(entity =>
+        {
+            entity.ToTable("waiver_process_runs");
+            entity.HasKey(run => run.WaiverProcessRunId);
+
+            entity.Property(run => run.Status).HasMaxLength(32);
+            entity.Property(run => run.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(run => new { run.Season, run.Week });
         });
     }
 }

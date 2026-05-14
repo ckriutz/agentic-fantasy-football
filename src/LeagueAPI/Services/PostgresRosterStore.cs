@@ -98,6 +98,7 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             .ToListAsync(cancellationToken);
 
         return players
+            .Where(player => RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
             .Select(PlayerRecordFactory.Map)
             .OrderBy(player => player.SearchRank ?? int.MaxValue)
             .ThenBy(player => player.FullName ?? player.SleeperPlayerId)
@@ -158,6 +159,13 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 cancellationToken)
             ?? throw new RosterPlayerNotFoundException(
                 $"Active player '{normalizedSleeperPlayerId}' was not found.");
+
+        if (!RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
+        {
+            throw new ArgumentException(
+                $"Player '{player.FullName ?? normalizedSleeperPlayerId}' (position: {player.Position}) is not eligible for this league's roster slots.",
+                nameof(sleeperPlayerId));
+        }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
             System.Data.IsolationLevel.Serializable,

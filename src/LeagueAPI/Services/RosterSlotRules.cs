@@ -84,6 +84,11 @@ internal static class RosterSlotRules
             .ToArray();
     }
 
+    public static bool CanPlayerBeRostered(string? position, string? fantasyPositionsTokenized)
+    {
+        return GetEligibleStarterSlots(position, fantasyPositionsTokenized).Count > 0;
+    }
+
     private static HashSet<string> GetEligiblePositions(string? position, string? fantasyPositionsTokenized)
     {
         var eligiblePositions = new HashSet<string>(StringComparer.Ordinal);

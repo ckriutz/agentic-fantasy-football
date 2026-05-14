@@ -65,6 +65,10 @@ builder.Services.AddSingleton<IDecisionReader>(serviceProvider =>
 builder.Services.AddSingleton<IDecisionWriter>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresDecisionStore>());
 
+builder.Services.AddSingleton<PostgresWaiverService>();
+builder.Services.AddSingleton<IWaiverService>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresWaiverService>());
+
 builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
 builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
@@ -79,7 +83,8 @@ builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<PlayerCatalogTools>()
     .WithTools<YahooReadTools>()
-    .WithTools<RosterTools>();
+    .WithTools<RosterTools>()
+    .WithTools<WaiverTools>();
 
 var app = builder.Build();
 
@@ -121,7 +126,14 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/auth/refresh",
         "/api/yahoo/auth/test-connection",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
-        "/api/decisions/{agentId} (GET: list decisions for agent)"
+        "/api/decisions/{agentId} (GET: list decisions for agent)",
+        "/api/league/waivers/priority (GET: priority order)",
+        "/api/league/waivers/priority/seed (POST: seed from draft order, ?force=true to reset)",
+        "/api/league/waivers/{season}/{week} (GET: claims, ?agentId= to filter)",
+        "/api/league/waivers/{season}/{week}/claims (POST: submit prioritized claim list)",
+        "/api/league/waivers/{season}/{week}/process (POST: run waiver processing)",
+        "/api/league/waivers/{season}/{week}/status (GET: has week been processed?)",
+        "/api/league/free-agents/{season}/{week}/add (POST: immediate free-agent add/drop)"
     }
 }));
 
@@ -714,6 +726,122 @@ app.MapGet("/api/yahoo/auth/test-connection", async (
 {
     var payload = await yahooFantasyApiClient.GetGameInfoJsonAsync(cancellationToken);
     return Results.Content(payload, "application/json");
+});
+
+// --- Waivers ---
+
+static IResult CreateWaiverErrorResult(Exception exception)
+{
+    return exception switch
+    {
+        ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
+        RosterPlayerNotFoundException ex => Results.NotFound(new { error = ex.Message }),
+        RosterConflictException ex => Results.Conflict(new { error = ex.Message }),
+        InvalidOperationException ex => Results.Conflict(new { error = ex.Message }),
+        _ => Results.Problem(exception.Message)
+    };
+}
+
+app.MapGet("/api/league/waivers/priority", async (
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    var priority = await waiverService.GetWaiverPriorityAsync(cancellationToken);
+    return Results.Ok(priority);
+});
+
+app.MapPost("/api/league/waivers/priority/seed", async (
+    SeedWaiverPriorityRequest request,
+    bool? force,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        await waiverService.SeedWaiverPriorityAsync(request.DraftOrder, force ?? false, cancellationToken);
+        var priority = await waiverService.GetWaiverPriorityAsync(cancellationToken);
+        return Results.Ok(priority);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/league/waivers/{season:int}/{week:int}", async (
+    int season,
+    int week,
+    string? agentId,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    var claims = await waiverService.GetWaiverClaimsAsync(season, week, agentId, cancellationToken);
+    return Results.Ok(claims);
+});
+
+app.MapPost("/api/league/waivers/{season:int}/{week:int}/claims", async (
+    int season,
+    int week,
+    SubmitWaiverClaimsRequest request,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var claims = await waiverService.SubmitWaiverClaimsAsync(
+            request.AgentId, season, week, request.Claims, cancellationToken);
+        return Results.Ok(claims);
+    }
+    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
+    {
+        return CreateWaiverErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/league/waivers/{season:int}/{week:int}/process", async (
+    int season,
+    int week,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await waiverService.ProcessWaiverClaimsAsync(season, week, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/league/waivers/{season:int}/{week:int}/status", async (
+    int season,
+    int week,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    var status = await waiverService.GetWaiverProcessStatusAsync(season, week, cancellationToken);
+    return Results.Ok(status);
+});
+
+app.MapPost("/api/league/free-agents/{season:int}/{week:int}/add", async (
+    int season,
+    int week,
+    AddFreeAgentRequest request,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await waiverService.AddFreeAgentAsync(
+            request.AgentId, season, week, request.AddSleeperPlayerId, request.DropSleeperPlayerId, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return CreateWaiverErrorResult(ex);
+    }
 });
 
 app.MapMcp("/mcp");
