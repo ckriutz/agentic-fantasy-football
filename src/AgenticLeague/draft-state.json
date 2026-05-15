@@ -1,17 +1,1 @@
-{
-  "IsDraftComplete": true,
-  "Round": 17,
-  "Pick": 161,
-  "DraftOrder": [
-    "player-08",
-    "player-10",
-    "player-05",
-    "player-04",
-    "player-07",
-    "player-02",
-    "player-09",
-    "player-03",
-    "player-06",
-    "player-01"
-  ]
-}
+{"IsDraftComplete":false,"Round":10,"Pick":92,"DraftOrder":["player-09","player-07","player-01","player-04","player-03","player-08","player-05","player-02","player-06","player-10"]}

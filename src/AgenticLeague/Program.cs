@@ -46,9 +46,9 @@ logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 // They'll respond with the name of the player they added and why they chose that player based on their strategy and team needs.
 // To make things fair, lets randomize the order of the agents before starting the draft.
 // This will ensure that no agent has an inherent advantage based on their position in the draft order.
-//DraftRunner draftRunner = new DraftRunner(agents, logger);
-//await draftRunner.RunDraftAsync();
-//logger.LogInformation("Draft is complete!");
+DraftRunner draftRunner = new DraftRunner(agents, logger);
+await draftRunner.RunDraftAsync();
+logger.LogInformation("Draft is complete!");
 
 // Now that the draft is complete, the agentes need to review theitr rosters and place their players on the appropriate slots on their roster (e.g. starting lineup, bench, injured reserve, etc.) based on their strategy and the players they drafted.
 //var postDraftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts/FantasyAgent.post-draft.md");

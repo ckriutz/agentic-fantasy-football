@@ -13,7 +13,7 @@
     },
     {
         "agentName": "player-04",
-        "model": "ibm-granite/granite-4.1-8b"
+        "model": "inception/mercury-2"
     },
     {
         "agentName": "player-05",

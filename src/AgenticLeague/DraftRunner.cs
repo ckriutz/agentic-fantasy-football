@@ -116,6 +116,10 @@ public class DraftRunner
         _draftState.IsDraftComplete = true;
         await SaveDraftStateAsync(writeIndented: true);
         _logger.LogInformation("Draft is complete!");
+        _logger.LogInformation("Prompting Agents to review their rosters and update their strategy based on the players they drafted...");
+        await RunPostDraftAsync(_agents);
+        _logger.LogInformation("Post-draft review complete!");
+
     }
 
     // This is a simple helper method to save the draft state to a file.
@@ -223,6 +227,19 @@ public class DraftRunner
         return ex is ClientResultException { Status: 408 or 409 or 429 or >= 500 };
     }
 
+    // Once the draft is done, the agents need to look though their rosters, assign them to starting positions, and update their strategy.
+    public async Task RunPostDraftAsync(List<FantasyAgent> fantasyAgents)
+    {
+        var postDraftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts/FantasyAgent.post-draft.md");
+        var prompt = await File.ReadAllTextAsync(postDraftPromptPath);
+        foreach(var agent in fantasyAgents)
+        {
+            var response = await agent.RunAsync(prompt);
+            _logger.LogInformation($"Post-draft response from {agent.GetAgentName()}: {response}");
+            await LogDecisionAsync(agent.GetAgentName()!, 0, "Post-Draft Review", response, "Post-Draft", _logger);
+        }
+    }
+    
     // This is another helper method to get the current number of players on an agent's roster.
     // We use this to check how many players an agent currently has on their roster. Then, compare it to after the draft.
     async Task<int> GetAgentRosterCountAsync(string agentId)
