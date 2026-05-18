@@ -8,5 +8,5 @@ SELECT "AgentId",
          roster_assignments."AcquisitionSource"
 FROM public.roster_assignments
 JOIN public.players ON players."SleeperPlayerId" = roster_assignments."SleeperPlayerId"
-WHERE roster_assignments."AgentId" = 'player-01'
+WHERE roster_assignments."AgentId" = 'player-10'
 ORDER BY "AcquiredAtUtc"

@@ -1,5 +1,8 @@
 using System.ClientModel;
+using System.ComponentModel.DataAnnotations;
 using System.Net.Http.Json;
+using System.Runtime.Serialization;
+using System.Xml.Schema;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 
@@ -10,6 +13,7 @@ public class DraftRunner
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     const int maxDraftPickAttempts = 3;
+    const int maxRosterSize = 16;
     const int totalRounds = 16;
     private DraftState _draftState = new();
 
@@ -80,9 +84,17 @@ public class DraftRunner
                 var rosterCountBefore = await GetAgentRosterCountAsync(agentName);
 
                 _logger.LogInformation("Agent {AgentName} is making pick {PickInRound} in round {Round} (overall pick {Pick}) with roster count {RosterCountBefore}", agentName, pickInRound, _draftState.Round, _draftState.Pick, rosterCountBefore);
+                if (rosterCountBefore >= maxRosterSize)
+                {
+                    _logger.LogWarning("Agent {AgentName} already has a full roster with {RosterCountBefore} players. Skipping pick.", agentName, rosterCountBefore);
+                    _draftState.Pick++;
+                    await SaveDraftStateAsync();
+                    continue;
+                }
 
+                AgentResponse? response = null;
                 // Step 1: Let the agent try. This includes retries in case of transient errors up to the maximum number of draft pick attempts.
-                await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts);
+                response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts);
 
                 // Step 2: Verify roster actually grew.
                 var rosterCountAfter = await GetAgentRosterCountAsync(agentName);
@@ -90,7 +102,7 @@ public class DraftRunner
                 {
                     // Looks like it did not increase, so we will retry once more according to our retry logic.
                     _logger.LogWarning("Agent {AgentName} did not add a player on first attempt. Retrying...", agentName);
-                    await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts);
+                    response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts, response?.Text);
                     rosterCountAfter = await GetAgentRosterCountAsync(agentName);
                 }
 
@@ -100,13 +112,17 @@ public class DraftRunner
                     _logger.LogWarning("Agent {AgentName} failed after retry. Auto-drafting best available.", agentName);
                     await MakeAutoDraftPickAsync(agentName);
                     // Now lets add an entry to the decision log so we can track that this pick was auto-drafted due to agent failure.
-                    var response = "Auto-drafted best available player due to agent failure.";
-                    await LogDecisionAsync(agentName, 0, "Add Player", response, "Draft", _logger);
+                    var decisionText = "Auto-drafted best available player due to agent failure.";
+                    await LogDecisionAsync(agentName, 0, "Add Player", decisionText, "Draft", _logger);
                     rosterCountAfter = await GetAgentRosterCountAsync(agentName);
                 }
 
                 var pickSucceeded = rosterCountAfter > rosterCountBefore;
                 _logger.LogInformation("Pick complete — Round={Round} Pick={Pick} PickInRound={PickInRound} Agent={Agent} Success={Success}", _draftState.Round, _draftState.Pick, pickInRound, agentName, pickSucceeded);
+                if(pickSucceeded)
+                {
+                    await LogDecisionAsync(agentName, 0, "Draft Pick", response, $"Round { _draftState.Round} Pick {pickInRound}", _logger);
+                }
                 _draftState.Pick++;
                 await SaveDraftStateAsync();
             }
@@ -158,20 +174,30 @@ public class DraftRunner
     // This where the real work is to draft a player.
     // We give the agent a prompt with the current round and pick, and ask them to use their tools to research and add a player to their roster.
     // This has the added benefit of a retry/backoff mechanism in case something goes wrong with the agent's response or tool use, which can happen sometimes!
-    async Task DraftPlayerAsync(FantasyAgent agent, int round, int pick, int maxAttempts)
+    async Task<AgentResponse> DraftPlayerAsync(FantasyAgent agent, int round, int pick, int maxAttempts, string? previousAttemptText = null)
     {
+        var previousAttemptPrompt = string.Empty;
+        if (!string.IsNullOrWhiteSpace(previousAttemptText))
+        {
+            previousAttemptPrompt = $"""
+                Your previous attempt did not result in a player being added to your roster.
+                Here is what you said last time: "{previousAttemptText}"
+                Try again. Call `GetAvailablePlayers` and pick a currently available player.
+            """;
+        }
         // The main prompt being passed to the agent for drafting.
         var draftPrompt = $"""
             The leauge is drafting, and you're up to select a player! You are allowed to add exactly one player to your roster.
             This is currently round {round} of {totalRounds} total rounds, and this is pick {pick} of {totalRounds * _agents.Count} total picks.
+            {previousAttemptPrompt}
             Look at your roster using the `GetMyRoster` tool and identify what player you need to draft next.
             If you haven't already use the `ReadAgentBootstrap` tool to read your bootstrap file and see your strategy and roster needs.
             Call `GetAvailablePlayers` filtered by the needed position to see players who are still available.
             Use the `SearchWeb` tool to research the available players.
-            Call `AddPlayerToRoster` exactly one time with agentId {agent.GetAgentName()} and acquisitionSource `draft`.
+            Call `AddPlayerToRoster` at most one time with agentId {agent.GetAgentName()} and acquisitionSource `draft`.
             Once `AddPlayerToRoster` succeeds, stop calling tools and respond.
             Do not add a backup/second player in this turn.
-            If `AddPlayerToRoster` fails, choose a different available player and try again.
+            If `AddPlayerToRoster` fails, stop calling tools and report the exact failure.
             Update your Bootstrap file using the `WriteAgentBootstrap` tool to update your roster, strategy, or insights on your next pick based on the player you drafted.
             When you're done, respond with the name of the player you added and why. This is your team so the reasoning for your pick should come from your perspective as the agent making the pick, based on your strategy and team needs.
         """;
@@ -180,15 +206,14 @@ public class DraftRunner
         var draftPickRetryBackoffs = new[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(90) };
         var agentName = agent.GetAgentName() ?? throw new InvalidOperationException("Draft agent name is required before making picks.");
 
+        AgentResponse response = new();
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
                 // Provided there are no transient errors, this is the main call to the agent to make a draft pick.
-                var response = await agent.RunAsync(draftPrompt);
-                _logger.LogInformation("Agent {agentName} response: {Response}", agentName, response.Text);
-                await LogDecisionAsync(agentName, 0, "Add Player", response, "Draft", _logger);
-                return;
+                response = await agent.RunAsync(draftPrompt);
+                return response;
             }
             catch (Exception ex) when (IsDraftPickFailure(ex) && attempt < maxAttempts)
             {
@@ -201,9 +226,9 @@ public class DraftRunner
             {
                 // We tried too many times and exhausted all of our retry attempts, so we are giving up on this draft pick for this agent.
                 _logger.LogWarning(ex, "Draft pick {Pick} in round {Round} for agent {AgentName} failed after {MaxAttempts} attempts.", pick, round, agentName, maxAttempts);
-                return;
             }
         }
+        return response;
     }
 
     // This is a helper method to determine if an exception that occurred during the draft pick process is something we
@@ -270,7 +295,12 @@ public class DraftRunner
             try
             {
                 var result = await _http.PostAsJsonAsync($"/api/rosters/{agentId}/players/{bestAvailablePlayerId}?acquisitionSource=autodraft", new { sleeperPlayerId = bestAvailablePlayerId, acquisitionSource = "auto-draft" });
-                result.EnsureSuccessStatusCode();
+                if (!result.IsSuccessStatusCode)
+                {
+                    var body = await result.Content.ReadAsStringAsync();
+                    _logger.LogWarning("Auto draft failed for agent {AgentId} player {PlayerId}: {StatusCode} — {Body}", agentId, bestAvailablePlayerId, (int)result.StatusCode, body);
+                    return false;
+                }
                 return true;
             }
             catch (Exception ex)

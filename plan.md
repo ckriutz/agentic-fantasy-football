@@ -415,7 +415,14 @@ Stuff that I still need to do:
 - ✅ DONE: Lets move the bootstrap.md, and profile.md files out of the Agents folder. This will help keep the Agents folder cleaner and more focused on the agent code itself. We can create a new folder called "AgentData" or something similar to store these files. 
 - ✅ DONE: When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
 - When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.
-- I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
+- ✅ I might want to see how the draft went, so adding the pick information to the DraftRunner and the draft-state.json file would be helpful. This would allow us to see which players were drafted by which teams, and in which order. I could potentially match this to the decison log as well to see which agent made which pick and what their reasoning was at the time. This would be really interesting to analyze and write about.
 - ✅ Need some items in place to ensure an agent can't add more people than they have for the roster.
 - Move the bootstrap, image, and profile files into Azure Blob Storage. We have `BlobPlan.md` to help focus that energy.
-- Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.
+- ✅ Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.
+- For Cost reasons, lets try and add some additional providers like Foundry, and some of the ones that offer them identpendantly. IBM, Zyphra, etc. Here are the models I can get from Foundry that match OpenRouter:
+- Kimi K2.6
+- GPT 5.4
+- Sonnet 4.6
+
+I could, if I wanted to, get Grok 4.3 from xAI
+
