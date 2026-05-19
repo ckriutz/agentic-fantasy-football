@@ -5,7 +5,7 @@ This document walks through a simple manual test flow for the waiver wire system
 ## Prerequisites
 
 1. Make sure Postgres is running.
-2. Make sure `ConnectionStrings__LeagueAPI` points to your real database.
+2. Make sure `DBConnectionString` points to your real database.
 3. From `src/LeagueAPI`, apply migrations:
 
 ```bash

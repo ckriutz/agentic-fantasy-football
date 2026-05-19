@@ -29,12 +29,12 @@ builder.Services.AddHttpClient("SportsDataApi");
 builder.Services.AddHttpClient("YahooOAuth");
 builder.Services.AddHttpClient("YahooFantasyApi");
 
-var connectionString = builder.Configuration.GetConnectionString("LeagueAPI");
+var connectionString = builder.Configuration["DBConnectionString"];
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException(
-        "ConnectionStrings:LeagueAPI is required. Set it in configuration or via the ConnectionStrings__LeagueAPI environment variable to point at your Postgres database.");
+        "DBConnectionString is required. Set it in configuration or via the DBConnectionString environment variable to point at your Postgres database.");
 }
 
 builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>

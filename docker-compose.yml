@@ -10,7 +10,7 @@ services:
       - "${LEAGUEAPI_PORT:-8080}:8080"
     environment:
       # Database connection (optional - auto-detected if provided)
-      - ConnectionStrings__LeagueAPI=Server=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-leagueapi};User Id=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD};
+      - DBConnectionString=Server=${POSTGRES_HOST:-postgres};Port=${POSTGRES_PORT:-5432};Database=${POSTGRES_DB:-leagueapi};User Id=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD};
       
       # Sleeper API configuration
       - SleeperSync__Mode=Auto

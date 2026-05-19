@@ -2,7 +2,7 @@
 
 `LeagueAPI` is the Step 1 service for the fantasy football project. It pulls the NFL player catalog from the Sleeper API, stores it in PostgreSQL, tracks sync runs in the database, and exposes the stored data through both a normal HTTP API and an MCP endpoint.
 
-The service is Postgres-only. You must provide a connection string via `ConnectionStrings:LeagueAPI` (or the `ConnectionStrings__LeagueAPI` environment variable) — for local development this typically points at a Postgres docker container, but any reachable Postgres host works.
+The service is Postgres-only. You must provide a connection string via `DBConnectionString` — for local development this typically points at a Postgres docker container, but any reachable Postgres host works.
 
 ## What it does
 
@@ -42,7 +42,7 @@ Configuration lives in `appsettings.json`.
 The service respects these environment variables (prefer these over editing config files):
 
 **Database:**
-- `ConnectionStrings__LeagueAPI` - **Required.** PostgreSQL connection string. The service fails fast on startup if this is missing or empty.
+- `DBConnectionString` - **Required.** PostgreSQL connection string. The service fails fast on startup if this is missing or empty.
 
 **Yahoo OAuth:**
 - `YAHOO_CLIENT_ID` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
@@ -61,7 +61,7 @@ The service respects these environment variables (prefer these over editing conf
 **Example startup with env vars:**
 
 ```bash
-export ConnectionStrings__LeagueAPI="postgresql://user:pass@localhost/leaguedb"
+export DBConnectionString="postgresql://user:pass@localhost/leaguedb"
 export YAHOO_CLIENT_ID="your-client-id"
 export YAHOO_CLIENT_SECRET="your-client-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
@@ -82,12 +82,10 @@ dotnet run
 ### Database connection
 
 ```json
-"ConnectionStrings": {
-  "LeagueAPI": ""
-}
+"DBConnectionString": ""
 ```
 
-Required. The service fails fast on startup if this is missing. Prefer setting it via the `ConnectionStrings__LeagueAPI` environment variable so it can point at any Postgres host (local docker, managed Postgres, etc.).
+Required. The service fails fast on startup if this is missing. Prefer setting it via the `DBConnectionString` environment variable so it can point at any Postgres host (local docker, managed Postgres, etc.).
 
 ### Yahoo OAuth settings
 
@@ -123,7 +121,7 @@ Prefer setting `ClientId` and `ClientSecret` with environment variables:
 
 This sync path writes to the database-backed Yahoo tables, so it requires:
 
-1. `ConnectionStrings:LeagueAPI` to be configured
+1. `DBConnectionString` to be configured
 2. the Yahoo migrations to be applied
 3. Yahoo OAuth tokens to already be bootstrapped
 
@@ -156,7 +154,7 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 ### Optional runtime configuration
 
 - `ASPNETCORE_URLS` - ASP.NET Core listening URL. Example: `http://127.0.0.1:5181`
-- `ConnectionStrings__LeagueAPI` - PostgreSQL connection string (replaces config value if set). Required; the service fails fast without it.
+- `DBConnectionString` - PostgreSQL connection string (replaces config value if set). Required; the service fails fast without it.
 
 ### Example startup command
 

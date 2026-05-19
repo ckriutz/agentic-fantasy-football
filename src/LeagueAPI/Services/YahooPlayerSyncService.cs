@@ -601,7 +601,7 @@ public sealed class YahooPlayerSyncService(
         if (string.IsNullOrWhiteSpace(dbContext.Database.ProviderName))
         {
             throw new InvalidOperationException(
-                "Yahoo sync requires ConnectionStrings:LeagueAPI to be configured and the database migrations to be applied.");
+                "Yahoo sync requires DBConnectionString to be configured and the database migrations to be applied.");
         }
     }
 

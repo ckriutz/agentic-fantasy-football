@@ -291,7 +291,7 @@ GetLatestYahooSyncStatus(gameKey?, season?, week?)
 
 To fully test the Yahoo pipeline end-to-end:
 
-1. Set `ConnectionStrings:LeagueAPI` to a real Postgres database.
+1. Set `DBConnectionString` to a real Postgres database.
 2. Run migrations: `dotnet ef database update` from `src/LeagueAPI`.
 3. Configure Yahoo OAuth credentials (environment variables or appsettings).
 4. Start the API: `ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run`
@@ -426,3 +426,4 @@ Stuff that I still need to do:
 
 I could, if I wanted to, get Grok 4.3 from xAI
 
+I want to try Zyphra.

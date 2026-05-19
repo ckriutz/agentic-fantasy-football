@@ -367,7 +367,7 @@ public sealed class YahooReadService(IDbContextFactory<LeagueApiDbContext> dbCon
         if (string.IsNullOrWhiteSpace(dbContext.Database.ProviderName))
         {
             throw new InvalidOperationException(
-                "Yahoo reads require ConnectionStrings:LeagueAPI to be configured and the database migrations to be applied.");
+                "Yahoo reads require DBConnectionString to be configured and the database migrations to be applied.");
         }
     }
 
