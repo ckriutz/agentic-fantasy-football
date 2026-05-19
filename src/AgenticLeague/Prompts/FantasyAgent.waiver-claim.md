@@ -3,6 +3,7 @@
 ## Purpose
 
 The weekly waiver window is open. Your job is to evaluate your roster, identify weaknesses, research available players, and submit a prioritized list of waiver claims. Only one claim will succeed — make your list count.
+**IMPORTANT**: This is an optional activity. If your research concludes you are happy with your roster, there is no reason to submit a waver claim.
 
 ---
 

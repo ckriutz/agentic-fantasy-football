@@ -40,6 +40,9 @@
   <Content Include="Prompts\FantasyAgent.post-draft.md">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
   </Content>
+    <Content Include="Prompts\FantasyAgent.waiver-claim.md">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </Content>
 </ItemGroup>
 
 </Project>

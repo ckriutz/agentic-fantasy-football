@@ -23,14 +23,14 @@ if (!File.Exists(agentsConfigPath))
 
 // Read in the agents configuration and initialize each agent accordingly.
 var agentsConfigJson = await File.ReadAllTextAsync(agentsConfigPath);
-var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, string>>>(agentsConfigJson);
+var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentConfig>>(agentsConfigJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 foreach(var agentConfig in agentsConfig)
 {
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
     // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
-    var agentName = agentConfig["agentName"].ToString()!;
-    var model = agentConfig["model"].ToString()!;
-    var fantasyAgent = new FantasyAgent(agentName, model);
+    var agentName = agentConfig.AgentName;
+    var model = agentConfig.Model;
+    var fantasyAgent = new FantasyAgent(agentConfig);
     await fantasyAgent.InitializeAsync();
     await fantasyAgent.EnsureBootstrappedAsync();
     agents.Add(fantasyAgent);
@@ -56,6 +56,30 @@ logger.LogInformation("Draft is complete!");
 //var postResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
 //Console.WriteLine($"Post-draft response from Player 4: {postResponse}");
 
-var prompt = $"Your roster should be full, but use the `AddPlayerToRoster` tool to add a player to your roster that you think would be a good fit for your team based on your strategy and team needs. Since your roster is full, this tool should fail, If it fails, report the failure. If it does succeed, double check that the playe was added by using the `GetMyRoster` tool and reporting back the player you added.";
-var postResponse = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(prompt);
-Console.WriteLine($"Post-draft response from Player 5: {postResponse}");
+//var prompt = $"Your roster should be full, but use the `AddPlayerToRoster` tool to add a player to your roster that you think would be a good fit for your team based on your strategy and team needs. Since your roster is full, this tool should fail, If it fails, report the failure. If it does succeed, double check that the playe was added by using the `GetMyRoster` tool and reporting back the player you added.";
+//var postResponse = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(prompt);
+//Console.WriteLine($"Post-draft response from Player 5: {postResponse}");
+
+var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
+//var response1 = await agents.First(agent => agent.GetAgentName() == "player-01").RunAsync(prompt);
+//Console.WriteLine($"Post-draft response from Player 1: {response1}");
+
+//var response4 = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
+//Console.WriteLine($"Post-draft response from Player 4: {response4}");
+
+var response10 = await agents.First(agent => agent.GetAgentName() == "player-09").RunAsync(prompt);
+Console.WriteLine($"Post-draft response from Player 9: {response10}");
+
+static string LoadPrompt(string relativePath)
+{
+    var fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
+
+    if (!File.Exists(fullPath))
+    {
+        throw new FileNotFoundException(
+            $"Prompt file not found at '{fullPath}'.",
+            fullPath);
+    }
+
+    return File.ReadAllText(fullPath);
+}

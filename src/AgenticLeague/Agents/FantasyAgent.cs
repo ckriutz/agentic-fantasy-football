@@ -15,11 +15,19 @@ public class FantasyAgent
     private McpClient? _leagueApiMcpClient;
     private readonly string _modelName;
     private readonly string _agentId;
+    private readonly string _agentConnection;
 
     public FantasyAgent(string agentId, string modelName)
     {
         _agentId = agentId;
         _modelName = modelName;
+    }
+
+    public FantasyAgent(AgentConfig config)
+    {
+        _agentId = config.AgentName;
+        _modelName = config.Model;
+        _agentConnection = config.Connection;
     }
 
     public string GetAgentName() => _agentId;
@@ -63,8 +71,25 @@ public class FantasyAgent
         This is where you should keep any information about your team that you want to remember across interactions.
         """;
 
-        _agent = new ChatClient(_modelName, new ApiKeyCredential(apiKey),
-            new OpenAIClientOptions { Endpoint = new Uri(endpoint), NetworkTimeout = TimeSpan.FromMinutes(5) })
+        ChatClient? chatClient = null;
+        OpenAIClientOptions options = null;
+        if(_agentConnection == "OpenRouter")
+        {
+            chatClient = new ChatClient(_modelName, new ApiKeyCredential(apiKey));
+            options = new OpenAIClientOptions
+            {
+                Endpoint = new Uri(endpoint),
+                NetworkTimeout = TimeSpan.FromMinutes(5),
+                ProjectId = "agentic-fantasy-football",
+                UserAgentApplicationId = "AgenticFantasyFootball"
+            };
+        }
+        //if(_agentConnection == "MSFoundry")
+        //{
+            //chatClient = new ChatClient(new AzureKeyCredential(apiKey), new AzureChatClientOptions { Endpoint = new Uri(endpoint) });
+        //}
+
+        _agent = new ChatClient(_modelName, new ApiKeyCredential(apiKey), options)
             .AsIChatClient()
             .AsAIAgent(name: _agentId, instructions: agentInstructions,
             tools:
