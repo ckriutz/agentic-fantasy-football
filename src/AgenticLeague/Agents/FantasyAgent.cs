@@ -75,7 +75,6 @@ public class FantasyAgent
         OpenAIClientOptions options = null;
         if(_agentConnection == "OpenRouter")
         {
-            chatClient = new ChatClient(_modelName, new ApiKeyCredential(apiKey));
             options = new OpenAIClientOptions
             {
                 Endpoint = new Uri(endpoint),
@@ -83,13 +82,21 @@ public class FantasyAgent
                 ProjectId = "agentic-fantasy-football",
                 UserAgentApplicationId = "AgenticFantasyFootball"
             };
+            chatClient = new ChatClient(_modelName, new ApiKeyCredential(apiKey), options);
         }
-        //if(_agentConnection == "MSFoundry")
-        //{
-            //chatClient = new ChatClient(new AzureKeyCredential(apiKey), new AzureChatClientOptions { Endpoint = new Uri(endpoint) });
-        //}
+        if(_agentConnection == "MSFoundry")
+        {
+            var key = Environment.GetEnvironmentVariable("FoundryKey");
+            var endpoint = Environment.GetEnvironmentVariable("FoundryEndpoint");
+            options = new OpenAIClientOptions
+            {
+                Endpoint = new Uri(endpoint),
+                NetworkTimeout = TimeSpan.FromMinutes(5),
+            };
+            chatClient = new ChatClient(_modelName, new ApiKeyCredential(key), options);
+        }
 
-        _agent = new ChatClient(_modelName, new ApiKeyCredential(apiKey), options)
+        _agent = chatClient
             .AsIChatClient()
             .AsAIAgent(name: _agentId, instructions: agentInstructions,
             tools:

@@ -61,14 +61,15 @@ logger.LogInformation("Draft is complete!");
 //Console.WriteLine($"Post-draft response from Player 5: {postResponse}");
 
 var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
+var waverPrompt = $"This is week 0 of the 2025 season. {prompt}";
 //var response1 = await agents.First(agent => agent.GetAgentName() == "player-01").RunAsync(prompt);
 //Console.WriteLine($"Post-draft response from Player 1: {response1}");
 
 //var response4 = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
 //Console.WriteLine($"Post-draft response from Player 4: {response4}");
 
-var response10 = await agents.First(agent => agent.GetAgentName() == "player-09").RunAsync(prompt);
-Console.WriteLine($"Post-draft response from Player 9: {response10}");
+var response10 = await agents.First(agent => agent.GetAgentName() == "player-08").RunAsync(waverPrompt);
+Console.WriteLine($"Post-draft response from Player 8: {response10}");
 
 static string LoadPrompt(string relativePath)
 {
