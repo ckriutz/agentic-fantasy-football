@@ -36,27 +36,28 @@ public class FantasyAgent
     {
         if (_agent != null) { return; } // Already initialized, no need to do it again.
 
-        var agentProfileTools = new AgentProfileTools();
-        var bootstrapTools = new BootstrapTools();
+        //var agentProfileTools = new AgentProfileTools();
+        var blobStorageTools = new BlobStorageTools();
         var imageGenerationTool = new ImageGenerationTool(_agentId);
         var searchTool = new SearchTool();
         
         var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
         var howToPlayPrompt = LoadPrompt("Prompts/FantasyAgent.how-to-play.md");
 
-        var transport = new HttpClientTransport(new HttpClientTransportOptions
+        // The LeaugeAPI has a LOT of tools as well, and this is how we get to them.
+        var mcpTransport = new HttpClientTransport(new HttpClientTransportOptions
         {
             Endpoint = new Uri("http://localhost:5000/mcp"),
             Name = "LeagueAPI"
         });
 
-        _leagueApiMcpClient = await McpClient.CreateAsync(transport);
+        // Now, connect to the LeagueAPI MCP endpoint to get the tools we can use to interact with the league, such as viewing the draft board, making trades, adding players to our roster, etc.
+        _leagueApiMcpClient = await McpClient.CreateAsync(mcpTransport);
         IList<McpClientTool> mcpTools = await _leagueApiMcpClient.ListToolsAsync();
 
         var agentInstructions =
         $"""
         You are {_agentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
-        You are using the {_modelName} model to help you make decisions and manage your team.
         
         Your current team name, strategy, status, and memory can be found by using `ReadAgentBootstrap` tool to read your bootstrapping file. Always read this file before making any decisions.
 
@@ -101,13 +102,13 @@ public class FantasyAgent
             .AsAIAgent(name: _agentId, instructions: agentInstructions,
             tools:
             [
-                AIFunctionFactory.Create(agentProfileTools.ReadAgentProfile),
-                AIFunctionFactory.Create(agentProfileTools.InitializeAgentProfile),
-                AIFunctionFactory.Create(agentProfileTools.SetTeamName),
-                AIFunctionFactory.Create(agentProfileTools.SetBootstrapStatus),
-                AIFunctionFactory.Create(agentProfileTools.SetLogoPath),
-                AIFunctionFactory.Create(bootstrapTools.ReadAgentBootstrap),
-                AIFunctionFactory.Create(bootstrapTools.WriteAgentBootstrap),
+                //AIFunctionFactory.Create(agentProfileTools.ReadAgentProfile),
+                //AIFunctionFactory.Create(agentProfileTools.InitializeAgentProfile),
+                //AIFunctionFactory.Create(agentProfileTools.SetTeamName),
+                //AIFunctionFactory.Create(agentProfileTools.SetBootstrapStatus),
+                //AIFunctionFactory.Create(agentProfileTools.SetLogoPath),
+                AIFunctionFactory.Create(blobStorageTools.ReadAgentBootstrap),
+                AIFunctionFactory.Create(blobStorageTools.WriteAgentBootstrap),
                 AIFunctionFactory.Create(imageGenerationTool.GenerateImage),
                 AIFunctionFactory.Create(searchTool.SearchWeb),
                 ..mcpTools
@@ -123,32 +124,32 @@ public class FantasyAgent
         // If it exists, we can assume the agent is bootstrapped, but we can check the IsBootstrapped field to be certain.
         // If it doesn't exist, we need to run the bootstrapping process.
         // First, check if the file exists, and if so, read the profile and check the IsBootstrapped field.
-        var profile = await GetAgentProfileAsync();
+        //var profile = await GetAgentProfileAsync();
 
         // Lets ensure all parts of the bootstrap process are complete by checking the bootstrap file and the profile file.
         // If any part is incompletewe should run the bootstrapping process again to ensure everything is complete and correct.
 
-        if (profile != null)
-        {
-            if (profile.TeamName != null && profile.LogoPath != null && profile.IsBootstrapped && profile.BootstrapPath != null)
-            {
-                Console.WriteLine($"Agent {_agentId} is already bootstrapped.");
-                return;
-            }
-            Console.WriteLine($"Agent {_agentId} is not fully bootstrapped.");
-        }
+        //if (profile != null)
+        //{
+            //if (profile.TeamName != null && profile.LogoPath != null && profile.IsBootstrapped && profile.BootstrapPath != null)
+            //{
+                //Console.WriteLine($"Agent {_agentId} is already bootstrapped.");
+                //return;
+            //}
+            //Console.WriteLine($"Agent {_agentId} is not fully bootstrapped.");
+        //}
 
         var bootstrapPrompt = $"""
-        Check to see if you've already bootstrapped yourself by looking for the file AgentData/{_agentId}/bootstrap.md.
+        Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
         If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
-        - Your first task is to create the bootstrap.md file if it doesn't exist.
+        - Your first task is to create the bootstrap file by using the `WriteAgentBootstrap` tool if it doesn't exist.
         - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file and your agent profile.
         - Create a strategy for how you will win your league this season.
         - Include any information you think is relevant, such as your league settings, your team name, your draft strategy, and anything else you think is important to include in your bootstrap file.
         - Generate a logo for your team using the image generation tool. You can use the team name and your strategy as inspiration for your logo. The logo should be simple and something that would look good on a fantasy football website. Save the filename in your bootstrap file as well.
         - Run the InitializeAgentProfile tool to initialize your agent profile.
         - Use the SetTeamName, SetLogoPath, and SetBootstrapStatus tools to save your team name, logo path, and bootstrap status in your profile.
-        If you are already bootstrapped, just check to make sure the bootstrap.md file is complete and the profile.json file is correct and then respond with: ✅ (your team name) is bootstrapped and ready to go!
+        If you are already bootstrapped, just check to make sure the bootstrap file is complete and the profile.json file is correct and then respond with: ✅ (your team name) is bootstrapped and ready to go!
         There is no need, if you're bootstrapped, to respond with your strategy again. Just confirm that you're bootstrapped and ready to go.
         """;
 
@@ -157,17 +158,17 @@ public class FantasyAgent
             var response = await RunAsync(bootstrapPrompt);
             Console.WriteLine($"Agent {_agentId} response: {response.Text}");
 
-            profile = await GetAgentProfileAsync();
-            if (profile == null || !profile.IsBootstrapped)
-            {
-                if (attempt >= maxAttempts)
-                {
-                    Console.WriteLine($"Agent {_agentId} exceeded maximum bootstrap attempts ({maxAttempts}). Moving on.");
-                    return;
-                }
-                Console.WriteLine($"Agent {_agentId} did not complete bootstrap (attempt {attempt}/{maxAttempts}). Retrying...");
-                await EnsureBootstrappedAsync(attempt + 1, maxAttempts);
-            }
+            //profile = await GetAgentProfileAsync();
+            //if (profile == null || !profile.IsBootstrapped)
+            //{
+                //if (attempt >= maxAttempts)
+                //{
+                //    Console.WriteLine($"Agent {_agentId} exceeded maximum bootstrap attempts ({maxAttempts}). Moving on.");
+                //    return;
+                //}
+                //Console.WriteLine($"Agent {_agentId} did not complete bootstrap (attempt {attempt}/{maxAttempts}). Retrying...");
+                //await EnsureBootstrappedAsync(attempt + 1, maxAttempts);
+            //}
         }
         catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
         {
@@ -185,11 +186,11 @@ public class FantasyAgent
         return await _agent.RunAsync(input);
     }
 
-    public async Task<AgentProfile> GetAgentProfileAsync()
-    {
-        var agentProfileTools = new AgentProfileTools();
-        return await agentProfileTools.ReadAgentProfile(_agentId);
-    }
+    //public async Task<AgentProfile> GetAgentProfileAsync()
+    //{
+        //var agentProfileTools = new AgentProfileTools();
+        //return await agentProfileTools.ReadAgentProfile(_agentId);
+    //}
 
     private static string LoadPrompt(string relativePath)
     {

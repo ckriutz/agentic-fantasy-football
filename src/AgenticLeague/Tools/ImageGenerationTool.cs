@@ -8,16 +8,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 public sealed class ImageGenerationTool
 {
-    private readonly string _rootPath;
     private readonly HttpClient _httpClient;
     private readonly ILogger<ImageGenerationTool> _logger;
     private readonly string _agentId;
     private readonly HttpClient _downloadHttpClient = new();
+    private readonly BlobStorageTools _blobStorageTools = new BlobStorageTools();
 
     public ImageGenerationTool(string agentId, ILogger<ImageGenerationTool>? logger = null, string? rootPath = null)
     {
         _logger = logger ?? NullLogger<ImageGenerationTool>.Instance;
-        _rootPath = rootPath ?? Directory.GetCurrentDirectory();
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(Environment.GetEnvironmentVariable("XAI_BASE_URL") ?? "https://api.x.ai/v1/")
@@ -56,7 +55,7 @@ public sealed class ImageGenerationTool
 
             _logger.LogInformation("Image generation complete. URL: {Url}", url);
             
-            var fileName = await DownloadAndSaveImageAsync(url);
+            var fileName = await DownloadAndSaveImageToBlobStorageAsync(url);
             _logger.LogInformation("Image generation complete. Saved as {FileName}", fileName);
             return fileName;
         }
@@ -94,24 +93,25 @@ public sealed class ImageGenerationTool
         return safeAgentId;
     }
 
-    private async Task<string> DownloadAndSaveImageAsync(string imageUrl)
+    private async Task<string> DownloadAndSaveImageToBlobStorageAsync(string imageUrl)
     {
-        var agentFolder = Path.Combine(_rootPath, "AgentData", _agentId);
-        Directory.CreateDirectory(agentFolder);
-    
         using var response = await _downloadHttpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
     
         var contentType = response.Content.Headers.ContentType?.MediaType;
         var extension = GetImageExtension(contentType);
         var fileName = $"logo{extension}";
-        var filePath = Path.Combine(agentFolder, fileName);
     
         await using var imageStream = await response.Content.ReadAsStreamAsync();
-        await using var fileStream = File.Create(filePath);
-        await imageStream.CopyToAsync(fileStream);
-    
-        _logger.LogInformation("Saved generated image to {FilePath}", filePath);
+        var uploadResult = await _blobStorageTools.UploadImageAsync(_agentId, fileName, imageStream);
+
+        if (uploadResult == null)
+        {
+            _logger.LogError("Failed to upload image for agent {AgentId}.", _agentId);
+            return null;
+        }
+
+        _logger.LogInformation("Saved generated image. Upload result: {UploadResult}", uploadResult);
         return fileName;
     }
 
