@@ -375,14 +375,10 @@ This is where we will create the system that allows the agents to play against e
 - Create a schedule for the season, and then have the agents play their games according to that schedule. The players on the teams are real football players who play their games Thursday, Saturday, Sunday, or Monday night.
 - Calculate the points for each player and team, and then determine the winner of each game.
 - Keep track of the standings throughout the season.
-- Track key events and decisions made by the agents, and log those for later analysis and writing.
-- Allow a system for waver wire, dropping players, adding players and trading players.
+- ✅ Track key events and decisions made by the agents, and log those for later analysis and writing.
+- ✅ Allow a system for waver wire, dropping players, adding players and trading players.
 - Create a service where the agents are pompted on a schedule to manage their roster for things like moving players on and off the bench, checking for injuries, bye week players, and looking at available players to see if they should drop a player, or add one.
 
-The flow for the application is:
-- Bootstrap agents.
-- Draft.
-- Run the season.
 
 Things to figure out:
 - How often should we prompt the agents to manage their roster?
@@ -404,14 +400,23 @@ Testing of the draft is still ongoing. Mostly sure that starting and stopping th
 Once we have all the pieces in place, we will want to simulate the 2025 season using the data we have collected. This will allow us to see how the agents perform against each other, and it will also allow us to identify any issues or bugs in the system. We will want to run multiple simulations of the season to see how the agents perform under different conditions. We will want to analyze the results of the simulations to see if there are any interesting patterns or insights that we can write about. We will also want to use the decision logs to analyze the decisions made by the agents and see if there are any interesting trends or patterns in their decision-making processes.
 
 ### Step 7 - Create a front-end to visualize the league
-To make it easier to see what's going on in the league, we will want to create a front-end that allows us to visualize the teams, players, scores, and standings. This could be a web application that displays the information in a user-friendly way. We could use a framework like React to build the front-end, and we could use a library like D3.js to create visualizations of the data. The front-end should allow us to see the teams and their players, the scores for each week, and the overall standings in the league. We could also include features that
+To make it easier to see what's going on in the league, we will want to create a front-end that allows us to visualize the teams, players, scores, and standings. This could be a web application that displays the information in a user-friendly way. We could use a framework like React to build the front-end, and we could use a library like D3.js to create visualizations of the data. The front-end should allow us to see the teams and their players, the scores for each week, and the overall standings in the league. Here are the features we need:
+- A waver-wire screen that shows the current waver wires, the last time the waver wire was run, and a button to press that will enable me to run the waver wire. Also, need to see the current priority list. Also I want to see if we are in "free agency" for this week or not.
+- A screen that shows the status of the data imports (Sleeper, FantasyDataIO, Yahoo)
+- A screen that shows all the players in general, so I can see the information.
+- A player screen that shows the data for each player.
+- A screen that shows all the agents, and their current w/l record.
+- An Agent screem that shows the agent, its players, it's logo, a current view of it's strategy, and a log of it's decisions.
+- A screen that shows the schedule.
+- A screen that lets me see the results of the draft.
+
 
 Stuff that I still need to do:
 - Determine the best location for external prompt/context files for FantasyAgent (for example: content files in the project vs embedded resources), balancing editability during development with reliability in published builds.
 
 # Some things to add, change, or refactor:
 - ✅ We may want to create a BootstrapService that handles all the bootstrapping logic for the agents, including strategy definition, team name/logo creation, and initial player research. This would help keep the main program cleaner and more focused on orchestration.
-- ✅As part of the BootstrapService, I want to find a way to read in the profile.json file to see if the agent has already been bootstrapped, and if so, skip the bootstrapping process. This will save us on tokens.
+- ✅ As part of the BootstrapService, I want to find a way to read in the profile.json file to see if the agent has already been bootstrapped, and if so, skip the bootstrapping process. This will save us on tokens.
 - ✅ DONE: Lets move the bootstrap.md, and profile.md files out of the Agents folder. This will help keep the Agents folder cleaner and more focused on the agent code itself. We can create a new folder called "AgentData" or something similar to store these files. 
 - ✅ DONE: When the agents are bootstrapped, we need to save their logos locally or in blob storage as well. This will allow us to easily access and display the logos in the front-end. Those logos do not last long there.
 - When the search tool is used, I want to log which agent used the tool, what they searched for, and what results they got back. This will allow us to analyze how the agents are using the search tool and see if there are any interesting patterns or trends in their search behavior. Also, I want to log the tokens used in the process.
@@ -419,11 +424,6 @@ Stuff that I still need to do:
 - ✅ Need some items in place to ensure an agent can't add more people than they have for the roster.
 - Move the bootstrap, image, and profile files into Azure Blob Storage. We have `BlobPlan.md` to help focus that energy.
 - ✅ Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.
-- For Cost reasons, lets try and add some additional providers like Foundry, and some of the ones that offer them identpendantly. IBM, Zyphra, etc. Here are the models I can get from Foundry that match OpenRouter:
-- Kimi K2.6
-- GPT 5.4
-- Sonnet 4.6
-
-I could, if I wanted to, get Grok 4.3 from xAI
-
-I want to try Zyphra.
+- ✅For Cost reasons, lets try and add some additional providers like Foundry, and some of the ones that offer them identpendantly. IBM, Zyphra, etc. Here are the models I can get from Foundry that match OpenRouter:
+- Integrate Zyphra for funsies and see how it does.
+- Need to move the agents.config.json file to the database.

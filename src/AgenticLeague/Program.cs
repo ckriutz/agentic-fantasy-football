@@ -68,8 +68,8 @@ var waverPrompt = $"This is week 0 of the 2025 season. {prompt}";
 //var response4 = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
 //Console.WriteLine($"Post-draft response from Player 4: {response4}");
 
-var response10 = await agents.First(agent => agent.GetAgentName() == "player-08").RunAsync(waverPrompt);
-Console.WriteLine($"Post-draft response from Player 8: {response10}");
+var response10 = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(waverPrompt);
+Console.WriteLine($"Post-draft response from Player 5: {response10}");
 
 static string LoadPrompt(string relativePath)
 {
