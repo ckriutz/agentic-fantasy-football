@@ -29,6 +29,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<DecisionEntity> Decisions => Set<DecisionEntity>();
 
+    public DbSet<AgentProfile> AgentProfiles => Set<AgentProfile>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
@@ -212,6 +214,19 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
             entity.HasIndex(decision => decision.AgentId);
             entity.HasIndex(decision => decision.CreatedAtUtc);
+        });
+
+        modelBuilder.Entity<AgentProfile>(entity =>
+        {
+            entity.ToTable("agent_profiles");
+            entity.HasKey(profile => profile.AgentId);
+
+            entity.Property(profile => profile.AgentId).HasMaxLength(100);
+            entity.Property(profile => profile.TeamName).HasMaxLength(200);
+            entity.Property(profile => profile.ModelName).HasMaxLength(200);
+            entity.Property(profile => profile.Connection).HasMaxLength(50);
+
+            entity.HasIndex(profile => profile.IsEnabled);
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

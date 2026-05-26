@@ -6,43 +6,44 @@ var builder = Host.CreateApplicationBuilder(args);
 
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
+HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5000/") };
 
 logger.LogInformation("Starting Agentic Fantasy Football League...");
 
+var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
+response.EnsureSuccessStatusCode();
+var agentProfilesJson = await response.Content.ReadAsStringAsync();
+var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 List<FantasyAgent> agents = new List<FantasyAgent>();
 
-// Load the agents.config.json file to get the list of agents and their corresponding models.
-var agentsConfigPath = Path.Combine(AppContext.BaseDirectory, "agents.config.json");
-if (!File.Exists(agentsConfigPath))
-{
-    logger.LogError("Agents configuration file not found at '{path}'. Please create an agents.config.json file with the list of agents and their models.", agentsConfigPath);
-    return;
-}
 
-Console.WriteLine("Testing one agent to make sure the bootstrapping process works...");
-FantasyAgent testAgent = new FantasyAgent(new AgenticLeague.Models.AgentConfig
-{
-    AgentName = "test-player-01",
-    Model = "google/gemini-3.5-flash",
-    Connection = "OpenRouter"
-});
-await testAgent.InitializeAsync();
+//Console.WriteLine("Testing one agent to make sure the bootstrapping process works...");
+//FantasyAgent testAgent = new FantasyAgent(new AgenticLeague.Models.AgentConfig
+//{
+//    AgentName = "test-player-01",
+//    Model = "google/gemini-3.5-flash",
+//    Connection = "OpenRouter"
+//});
+//await testAgent.InitializeAsync();
 //await testAgent.EnsureBootstrappedAsync();
 
 // Read in the agents configuration and initialize each agent accordingly.
 //var agentsConfigJson = await File.ReadAllTextAsync(agentsConfigPath);
 //var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentConfig>>(agentsConfigJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-//foreach(var agentConfig in agentsConfig)
-//{
+foreach(var agentConfig in agentProfiles.Where(profile => !profile.IsEnabled))
+{
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
     // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
-//    var agentName = agentConfig.AgentName;
-//    var model = agentConfig.Model;
-//    var fantasyAgent = new FantasyAgent(agentConfig);
-//    await fantasyAgent.InitializeAsync();
-//    await fantasyAgent.EnsureBootstrappedAsync();
-//    agents.Add(fantasyAgent);
-//}
+    //var agentName = agentConfig.AgentId;
+    //var model = agentConfig.ModelName;
+    var fantasyAgent = new FantasyAgent(agentConfig);
+    //await fantasyAgent.InitializeAsync();
+    //await fantasyAgent.EnsureBootstrappedAsync();
+    agents.Add(fantasyAgent);
+}
+
+Console.WriteLine("Number of agents initialized: " + agents.Count);
+
 
 //logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 
@@ -64,9 +65,9 @@ await testAgent.InitializeAsync();
 //var postResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
 //Console.WriteLine($"Post-draft response from Player 4: {postResponse}");
 
-var prompt = $"Use the `ReadAgentBootstrap` tool to read your bootstrap file, and then respond with a general summary of your current bootstrap status and team information based on the contents of the bootstrap file. If you don't have a bootstrap file, respond with 'No bootstrap file found.'.";
-var postResponse = await testAgent.RunAsync(prompt);
-Console.WriteLine($"Post-draft response from Test Agent 01: {postResponse}");
+//var prompt = $"Use the `ReadAgentBootstrap` tool to read your bootstrap file, and then respond with a general summary of your current bootstrap status and team information based on the contents of the bootstrap file. If you don't have a bootstrap file, respond with 'No bootstrap file found.'.";
+//var postResponse = await testAgent.RunAsync(prompt);
+//Console.WriteLine($"Post-draft response from Test Agent 01: {postResponse}");
 
 //var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
 //var waverPrompt = $"This is week 0 of the 2025 season. {prompt}";

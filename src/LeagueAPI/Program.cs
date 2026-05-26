@@ -65,6 +65,12 @@ builder.Services.AddSingleton<IDecisionReader>(serviceProvider =>
 builder.Services.AddSingleton<IDecisionWriter>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresDecisionStore>());
 
+builder.Services.AddSingleton<PostgresAgentProfileStore>();
+builder.Services.AddSingleton<IAgentProfileReader>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresAgentProfileStore>());
+builder.Services.AddSingleton<IAgentProfileWriter>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresAgentProfileStore>());
+
 builder.Services.AddSingleton<PostgresWaiverService>();
 builder.Services.AddSingleton<IWaiverService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresWaiverService>());
@@ -84,7 +90,8 @@ builder.Services.AddMcpServer()
     .WithTools<PlayerCatalogTools>()
     .WithTools<YahooReadTools>()
     .WithTools<RosterTools>()
-    .WithTools<WaiverTools>();
+    .WithTools<WaiverTools>()
+    .WithTools<AgentProfileTools>();
 
 var app = builder.Build();
 
@@ -125,6 +132,10 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/auth/exchange",
         "/api/yahoo/auth/refresh",
         "/api/yahoo/auth/test-connection",
+        "/api/agent-profiles?enabledOnly=",
+        "/api/agent-profiles/{agentId}",
+        "/api/agent-profiles/{agentId}/team-name",
+        "/api/agent-profiles/{agentId}/bootstrap-status",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
         "/api/league/waivers/priority (GET: priority order)",
@@ -136,6 +147,92 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/free-agents/{season}/{week}/add (POST: immediate free-agent add/drop)"
     }
 }));
+
+// --- Agent Profiles ---
+
+app.MapGet("/api/agent-profiles", async (
+    bool? enabledOnly,
+    IAgentProfileReader agentProfileReader,
+    CancellationToken cancellationToken) =>
+{
+    var profiles = await agentProfileReader.GetAgentProfilesAsync(enabledOnly ?? true, cancellationToken);
+    return Results.Ok(profiles);
+});
+
+app.MapGet("/api/agent-profiles/{agentId}", async (
+    string agentId,
+    IAgentProfileReader agentProfileReader,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var profile = await agentProfileReader.GetAgentProfileAsync(agentId, cancellationToken);
+        return profile is null ? Results.NotFound() : Results.Ok(profile);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPut("/api/agent-profiles/{agentId}", async (
+    string agentId,
+    UpsertAgentProfileRequest request,
+    IAgentProfileWriter agentProfileWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var profile = await agentProfileWriter.UpsertAgentProfileAsync(
+            agentId,
+            request.ModelName,
+            request.Connection,
+            request.TeamName,
+            request.IsBootstrapped,
+            request.IsEnabled,
+            cancellationToken);
+
+        return Results.Ok(profile);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPatch("/api/agent-profiles/{agentId}/team-name", async (
+    string agentId,
+    SetAgentTeamNameRequest request,
+    IAgentProfileWriter agentProfileWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var profile = await agentProfileWriter.SetTeamNameAsync(agentId, request.TeamName, cancellationToken);
+        return profile is null ? Results.NotFound() : Results.Ok(profile);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPatch("/api/agent-profiles/{agentId}/bootstrap-status", async (
+    string agentId,
+    SetAgentBootstrapStatusRequest request,
+    IAgentProfileWriter agentProfileWriter,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var profile = await agentProfileWriter.SetBootstrapStatusAsync(agentId, request.IsBootstrapped, cancellationToken);
+        return profile is null ? Results.NotFound() : Results.Ok(profile);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 // --- Decisions ---
 
