@@ -13,6 +13,7 @@ public sealed class BlobStorageTools
 {
     private readonly string _connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING") ?? throw new InvalidOperationException("Azure Storage connection string is not set in environment variables.");
     private BlobServiceClient _blobServiceClient;
+    private readonly string _containerName = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONTAINER_NAME") ?? "agentdata";
     public BlobStorageTools()
     {
         // Initialize Azure Blob Storage client here using connection string and container name from environment variables.
@@ -23,51 +24,68 @@ public sealed class BlobStorageTools
     public async Task<string> WriteAgentBootstrap([Description("The agent ID, such as player-01.")] string agentId, [Description("The markdown content to write.")] string content)
     {
         string fileName = "bootstrap.md";
-        var containerClient = _blobServiceClient.GetBlobContainerClient("agentdata");
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
         BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
 
-        using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
+        try
         {
-            await blobClient.UploadAsync(stream, true);
+            using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
+            {
+                await blobClient.UploadAsync(stream, true);
+                Console.WriteLine($"Bootstrap file uploaded successfully for agent '{agentId}'.");
+            }
         }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to upload bootstrap for agent '{agentId}'. Error: {ex.Message}");
+            return $"Failed to upload bootstrap for agent '{agentId}'. Error: {ex.Message}";
+        }
+        
 
         if (!await blobClient.ExistsAsync())
         {
+            Console.WriteLine($"Failed to upload bootstrap for agent '{agentId}'.");
             return $"Failed to upload bootstrap for agent '{agentId}'. Maybe try again?";
         }
+        Console.WriteLine($"Bootstrap file uploaded successfully for agent '{agentId}'.");
         return "Bootstrap uploaded successfully.";
     }
 
     [Description("Reads the agent's bootstrap markdown file.")]
     public async Task<string> ReadAgentBootstrap([Description("The agent ID, such as player-01.")] string agentId)
     {
+
         string fileName = "bootstrap.md";
-        var containerClient = _blobServiceClient.GetBlobContainerClient("agentdata");
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
         BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
 
         if (!await blobClient.ExistsAsync())
         {
+            Console.WriteLine($"Bootstrap file not found for agent '{agentId}'.");
             return $"Bootstrap file not found for agent '{agentId}'. Maybe create and upload it first?";
         }
 
         var downloadInfo = await blobClient.DownloadAsync();
         using (var reader = new StreamReader(downloadInfo.Value.Content))
         {
+            Console.WriteLine($"Bootstrap file read successfully for agent '{agentId}'.");
             return await reader.ReadToEndAsync();
         }
     }
 
     public async Task<System.Uri> UploadImageAsync(string agentId, string fileName, Stream stream)
     {
-        var containerClient = _blobServiceClient.GetBlobContainerClient("agentdata");
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
         BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
-
+        Console.WriteLine($"Uploading image for agent '{agentId}' to blob '{agentId}/{fileName}'.");
         await blobClient.UploadAsync(stream, true);
 
         if (!await blobClient.ExistsAsync())
         {
-            return null;
+            throw new InvalidOperationException($"Image upload did not create blob '{agentId}/{fileName}'.");
         }
+
+        Console.WriteLine($"Image uploaded successfully for agent '{agentId}' to blob '{agentId}/{fileName}'.");
         return blobClient.Uri;
     }
 }

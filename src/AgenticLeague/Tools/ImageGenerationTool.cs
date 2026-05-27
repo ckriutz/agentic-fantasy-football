@@ -24,6 +24,7 @@ public sealed class ImageGenerationTool
 
         var apiKey = GetRequiredEnvironmentVariable("XAI_API_KEY");
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        _downloadHttpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         _agentId = GetSafeAgentId(agentId);
     }
 
@@ -95,22 +96,17 @@ public sealed class ImageGenerationTool
 
     private async Task<string> DownloadAndSaveImageToBlobStorageAsync(string imageUrl)
     {
+        _logger.LogInformation("Downloading generated image for agent {AgentId} from {ImageUrl}", _agentId, imageUrl);
         using var response = await _downloadHttpClient.GetAsync(imageUrl, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
     
         var contentType = response.Content.Headers.ContentType?.MediaType;
         var extension = GetImageExtension(contentType);
         var fileName = $"logo{extension}";
+        _logger.LogInformation("Downloaded generated image for agent {AgentId}. Content-Type: {ContentType}. Saving as {FileName}", _agentId, contentType ?? "unknown", fileName);
     
         await using var imageStream = await response.Content.ReadAsStreamAsync();
         var uploadResult = await _blobStorageTools.UploadImageAsync(_agentId, fileName, imageStream);
-
-        if (uploadResult == null)
-        {
-            _logger.LogError("Failed to upload image for agent {AgentId}.", _agentId);
-            return null;
-        }
-
         _logger.LogInformation("Saved generated image. Upload result: {UploadResult}", uploadResult);
         return fileName;
     }

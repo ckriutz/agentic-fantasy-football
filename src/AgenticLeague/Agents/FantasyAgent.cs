@@ -115,7 +115,7 @@ public class FantasyAgent
     public async Task EnsureBootstrappedAsync(int attempt = 1, int maxAttempts = 3)
     {
         var bootstrapPrompt = $"""
-        Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
+        You're {_agentId}. Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
         If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
         - Your first task is to create the bootstrap file by using the `WriteAgentBootstrap` tool if it doesn't exist.
         - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file.
