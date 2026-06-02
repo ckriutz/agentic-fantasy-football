@@ -424,6 +424,6 @@ Stuff that I still need to do:
 - ✅ Need some items in place to ensure an agent can't add more people than they have for the roster.
 - Move the bootstrap, image, and profile files into Azure Blob Storage. We have `BlobPlan.md` to help focus that energy.
 - ✅ Someone drafted a player with the postion **FB** do I need to remove them from options? If not I need to add that position as an option for RB.
-- ✅For Cost reasons, lets try and add some additional providers like Foundry, and some of the ones that offer them identpendantly. IBM, Zyphra, etc. Here are the models I can get from Foundry that match OpenRouter:
+- ✅ For Cost reasons, lets try and add some additional providers like Foundry, and some of the ones that offer them identpendantly. IBM, Zyphra, etc. Here are the models I can get from Foundry that match OpenRouter:
 - Integrate Zyphra for funsies and see how it does.
-- Need to move the agents.config.json file to the database.
+- ✅ Need to move the agents.config.json file to the database.
