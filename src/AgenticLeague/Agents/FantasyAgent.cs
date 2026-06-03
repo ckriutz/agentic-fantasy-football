@@ -9,19 +9,13 @@ using OpenAI.Chat;
 public class FantasyAgent
 {
     private static readonly string endpoint = Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1";
-    private static readonly string apiKey = GetRequiredEnvironmentVariable("OPENROUTER_API_KEY");
+    private static readonly string apiKey = EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY");
     private AIAgent? _agent;
     HttpClient httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5000/") };
     private McpClient? _leagueApiMcpClient;
     private readonly string _modelName;
     private readonly string _agentId;
     private readonly string _agentConnection;
-
-    public FantasyAgent(string agentId, string modelName)
-    {
-        _agentId = agentId;
-        _modelName = modelName;
-    }
 
     public FantasyAgent(AgentProfile profile)
     {
@@ -114,6 +108,18 @@ public class FantasyAgent
     // So we can set a max number of attempts, and if we exceed that, we can log an error and move on, since we don't want one agent to hold up the entire league.
     public async Task EnsureBootstrappedAsync(int attempt = 1, int maxAttempts = 3)
     {
+        // Lets do a code-first check here before we run the agent, to see if the bootstrap file exists and is complete.
+        // This will save us some time and API calls if the agent is already bootstrapped.
+        // To be bootsrapped, the agent needs a bootstrap.md file, a logo.png file, and a team name in their agent profile.
+        var bst = new BlobStorageTools();
+        var isBootstrapFileExists = bst.IsBootstrapFilePresent(_agentId);
+        var isLogoFileExists = bst.IsLogoFilePresent(_agentId);
+        if (isBootstrapFileExists && isLogoFileExists)
+        {
+            Console.WriteLine($"✅ {_agentId} is bootstrapped and ready to go!");
+            return;
+        }
+
         var bootstrapPrompt = $"""
         You're {_agentId}. Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
         If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
@@ -163,14 +169,4 @@ public class FantasyAgent
         return File.ReadAllText(fullPath);
     }
 
-    private static string GetRequiredEnvironmentVariable(string name)
-    {
-        var value = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Required environment variable '{name}' is not set.");
-        }
-
-        return value;
-    }
 }

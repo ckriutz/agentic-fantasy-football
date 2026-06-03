@@ -13,7 +13,7 @@ public class DataStatusAgent
 {
     private static readonly string endpoint =
         Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1";
-    private static readonly string apiKey = GetRequiredEnvironmentVariable("OPENROUTER_API_KEY");
+    private static readonly string apiKey = EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY");
     public static string modelName = "google/gemma-4-31b-it";
 
     HttpClient httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5000/") };
@@ -42,14 +42,4 @@ public class DataStatusAgent
         return agent;
     }
 
-    private static string GetRequiredEnvironmentVariable(string name)
-    {
-        var value = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Required environment variable '{name}' is not set.");
-        }
-
-        return value;
-    }
 }

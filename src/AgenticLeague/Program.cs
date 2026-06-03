@@ -6,6 +6,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
+
 HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5000/") };
 
 logger.LogInformation("Starting Agentic Fantasy Football League...");
@@ -30,13 +31,15 @@ List<FantasyAgent> agents = new List<FantasyAgent>();
 // Read in the agents configuration and initialize each agent accordingly.
 //var agentsConfigJson = await File.ReadAllTextAsync(agentsConfigPath);
 //var agentsConfig = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentConfig>>(agentsConfigJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+Console.WriteLine("Initializing agents...");
 foreach(var agentConfig in agentProfiles.Where(profile => profile.IsEnabled))
 {
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
     // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
     var fantasyAgent = new FantasyAgent(agentConfig);
-    //await fantasyAgent.InitializeAsync();
-    //await fantasyAgent.EnsureBootstrappedAsync();
+    await fantasyAgent.InitializeAsync();
+    await fantasyAgent.EnsureBootstrappedAsync();
     agents.Add(fantasyAgent);
 }
 

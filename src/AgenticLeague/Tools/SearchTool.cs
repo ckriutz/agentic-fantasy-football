@@ -6,7 +6,7 @@ using System.Text.Json;
 public sealed class SearchTool
 {
     private static readonly string endpoint = Environment.GetEnvironmentVariable("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1";
-    private static readonly string apiKey = GetRequiredEnvironmentVariable("OPENROUTER_API_KEY");
+    private static readonly string apiKey = EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY");
     private static readonly string modelName = "perplexity/sonar";
     private readonly HttpClient _httpClient;
 
@@ -167,14 +167,4 @@ public sealed class SearchTool
         }
     }
 
-    private static string GetRequiredEnvironmentVariable(string name)
-    {
-        var value = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Required environment variable '{name}' is not set.");
-        }
-
-        return value;
-    }
 }

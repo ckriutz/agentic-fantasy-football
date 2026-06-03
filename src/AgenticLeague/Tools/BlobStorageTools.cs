@@ -88,6 +88,24 @@ public sealed class BlobStorageTools
         Console.WriteLine($"Image uploaded successfully for agent '{agentId}' to blob '{agentId}/{fileName}'.");
         return blobClient.Uri;
     }
+
+    // This is a utility method to see if there is a bootstrap file for an agent in blob storage.
+    public bool IsBootstrapFilePresent(string agentId)
+    {
+        string fileName = "bootstrap.md";
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+        BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
+        return blobClient.Exists();
+    }
+
+    // This is another utility method to see if there is a logo file for an agent in blob storage.
+    public bool IsLogoFilePresent(string agentId)
+    {
+        string fileName = "logo.png";
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+        BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
+        return blobClient.Exists();
+    }
 }
 
 //     [Description("Lists the blobs for the specified agent in Azure Blob Storage. Returns the blob name and a full URL for each item so the agent can read or reference the files.")]
