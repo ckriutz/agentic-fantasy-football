@@ -14,5 +14,5 @@ public sealed class SportsDataSyncOptions
 
     public string FantasyPlayersEndpoint { get; init; } = "FantasyPlayers";
 
-    public string ApiKey { get; init; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
 }

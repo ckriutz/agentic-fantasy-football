@@ -31,6 +31,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<AgentProfile> AgentProfiles => Set<AgentProfile>();
 
+    public DbSet<LeagueStateEntity> LeagueState => Set<LeagueStateEntity>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
@@ -227,6 +229,26 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(profile => profile.Connection).HasMaxLength(50);
 
             entity.HasIndex(profile => profile.IsEnabled);
+        });
+
+        modelBuilder.Entity<LeagueStateEntity>(entity =>
+        {
+            entity.ToTable("league_state");
+            entity.HasKey(state => state.Id);
+
+            entity.Property(state => state.Id).ValueGeneratedNever();
+            entity.Property(state => state.Phase).HasMaxLength(32);
+            entity.Property(state => state.UpdatedBy).HasMaxLength(32);
+
+            entity.HasData(new LeagueStateEntity
+            {
+                Id = LeagueStateDefaults.SingletonId,
+                Season = LeagueStateDefaults.DefaultSeason,
+                Week = LeagueStateDefaults.PreseasonWeek,
+                Phase = LeagueStateDefaults.DefaultPhase,
+                UpdatedAtUtc = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+                UpdatedBy = LeagueStateDefaults.DefaultUpdatedBy
+            });
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

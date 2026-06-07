@@ -20,9 +20,12 @@ internal static class WaiverProcessRunStatus
     public const string Failed = "Failed";
 }
 
-public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IWaiverService
+public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILeagueStateService leagueStateService) : IWaiverService
 {
+    private sealed record ClaimSubmission(int ClaimOrder, string AddSleeperPlayerId, string? DropSleeperPlayerId);
+
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
+    private readonly ILeagueStateService _leagueStateService = leagueStateService;
 
     public async Task SeedWaiverPriorityAsync(IReadOnlyList<string> draftOrder, bool force, CancellationToken cancellationToken)
     {
@@ -62,11 +65,38 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
 
     public async Task<IReadOnlyList<WaiverClaimResult>> SubmitWaiverClaimsAsync(string agentId, int season, int week, IReadOnlyList<WaiverClaimItem> claims, CancellationToken cancellationToken)
     {
+        return await SubmitWaiverClaimsCoreAsync(
+            agentId,
+            season,
+            week,
+            claims.Select(claim => new ClaimSubmission(claim.ClaimOrder, claim.AddSleeperPlayerId, claim.DropSleeperPlayerId)).ToList(),
+            cancellationToken);
+    }
+
+    public async Task<WaiverClaimResult> SubmitWaiverClaimForCurrentWeekAsync(string agentId, string addSleeperPlayerId, string? dropSleeperPlayerId, CancellationToken cancellationToken)
+    {
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        if (leagueState.Phase != LeagueStatePhases.WaiverWindow)
+            throw new InvalidOperationException($"Waiver claims are only allowed during the '{LeagueStatePhases.WaiverWindow}' phase. Current phase is '{leagueState.Phase}'.");
+
+        var claims = await SubmitWaiverClaimsCoreAsync(
+            agentId,
+            leagueState.Season,
+            leagueState.Week,
+            [new ClaimSubmission(1, addSleeperPlayerId, dropSleeperPlayerId)],
+            cancellationToken);
+
+        return claims[0];
+    }
+
+    private async Task<IReadOnlyList<WaiverClaimResult>> SubmitWaiverClaimsCoreAsync(string agentId, int season, int week, IReadOnlyList<ClaimSubmission> claims, CancellationToken cancellationToken)
+    {
         var normalizedAgentId = NormalizeRequired(agentId, nameof(agentId));
 
         if (claims is null || claims.Count == 0)
             throw new ArgumentException("At least one claim is required.", nameof(claims));
 
+        await EnsureWaiverClaimsAllowedAsync(season, week, cancellationToken);
         ValidateClaimList(claims);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -82,13 +112,23 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             if (!RosterSlotRules.CanPlayerBeRostered(addPlayer.Position, addPlayer.FantasyPositionsTokenized))
                 throw new ArgumentException($"Add player '{addPlayer.FullName ?? claim.AddSleeperPlayerId}' (position: {addPlayer.Position}) is not eligible for roster slots.", nameof(claims));
 
-            var dropOwned = await dbContext.RosterAssignments
-                .AsNoTracking()
-                .AnyAsync(a => a.SleeperPlayerId == claim.DropSleeperPlayerId && a.AgentId == normalizedAgentId, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId))
+            {
+                var dropOwned = await dbContext.RosterAssignments
+                    .AsNoTracking()
+                    .AnyAsync(a => a.SleeperPlayerId == claim.DropSleeperPlayerId && a.AgentId == normalizedAgentId, cancellationToken);
 
-            if (!dropOwned)
-                throw new ArgumentException($"Drop player '{claim.DropSleeperPlayerId}' is not on agent '{normalizedAgentId}' roster.", nameof(claims));
+                if (!dropOwned)
+                    throw new ArgumentException($"Drop player '{claim.DropSleeperPlayerId}' is not on agent '{normalizedAgentId}' roster.", nameof(claims));
+            }
         }
+
+        var currentRosterCount = await dbContext.RosterAssignments
+            .AsNoTracking()
+            .CountAsync(a => a.AgentId == normalizedAgentId, cancellationToken);
+
+        if (currentRosterCount >= RosterSlotRules.MaxRosterSize && claims.Any(claim => string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId)))
+            throw new ArgumentException($"Agent '{normalizedAgentId}' has a full roster. Provide DropSleeperPlayerId to submit this move.", nameof(claims));
 
         // Get current priority for audit
         var priorityEntry = await dbContext.WaiverPriorities
@@ -112,7 +152,7 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             Week = week,
             ClaimOrder = claim.ClaimOrder,
             AddSleeperPlayerId = claim.AddSleeperPlayerId.Trim(),
-            DropSleeperPlayerId = claim.DropSleeperPlayerId.Trim(),
+            DropSleeperPlayerId = claim.DropSleeperPlayerId?.Trim(),
             PriorityAtSubmission = currentPriority,
             Status = WaiverClaimStatus.Pending,
             SubmittedAtUtc = now
@@ -237,6 +277,13 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             completedRun.ClaimsSucceeded = succeeded;
             completedRun.ClaimsFailed = failed;
             completedRun.CompletedAtUtc = DateTimeOffset.UtcNow;
+            await PostgresLeagueStateService.UpsertLeagueStateAsync(
+                resultDbContext,
+                season,
+                week,
+                LeagueStatePhases.FreeAgency,
+                LeagueStateUpdatedBy.WaiverProcessor,
+                cancellationToken);
             await resultDbContext.SaveChangesAsync(cancellationToken);
 
             return new ProcessWaiverClaimsResult(
@@ -281,19 +328,27 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         }
     }
 
-    public async Task<AddFreeAgentResult> AddFreeAgentAsync(string agentId, int season, int week, string addSleeperPlayerId, string dropSleeperPlayerId, CancellationToken cancellationToken)
+    public async Task<AddFreeAgentResult> AddFreeAgentForCurrentWeekAsync(string agentId, string addSleeperPlayerId, string? dropSleeperPlayerId, CancellationToken cancellationToken)
+    {
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        if (leagueState.Phase != LeagueStatePhases.FreeAgency)
+            throw new InvalidOperationException($"Free agent adds are only allowed during the '{LeagueStatePhases.FreeAgency}' phase. Current phase is '{leagueState.Phase}'.");
+
+        return await AddFreeAgentAsync(agentId, leagueState.Season, leagueState.Week, addSleeperPlayerId, dropSleeperPlayerId, cancellationToken);
+    }
+
+    public async Task<AddFreeAgentResult> AddFreeAgentAsync(string agentId, int season, int week, string addSleeperPlayerId, string? dropSleeperPlayerId, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeRequired(agentId, nameof(agentId));
         var normalizedAddId = NormalizeRequired(addSleeperPlayerId, nameof(addSleeperPlayerId));
-        var normalizedDropId = NormalizeRequired(dropSleeperPlayerId, nameof(dropSleeperPlayerId));
+        var normalizedDropId = NormalizeOptional(dropSleeperPlayerId);
 
-        if (string.Equals(normalizedAddId, normalizedDropId, StringComparison.Ordinal))
+        if (normalizedDropId is not null && string.Equals(normalizedAddId, normalizedDropId, StringComparison.Ordinal))
             throw new ArgumentException("Add and drop players must be different.", nameof(addSleeperPlayerId));
 
-        // Verify waivers have been processed for this week
-        var status = await GetWaiverProcessStatusAsync(season, week, cancellationToken);
-        if (!status.HasBeenProcessed)
-            throw new InvalidOperationException($"Waiver claims for season {season} week {week} have not been processed yet. Free agent adds are only allowed after waivers have been processed.");
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        if (leagueState.Season != season || leagueState.Week != week || leagueState.Phase != LeagueStatePhases.FreeAgency)
+            throw new InvalidOperationException($"Free agent adds are only allowed during the '{LeagueStatePhases.FreeAgency}' phase for the active league state. Current state is season {leagueState.Season} week {leagueState.Week} phase '{leagueState.Phase}'.");
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
@@ -313,11 +368,24 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         if (existingOwner is not null)
             throw new RosterConflictException($"Player '{normalizedAddId}' is already on a roster.");
 
-        var dropAssignment = await dbContext.RosterAssignments
-            .FirstOrDefaultAsync(a => a.SleeperPlayerId == normalizedDropId && a.AgentId == normalizedAgentId, cancellationToken)
-            ?? throw new RosterPlayerNotFoundException($"Drop player '{normalizedDropId}' is not on agent '{normalizedAgentId}' roster.");
+        if (normalizedDropId is not null)
+        {
+            var dropAssignment = await dbContext.RosterAssignments
+                .FirstOrDefaultAsync(a => a.SleeperPlayerId == normalizedDropId && a.AgentId == normalizedAgentId, cancellationToken)
+                ?? throw new RosterPlayerNotFoundException($"Drop player '{normalizedDropId}' is not on agent '{normalizedAgentId}' roster.");
 
-        dbContext.RosterAssignments.Remove(dropAssignment);
+            dbContext.RosterAssignments.Remove(dropAssignment);
+        }
+        else
+        {
+            var currentRosterCount = await dbContext.RosterAssignments
+                .AsNoTracking()
+                .CountAsync(a => a.AgentId == normalizedAgentId, cancellationToken);
+
+            if (currentRosterCount >= RosterSlotRules.MaxRosterSize)
+                throw new RosterConflictException($"Agent '{normalizedAgentId}' already has {currentRosterCount} players on their roster. Provide DropSleeperPlayerId to add '{normalizedAddId}'.");
+        }
+
         var acquiredAt = DateTimeOffset.UtcNow;
         dbContext.RosterAssignments.Add(new RosterAssignmentEntity
         {
@@ -418,16 +486,32 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
                 return (false, $"Player '{claim.AddSleeperPlayerId}' is already on a roster.");
             }
 
-            var dropAssignment = await dbContext.RosterAssignments
-                .FirstOrDefaultAsync(a => a.SleeperPlayerId == claim.DropSleeperPlayerId && a.AgentId == claim.AgentId, cancellationToken);
-
-            if (dropAssignment is null)
+            if (!string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId))
             {
-                await transaction.RollbackAsync(cancellationToken);
-                return (false, $"Drop player '{claim.DropSleeperPlayerId}' is no longer on agent '{claim.AgentId}' roster.");
+                var dropAssignment = await dbContext.RosterAssignments
+                    .FirstOrDefaultAsync(a => a.SleeperPlayerId == claim.DropSleeperPlayerId && a.AgentId == claim.AgentId, cancellationToken);
+
+                if (dropAssignment is null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return (false, $"Drop player '{claim.DropSleeperPlayerId}' is no longer on agent '{claim.AgentId}' roster.");
+                }
+
+                dbContext.RosterAssignments.Remove(dropAssignment);
+            }
+            else
+            {
+                var currentRosterCount = await dbContext.RosterAssignments
+                    .AsNoTracking()
+                    .CountAsync(a => a.AgentId == claim.AgentId, cancellationToken);
+
+                if (currentRosterCount >= RosterSlotRules.MaxRosterSize)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return (false, $"Agent '{claim.AgentId}' has a full roster. Provide DropSleeperPlayerId to add '{claim.AddSleeperPlayerId}'.");
+                }
             }
 
-            dbContext.RosterAssignments.Remove(dropAssignment);
             dbContext.RosterAssignments.Add(new RosterAssignmentEntity
             {
                 RosterAssignmentId = Guid.NewGuid(),
@@ -518,7 +602,14 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static void ValidateClaimList(IReadOnlyList<WaiverClaimItem> claims)
+    private async Task EnsureWaiverClaimsAllowedAsync(int season, int week, CancellationToken cancellationToken)
+    {
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        if (leagueState.Season == season && leagueState.Week == week && leagueState.Phase != LeagueStatePhases.WaiverWindow)
+            throw new InvalidOperationException($"Waiver claims are only allowed during the '{LeagueStatePhases.WaiverWindow}' phase for the active league state. Current state is season {leagueState.Season} week {leagueState.Week} phase '{leagueState.Phase}'.");
+    }
+
+    private static void ValidateClaimList(IReadOnlyList<ClaimSubmission> claims)
     {
         var claimOrders = claims.Select(c => c.ClaimOrder).ToList();
         if (claimOrders.Distinct().Count() != claimOrders.Count)
@@ -533,10 +624,7 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             if (string.IsNullOrWhiteSpace(claim.AddSleeperPlayerId))
                 throw new ArgumentException("AddSleeperPlayerId is required on every claim.", nameof(claims));
 
-            if (string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId))
-                throw new ArgumentException("DropSleeperPlayerId is required on every claim.", nameof(claims));
-
-            if (string.Equals(claim.AddSleeperPlayerId.Trim(), claim.DropSleeperPlayerId.Trim(), StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId) && string.Equals(claim.AddSleeperPlayerId.Trim(), claim.DropSleeperPlayerId.Trim(), StringComparison.Ordinal))
                 throw new ArgumentException($"Add and drop player must be different (claim order {claim.ClaimOrder}).", nameof(claims));
         }
     }
@@ -554,6 +642,13 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         return value.Trim();
     }
 
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
+    }
+
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
@@ -564,21 +659,22 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         var priorityTask = GetWaiverPriorityAsync(cancellationToken);
         var claimsTask = GetWaiverClaimsAsync(season, week, agentId, cancellationToken);
         var statusTask = GetWaiverProcessStatusAsync(season, week, cancellationToken);
+        var leagueStateTask = _leagueStateService.GetLeagueStateAsync(cancellationToken);
 
-        await Task.WhenAll(priorityTask, claimsTask, statusTask);
+        await Task.WhenAll(priorityTask, claimsTask, statusTask, leagueStateTask);
 
         var priority = await priorityTask;
         var myClaims = await claimsTask;
         var processStatus = await statusTask;
+        var leagueState = await leagueStateTask;
 
         var myPriority = priority.Priority.FirstOrDefault(p => p.AgentId == agentId)?.Priority;
         var hasPending = myClaims.Any(c => c.Status == WaiverClaimStatus.Pending);
-        var phase = processStatus.HasBeenProcessed ? "free_agency" : "waiver_window";
 
         return new MyWaiverStatusResult(
             Season: season,
             Week: week,
-            Phase: phase,
+            Phase: leagueState.Phase,
             MyPriority: myPriority,
             TotalAgents: priority.Priority.Count,
             HasPendingClaims: hasPending,

@@ -31,18 +31,23 @@ Returns: Research data.
 ### `SetPlayerSlot`
 **Use when**: You need to place a player in a position on a starting slot. The valid slot values are: **QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1, BN**. You must use these exact slot names (including the number suffix).
 
+### `GetLeagueState`
+**Use when**: You need to discover the current season, week, and league phase. This is the source of truth for league context.
+
+Returns: current season, week, phase, updated time, and update source.
+
 ### `GetMyWaiverStatus`
-**Use when**: You need to understand the current waiver situation for a given week. Returns everything in one call: what phase the week is in (`waiver_window` or `free_agency`), your waiver priority position, whether you already have pending claims, and all your claim details with results.
+**Use when**: You need to understand the current waiver situation for the current league week. Returns everything in one call: what phase the week is in, your waiver priority position, whether you already have pending claims, and all your claim details with results.
 
 Returns: phase, your priority, pending claim status, and full claim list.
 
-### `SubmitWaiverClaims`
-**Use when**: The phase is `waiver_window` and you want to claim a free agent. Submit a prioritized list — only one claim will succeed per waiver period. Replaces any previous pending claims.
+### `SubmitWaiverClaimForCurrentWeek`
+**Use when**: The phase is `waiver_window` and you want to submit one waiver claim using the current league state week. Provide `dropSleeperPlayerId` only if your roster is full and you need to make room.
 
-Returns: your submitted claim list with statuses.
+Returns: the submitted waiver claim.
 
-### `AddFreeAgent`
-**Use when**: The phase is `free_agency` (waivers have been processed) and you want to immediately add an unclaimed player. Call `GetMyWaiverStatus` first to confirm the phase.
+### `AddFreeAgentForCurrentWeek`
+**Use when**: The phase is `free_agency` and you want to immediately add an unclaimed player for the current league week. Provide `dropSleeperPlayerId` only if your roster is full and you need to make room.
 
 Returns: confirmation of the add/drop.
 
@@ -91,47 +96,47 @@ Returns: confirmation of the add/drop.
 ### Goal
 Maximize total points scored each week by fielding the best available starting lineup.
 
-## Roster Management Tools
-When you need to add/drop players or set your lineup, use the following tools:
-- `AddPlayerToRoster`: Add a player to your roster from free agency.
-- `RemovePlayerFromRoster`: Remove a player from your roster.
-- `GetMyRoster`: View your current roster, including starters and bench players.
-
----
-
 ## Waiver Wire
 
 ### How It Works
 
 - **Waiver window**: After each week ends, there is a waiver period where you can submit claims for players not on any roster.
 - **Priority**: Claims are processed in priority order — lower priority number = processed first. Priority is rolling: a successful claim moves you to the **end** of the queue.
-- **Claim list**: You submit a *prioritized list* of claims, not just one. Only **one claim will succeed** per waiver period. Your list is tried in `ClaimOrder` sequence until one succeeds or all fail.
-- **Required drop**: Every claim must include a player to drop. You cannot add without dropping.
-- **Free agency**: After waivers are processed, unclaimed players become free agents. Use `AddFreeAgent` to pick them up immediately — no waiting for the next waiver run.
+- **Single claim flow**: For normal agent behavior, choose one move and use the current-week MCP tool for the correct phase.
+- **Optional drop**: If your roster is full, include a player to drop. If your roster has room, you can omit the drop.
+- **Free agency**: After waivers are processed, unclaimed players become free agents. Use `AddFreeAgentForCurrentWeek` to pick them up immediately.
 
 ### Decision Process for Waiver Claims
 
-1. Call `GetMyWaiverStatus` with your agent ID, season, and week. This tells you:
-   - **Phase**: `waiver_window` means you can submit claims. `free_agency` means waivers are done — use `AddFreeAgent` instead.
-   - **Your priority**: Lower number = processed first. If your priority is poor, submit multiple fallback claims.
-   - **Pending claims**: Whether you already have claims submitted for this week (you can revise by resubmitting).
-2. Call `GetMyRoster` to identify weaknesses (injuries, bye weeks, underperformers).
-3. Call `GetAvailablePlayers` filtered by the needed position to see who is unclaimed.
-4. Use `SearchWeb` to research available players — injury recoveries, depth chart changes, upcoming matchups.
-5. Build a prioritized claim list:
-   - `ClaimOrder 1`: Your top target (best player, best fit for your team).
-   - `ClaimOrder 2+`: Fallback options in case your top target is claimed by a higher-priority agent.
-6. Call `SubmitWaiverClaims` with your full list.
+1. Call `GetLeagueState` first. Use the returned `season`, `week`, and `phase` as the source of truth.
+2. Call `GetMyWaiverStatus` with your agent ID. This tells you:
+   - **Phase**: `waiver_window` means you can submit a waiver claim. `free_agency` means waivers are done — use `AddFreeAgentForCurrentWeek` instead.
+   - **Your priority**: Lower number = processed first.
+   - **Pending claims**: Whether you already have a claim submitted for this week.
+   - **MyClaims**: Your claim history and current results.
+3. If the phase is not `waiver_window` or `free_agency`, do not try to add a player.
+4. Call `GetMyRoster` to identify weaknesses (injuries, bye weeks, underperformers).
+5. Call `GetAvailablePlayers` filtered by the needed position to see who is unclaimed.
+6. Use `SearchWeb` to research available players — injury recoveries, depth chart changes, upcoming matchups.
+7. Choose one player to add. If your roster is full, also choose the player you will drop.
+8. Use the phase-specific MCP tool:
+   - `waiver_window` → `SubmitWaiverClaimForCurrentWeek`
+   - `free_agency` → `AddFreeAgentForCurrentWeek`
+9. Do **not** call the older explicit season/week acquisition tools unless you were explicitly instructed to do admin or debug work.
 
 ### After Waivers Are Processed
 
-1. Call `GetMyWaiverStatus` — check the `Phase` field and review your `MyClaims` for results.
-2. If a claim succeeded: the new player is on your bench (`BN`). Use `SetPlayerSlot` or `AutoSetLineup` to update your starting lineup if needed.
-3. If all your claims failed and the phase is `free_agency`: use `AddFreeAgent` to pick up an unclaimed player immediately.
+1. Call `GetLeagueState` and `GetMyWaiverStatus` again to confirm the current phase and review your claim results.
+2. If a claim or add succeeded: the new player is on your bench (`BN`). Use `SetPlayerSlot` or `AutoSetLineup` to update your starting lineup if needed.
+3. If the phase is now `free_agency` and you still want to improve your roster, evaluate the market again before making another move.
 4. Update your bootstrap file with any roster changes and notes on your waiver decision.
 
 ### Rules
-- **Never** use `AddFreeAgent` when the phase is `waiver_window` — it will fail. Always call `GetMyWaiverStatus` first.
+- **Always** call `GetLeagueState` first. Do not rely on prompt text for season or week.
+- **Then** call `GetMyWaiverStatus` before making an acquisition decision.
+- **Never** use `AddFreeAgentForCurrentWeek` when the phase is `waiver_window`.
+- **Never** use `SubmitWaiverClaimForCurrentWeek` when the phase is `free_agency`.
+- Do not call `SubmitWaiverClaims` or `AddFreeAgent` directly unless you were explicitly instructed to do admin or debug work.
 - A newly added player always lands on `BN`. Manually move them to a starter slot if they should be starting.
 - If you drop a starter, their slot becomes empty. Use `SetPlayerSlot` or `AutoSetLineup` to fill it.
 

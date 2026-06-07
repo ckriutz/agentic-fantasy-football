@@ -18,7 +18,7 @@ public sealed record AddFreeAgentRequest(
     int Season,
     int Week,
     string AddSleeperPlayerId,
-    string DropSleeperPlayerId);
+    string? DropSleeperPlayerId);
 
 public sealed record SeedWaiverPriorityRequest(
     IReadOnlyList<string> DraftOrder);
@@ -32,7 +32,7 @@ public sealed record WaiverClaimResult(
     int Week,
     int ClaimOrder,
     string AddSleeperPlayerId,
-    string DropSleeperPlayerId,
+    string? DropSleeperPlayerId,
     int PriorityAtSubmission,
     string Status,
     string? FailureReason,
@@ -73,7 +73,7 @@ public sealed record WaiverProcessStatusResult(
 public sealed record AddFreeAgentResult(
     string AgentId,
     string AddedSleeperPlayerId,
-    string DroppedSleeperPlayerId,
+    string? DroppedSleeperPlayerId,
     DateTimeOffset AcquiredAtUtc);
 
 public sealed record MyWaiverStatusResult(

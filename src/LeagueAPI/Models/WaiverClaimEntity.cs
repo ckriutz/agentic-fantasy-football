@@ -14,7 +14,7 @@ public sealed class WaiverClaimEntity
 
     public required string AddSleeperPlayerId { get; set; }
 
-    public required string DropSleeperPlayerId { get; set; }
+    public string? DropSleeperPlayerId { get; set; }
 
     public int PriorityAtSubmission { get; set; }
 

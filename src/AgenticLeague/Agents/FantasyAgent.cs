@@ -13,25 +13,22 @@ public class FantasyAgent
     private AIAgent? _agent;
     HttpClient httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5000/") };
     private McpClient? _leagueApiMcpClient;
-    private readonly string _modelName;
-    private readonly string _agentId;
-    private readonly string _agentConnection;
+    private AgentProfile _profile;
 
     public FantasyAgent(AgentProfile profile)
     {
-        _agentId = profile.AgentId;
-        _modelName = profile.ModelName;
-        _agentConnection = profile.Connection;
+        _profile = profile;
+
     }
 
-    public string GetAgentName() => _agentId;
+    public string GetAgentName() => _profile.AgentId;
 
     public async Task InitializeAsync()
     {
         if (_agent != null) { return; } // Already initialized, no need to do it again.
 
         var blobStorageTools = new BlobStorageTools();
-        var imageGenerationTool = new ImageGenerationTool(_agentId);
+        var imageGenerationTool = new ImageGenerationTool(_profile.AgentId);
         var searchTool = new SearchTool();
         
         var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
@@ -50,7 +47,7 @@ public class FantasyAgent
 
         var agentInstructions =
         $"""
-        You are {_agentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
+        You are {_profile.AgentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
         
         Your current team name, strategy, status, and memory can be found by using `ReadAgentBootstrap` tool to read your bootstrapping file. Always read this file before making any decisions.
 
@@ -67,7 +64,7 @@ public class FantasyAgent
 
         ChatClient? chatClient = null;
         OpenAIClientOptions options = null;
-        if(_agentConnection == "OpenRouter")
+        if(_profile.Connection == "OpenRouter")
         {
             options = new OpenAIClientOptions
             {
@@ -76,9 +73,9 @@ public class FantasyAgent
                 ProjectId = "agentic-fantasy-football",
                 UserAgentApplicationId = "AgenticFantasyFootball"
             };
-            chatClient = new ChatClient(_modelName, new ApiKeyCredential(apiKey), options);
+            chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(apiKey), options);
         }
-        if(_agentConnection == "MSFoundry")
+        if(_profile.Connection == "MSFoundry")
         {
             var key = Environment.GetEnvironmentVariable("FoundryKey");
             var endpoint = Environment.GetEnvironmentVariable("FoundryEndpoint");
@@ -87,12 +84,12 @@ public class FantasyAgent
                 Endpoint = new Uri(endpoint),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
             };
-            chatClient = new ChatClient(_modelName, new ApiKeyCredential(key), options);
+            chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(key), options);
         }
 
         _agent = chatClient
             .AsIChatClient()
-            .AsAIAgent(name: _agentId, instructions: agentInstructions,
+            .AsAIAgent(name: _profile.AgentId, instructions: agentInstructions,
             tools:
             [
                 AIFunctionFactory.Create(blobStorageTools.ReadAgentBootstrap),
@@ -111,17 +108,15 @@ public class FantasyAgent
         // Lets do a code-first check here before we run the agent, to see if the bootstrap file exists and is complete.
         // This will save us some time and API calls if the agent is already bootstrapped.
         // To be bootsrapped, the agent needs a bootstrap.md file, a logo.png file, and a team name in their agent profile.
-        var bst = new BlobStorageTools();
-        var isBootstrapFileExists = bst.IsBootstrapFilePresent(_agentId);
-        var isLogoFileExists = bst.IsLogoFilePresent(_agentId);
-        if (isBootstrapFileExists && isLogoFileExists)
+        
+        if (_profile.IsBootstrapped)
         {
-            Console.WriteLine($"✅ {_agentId} is bootstrapped and ready to go!");
+            Console.WriteLine($"✅ {_profile.AgentId} is bootstrapped and ready to go!");
             return;
         }
 
         var bootstrapPrompt = $"""
-        You're {_agentId}. Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
+        You're {_profile.AgentId}. Check to see if you've already bootstrapped yourself by using the `ReadAgentBootstrap` tool.
         If it does not exist, create one. Here is the guideline for what to include in your bootstrap file and how to bootstrap yourself:
         - Your first task is to create the bootstrap file by using the `WriteAgentBootstrap` tool if it doesn't exist.
         - Give your team a creative name. It can be fantasy football related, but it doesn't have to be, it can be sports related, or anything that inspires you. Do NOT use the word "Gridiron". Save this team name in your bootstrap file.
@@ -137,11 +132,11 @@ public class FantasyAgent
         try
         {
             var response = await RunAsync(bootstrapPrompt);
-            Console.WriteLine($"Agent {_agentId} response: {response.Text}");
+            Console.WriteLine($"Agent {_profile.AgentId} response: {response.Text}");
         }
         catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
         {
-            Console.WriteLine($"Agent {_agentId} returned unknown finish reason — skipping");
+            Console.WriteLine($"Agent {_profile.AgentId} returned unknown finish reason — skipping");
         }
     }
 

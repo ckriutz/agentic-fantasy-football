@@ -10,11 +10,13 @@ using LeagueAPI.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services
+    .AddOptions<SportsDataSyncOptions>()
+    .Bind(builder.Configuration.GetSection(SportsDataSyncOptions.SectionName))
+    .Configure(options => options.ApiKey = builder.Configuration["SPORTSDATA_API_KEY"] ?? options.ApiKey);
+
 builder.Services.Configure<SleeperSyncOptions>(
     builder.Configuration.GetSection(SleeperSyncOptions.SectionName));
-
-builder.Services.Configure<SportsDataSyncOptions>(
-    builder.Configuration.GetSection(SportsDataSyncOptions.SectionName));
 
 builder.Services.Configure<YahooOAuthOptions>(
     builder.Configuration.GetSection(YahooOAuthOptions.SectionName));
@@ -71,6 +73,10 @@ builder.Services.AddSingleton<IAgentProfileReader>(serviceProvider =>
 builder.Services.AddSingleton<IAgentProfileWriter>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresAgentProfileStore>());
 
+builder.Services.AddSingleton<PostgresLeagueStateService>();
+builder.Services.AddSingleton<ILeagueStateService>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresLeagueStateService>());
+
 builder.Services.AddSingleton<PostgresWaiverService>();
 builder.Services.AddSingleton<IWaiverService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresWaiverService>());
@@ -91,7 +97,8 @@ builder.Services.AddMcpServer()
     .WithTools<YahooReadTools>()
     .WithTools<RosterTools>()
     .WithTools<WaiverTools>()
-    .WithTools<AgentProfileTools>();
+    .WithTools<AgentProfileTools>()
+    .WithTools<LeagueStateTools>();
 
 var app = builder.Build();
 
@@ -136,6 +143,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/agent-profiles/{agentId}",
         "/api/agent-profiles/{agentId}/team-name",
         "/api/agent-profiles/{agentId}/bootstrap-status",
+        "/api/league/state",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
         "/api/league/waivers/priority (GET: priority order)",
@@ -227,6 +235,38 @@ app.MapPatch("/api/agent-profiles/{agentId}/bootstrap-status", async (
     {
         var profile = await agentProfileWriter.SetBootstrapStatusAsync(agentId, request.IsBootstrapped, cancellationToken);
         return profile is null ? Results.NotFound() : Results.Ok(profile);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+// --- League State ---
+
+app.MapGet("/api/league/state", async (
+    ILeagueStateService leagueStateService,
+    CancellationToken cancellationToken) =>
+{
+    var state = await leagueStateService.GetLeagueStateAsync(cancellationToken);
+    return Results.Ok(state);
+});
+
+app.MapPut("/api/league/state", async (
+    SetLeagueStateRequest request,
+    ILeagueStateService leagueStateService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var state = await leagueStateService.SetLeagueStateAsync(
+            request.Season,
+            request.Week,
+            request.Phase,
+            request.UpdatedBy,
+            cancellationToken);
+
+        return Results.Ok(state);
     }
     catch (ArgumentException ex)
     {
@@ -889,7 +929,7 @@ app.MapPost("/api/league/waivers/{season:int}/{week:int}/claims", async (
             request.AgentId, season, week, request.Claims, cancellationToken);
         return Results.Ok(claims);
     }
-    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or RosterPlayerNotFoundException or RosterConflictException)
     {
         return CreateWaiverErrorResult(ex);
     }
