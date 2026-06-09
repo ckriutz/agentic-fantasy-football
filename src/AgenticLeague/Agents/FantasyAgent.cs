@@ -3,6 +3,7 @@ using ModelContextProtocol.Client;
 using AgenticLeague.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -13,12 +14,13 @@ public class FantasyAgent
     private AIAgent? _agent;
     HttpClient httpClient = new HttpClient { BaseAddress = new Uri("http://localhost:5000/") };
     private McpClient? _leagueApiMcpClient;
-    private AgentProfile _profile;
+    private readonly AgentProfile _profile;
+    private readonly ILogger<FantasyAgent> _logger;
 
-    public FantasyAgent(AgentProfile profile)
+    public FantasyAgent(AgentProfile profile, ILogger<FantasyAgent> logger)
     {
         _profile = profile;
-
+        _logger = logger;
     }
 
     public string GetAgentName() => _profile.AgentId;
@@ -63,28 +65,34 @@ public class FantasyAgent
         """;
 
         ChatClient? chatClient = null;
-        OpenAIClientOptions options = null;
-        if(_profile.Connection == "OpenRouter")
+        OpenAIClientOptions? options = null;
+        if (_profile.Connection == "OpenRouter")
         {
             options = new OpenAIClientOptions
             {
                 Endpoint = new Uri(endpoint),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
                 ProjectId = "agentic-fantasy-football",
+                
                 UserAgentApplicationId = "AgenticFantasyFootball"
             };
             chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(apiKey), options);
         }
-        if(_profile.Connection == "MSFoundry")
+        else if (_profile.Connection == "MSFoundry")
         {
-            var key = Environment.GetEnvironmentVariable("FoundryKey");
-            var endpoint = Environment.GetEnvironmentVariable("FoundryEndpoint");
+            var key = Environment.GetEnvironmentVariable("FoundryKey") ?? throw new InvalidOperationException("FoundryKey is not configured.");
+            var foundryEndpoint = Environment.GetEnvironmentVariable("FoundryEndpoint") ?? throw new InvalidOperationException("FoundryEndpoint is not configured.");
             options = new OpenAIClientOptions
             {
-                Endpoint = new Uri(endpoint),
+                Endpoint = new Uri(foundryEndpoint),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
             };
             chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(key), options);
+        }
+
+        if (chatClient is null)
+        {
+            throw new InvalidOperationException($"Unsupported connection type '{_profile.Connection}'.");
         }
 
         _agent = chatClient
@@ -147,7 +155,7 @@ public class FantasyAgent
             throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
         }
 
-        return await _agent.RunAsync(input);
+        return await _agent.RunAsync(input); // final attempt, let it throw if it fails
     }
 
     private static string LoadPrompt(string relativePath)

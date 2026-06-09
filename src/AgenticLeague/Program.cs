@@ -41,8 +41,11 @@ if (leagueStateResponse.IsSuccessStatusCode)
     {
         // Deserialize the league state and print out the current phase of the league.
         var leagueStateJson = await leagueStateResponse.Content.ReadAsStringAsync();
-        var leagueState = System.Text.Json.JsonSerializer.Deserialize<dynamic>(leagueStateJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        logger.LogInformation($"Current League State - Season: {leagueState.GetProperty("season")}, Week: {leagueState.GetProperty("week")}, Phase: {leagueState.GetProperty("phase")}");
+        var leagueState = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(leagueStateJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (leagueState.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            logger.LogInformation($"Current League State - Season: {leagueState.GetProperty("season")}, Week: {leagueState.GetProperty("week")}, Phase: {leagueState.GetProperty("phase")}");
+        }
     }
 
 logger.LogInformation("Starting Agentic Fantasy Football League...");
@@ -50,8 +53,9 @@ logger.LogInformation("Starting Agentic Fantasy Football League...");
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
 response.EnsureSuccessStatusCode();
 var agentProfilesJson = await response.Content.ReadAsStringAsync();
-var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
 List<FantasyAgent> agents = new List<FantasyAgent>();
+var fantasyAgentLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FantasyAgent>();
 
 
 //Console.WriteLine("Testing one agent to make sure the bootstrapping process works...");
@@ -69,7 +73,7 @@ foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
 {
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
     // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
-    var fantasyAgent = new FantasyAgent(agentConfig);
+    var fantasyAgent = new FantasyAgent(agentConfig, fantasyAgentLogger);
     await fantasyAgent.InitializeAsync();
     await fantasyAgent.EnsureBootstrappedAsync();
     agents.Add(fantasyAgent);
@@ -100,8 +104,11 @@ logger.LogInformation("Number of agents initialized: " + agents.Count);
 
 // Here, lets test the waver wire again.
 var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
-var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(prompt);
-Console.WriteLine($"Waiver claim response from Player 5: {waverResponse}");
+var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
+Console.WriteLine($"Waiver claim response from Player 4: {waverResponse}");
+logger.LogInformation("Input tokens used: " + waverResponse.Usage.InputTokenCount);
+logger.LogInformation("Output tokens used: " + waverResponse.Usage.OutputTokenCount);
+logger.LogInformation("Total tokens used: " + waverResponse.Usage.TotalTokenCount);
 
 //var prompt = $"Use the `ReadAgentBootstrap` tool to read your bootstrap file, and then respond with a general summary of your current bootstrap status and team information based on the contents of the bootstrap file. If you don't have a bootstrap file, respond with 'No bootstrap file found.'.";
 //var postResponse = await testAgent.RunAsync(prompt);
