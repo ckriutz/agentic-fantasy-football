@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using LeagueAPI.Configuration;
@@ -847,6 +848,28 @@ app.MapPost("/api/yahoo/auth/exchange", async (
 {
     var status = await yahooOAuthService.ExchangeAuthorizationCodeAsync(request, cancellationToken);
     return Results.Ok(status);
+});
+
+app.MapGet("/api/yahoo/auth/callback", async (HttpRequest httpRequest, YahooOAuthService yahooOAuthService, CancellationToken cancellationToken) =>
+{
+    var error = httpRequest.Query["error"].ToString();
+    if (!string.IsNullOrWhiteSpace(error))
+    {
+        var description = httpRequest.Query["error_description"].ToString();
+        return Results.Content($"<html><body><h1>Yahoo authorization failed</h1><p>{error}: {description}</p></body></html>", "text/html");
+    }
+
+    var exchangeRequest = new YahooAuthorizationExchangeRequest { RedirectUrl = httpRequest.GetDisplayUrl() };
+
+    try
+    {
+        await yahooOAuthService.ExchangeAuthorizationCodeAsync(exchangeRequest, cancellationToken);
+        return Results.Content("<html><body><h1>Yahoo authorization complete</h1><p>Tokens have been saved. You can close this tab.</p></body></html>", "text/html");
+    }
+    catch (Exception ex)
+    {
+        return Results.Content($"<html><body><h1>Yahoo authorization error</h1><p>{ex.Message}</p></body></html>", "text/html");
+    }
 });
 
 app.MapPost("/api/yahoo/auth/refresh", async (

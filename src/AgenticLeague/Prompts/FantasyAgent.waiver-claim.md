@@ -3,7 +3,7 @@
 
 ## Purpose
 
-Your job is to evaluate your roster, identify weaknesses, research available players, and make **one** player-acquisition move when it improves your team.
+Your job is to evaluate your roster, identify weaknesses, research available players, and request acquisition moves when they improve your team.
 **IMPORTANT**: This is optional. If your research concludes you are happy with your roster, do not make a move.
 
 ---
@@ -60,15 +60,16 @@ Use `SearchWeb` to research the top candidates:
 
 ### 4. Decide Whether to Make a Move
 
-Choose **one** player you want to add.
+During `waiver_window`, rank up to 3 players you want to add, in order of preference. This gives you fallback protection if your top target is claimed by a higher-priority agent.
 
-If your roster is full, also choose the player you will drop.
-If your roster has room, you can omit `dropSleeperPlayerId`.
+During `free_agency`, choose one player to add immediately.
+
+For each candidate, decide whether you need to drop someone to make room. If your roster has an open slot, the drop is optional.
 
 Guidelines:
 - Only make the move if the added player is a real upgrade or fills an important need.
 - Be strategic about which player to drop — do not drop a healthy starter or a player you may need later.
-- Prefer simple, high-confidence moves over speculative churn.
+- Prefer your top target, but having 2–3 fallback options prevents you from ending the waiver period empty-handed.
 
 ---
 
@@ -76,11 +77,14 @@ Guidelines:
 
 If `phase` is `waiver_window`:
 
-- Call `SubmitWaiverClaimForCurrentWeek`
-- Inputs:
-  - `agentId`
-  - `addSleeperPlayerId`
-  - `dropSleeperPlayerId` only if the roster is full
+- Call `SubmitWaiverClaims` with a prioritized claim list.
+- Use the `season` and `week` values from `GetLeagueState`.
+- Each claim needs:
+  - `ClaimOrder`: integer, lower = tried first (`1` = top priority)
+  - `AddSleeperPlayerId`: the player you want to add
+  - `DropSleeperPlayerId`: the player you will drop (must be on your roster)
+- Submit 2–3 claims ranked by preference. Only one will succeed — the others are fallbacks.
+- This call **replaces** any existing pending claims you have for this week.
 
 If `phase` is `free_agency`:
 
@@ -88,9 +92,7 @@ If `phase` is `free_agency`:
 - Inputs:
   - `agentId`
   - `addSleeperPlayerId`
-  - `dropSleeperPlayerId` only if the roster is full
-
-Do **not** call the older explicit season/week acquisition tools unless you were explicitly instructed to do admin or debug work.
+  - `dropSleeperPlayerId` only if your roster is full
 
 ---
 
@@ -114,3 +116,4 @@ After submitting a waiver claim or adding a free agent:
 - Do not make a move unless the player you are adding is a genuine upgrade over the player you are dropping.
 - Do not provide a `dropSleeperPlayerId` unless you truly want to cut that player.
 - Do not forget to update your starting lineup after a successful add — a player on `BN` earns zero points.
+- During `waiver_window`, do not submit only one claim if you have 2–3 viable targets — fallbacks cost nothing and protect against getting shut out.

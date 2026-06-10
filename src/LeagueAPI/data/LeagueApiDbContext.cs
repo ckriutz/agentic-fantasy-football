@@ -41,6 +41,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<WaiverProcessRunEntity> WaiverProcessRuns => Set<WaiverProcessRunEntity>();
 
+    public DbSet<YahooPlayerIdOverrideEntity> YahooPlayerIdOverrides => Set<YahooPlayerIdOverrideEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PlayerEntity>(entity =>
@@ -261,6 +263,16 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(row => row.TokenType).HasMaxLength(50);
             entity.Property(row => row.Scope).HasMaxLength(500);
             entity.Property(row => row.AuthorizationState).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<YahooPlayerIdOverrideEntity>(entity =>
+        {
+            entity.ToTable("yahoo_player_id_overrides");
+            entity.HasKey(row => row.YahooPlayerId);
+            entity.Property(row => row.YahooPlayerId).ValueGeneratedNever();
+            entity.Property(row => row.SleeperPlayerId).HasMaxLength(50);
+            entity.Property(row => row.Note).HasMaxLength(500);
+            entity.HasIndex(row => row.SleeperPlayerId);
         });
 
         modelBuilder.Entity<ScoringTemplateRule>(entity =>

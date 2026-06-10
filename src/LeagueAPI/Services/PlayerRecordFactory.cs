@@ -10,6 +10,7 @@ public static class PlayerRecordFactory
 
     public static PlayerRecord Create(string sleeperPlayerId, SleeperPlayer player)
     {
+        var fullName = BuildFullName(player);
         var fantasyPositions =
             player.FantasyPositions?
                 .Where(position => !string.IsNullOrWhiteSpace(position))
@@ -22,7 +23,7 @@ public static class PlayerRecordFactory
         {
             SleeperPlayerId = sleeperPlayerId,
             YahooId = player.YahooId,
-            FullName = player.FullName,
+            FullName = fullName,
             FirstName = player.FirstName,
             LastName = player.LastName,
             Team = player.Team,
@@ -35,7 +36,7 @@ public static class PlayerRecordFactory
             Active = player.Active,
             SearchFullNameNormalized = NormalizeName(
                 player.SearchFullName
-                ?? player.FullName
+                ?? fullName
                 ?? $"{player.FirstName} {player.LastName}"),
             FantasyPositionsTokenized = BuildFantasyPositionsTokenized(fantasyPositions),
             RawJson = JsonSerializer.Serialize(player, SerializerOptions),
@@ -112,6 +113,25 @@ public static class PlayerRecordFactory
         return string.IsNullOrWhiteSpace(value)
             ? string.Empty
             : value.Trim().ToUpperInvariant();
+    }
+
+    private static string? BuildFullName(SleeperPlayer player)
+    {
+        if (!string.IsNullOrWhiteSpace(player.FullName))
+        {
+            return player.FullName.Trim();
+        }
+
+        var firstName = player.FirstName?.Trim();
+        var lastName = player.LastName?.Trim();
+        if (string.IsNullOrWhiteSpace(firstName) && string.IsNullOrWhiteSpace(lastName))
+        {
+            return null;
+        }
+
+        return string.Join(
+            ' ',
+            new[] { firstName, lastName }.Where(value => !string.IsNullOrWhiteSpace(value)));
     }
 
     private static string BuildFantasyPositionsTokenized(IEnumerable<string> positions)

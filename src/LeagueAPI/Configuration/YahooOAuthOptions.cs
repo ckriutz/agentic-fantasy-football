@@ -8,7 +8,7 @@ public sealed class YahooOAuthOptions
 
     public string ClientSecret { get; init; } = string.Empty;
 
-    public string RedirectUri { get; init; } = "https://localhost:3000";
+    public string RedirectUri { get; init; } = "https://localhost:5001/api/yahoo/auth/callback";
 
     public string AuthorizationUrl { get; init; } = "https://api.login.yahoo.com/oauth2/request_auth";
 

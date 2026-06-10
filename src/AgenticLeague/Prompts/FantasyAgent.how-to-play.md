@@ -41,10 +41,10 @@ Returns: current season, week, phase, updated time, and update source.
 
 Returns: phase, your priority, pending claim status, and full claim list.
 
-### `SubmitWaiverClaimForCurrentWeek`
-**Use when**: The phase is `waiver_window` and you want to submit one waiver claim using the current league state week. Provide `dropSleeperPlayerId` only if your roster is full and you need to make room.
+### `SubmitWaiverClaims`
+**Use when**: The phase is `waiver_window` and you want to submit a prioritized list of waiver claims for the current season/week. Use the `season` and `week` from `GetLeagueState`. Submit 2–3 ranked claims — only one will succeed, the others are fallbacks. Replaces any existing pending claims for this week.
 
-Returns: the submitted waiver claim.
+Returns: your submitted claim list with statuses.
 
 ### `AddFreeAgentForCurrentWeek`
 **Use when**: The phase is `free_agency` and you want to immediately add an unclaimed player for the current league week. Provide `dropSleeperPlayerId` only if your roster is full and you need to make room.
@@ -118,11 +118,11 @@ Maximize total points scored each week by fielding the best available starting l
 4. Call `GetMyRoster` to identify weaknesses (injuries, bye weeks, underperformers).
 5. Call `GetAvailablePlayers` filtered by the needed position to see who is unclaimed.
 6. Use `SearchWeb` to research available players — injury recoveries, depth chart changes, upcoming matchups.
-7. Choose one player to add. If your roster is full, also choose the player you will drop.
+7. Choose up to 3 players to add, ranked by preference. If your roster is full for any of them, choose a drop player for that claim.
 8. Use the phase-specific MCP tool:
-   - `waiver_window` → `SubmitWaiverClaimForCurrentWeek`
+   - `waiver_window` → `SubmitWaiverClaims` with a ranked claim list (2–3 claims; use `season`/`week` from `GetLeagueState`)
    - `free_agency` → `AddFreeAgentForCurrentWeek`
-9. Do **not** call the older explicit season/week acquisition tools unless you were explicitly instructed to do admin or debug work.
+9. Do **not** submit only one waiver claim if you have viable fallback targets — multiple claims protect against being shut out.
 
 ### After Waivers Are Processed
 
@@ -135,8 +135,9 @@ Maximize total points scored each week by fielding the best available starting l
 - **Always** call `GetLeagueState` first. Do not rely on prompt text for season or week.
 - **Then** call `GetMyWaiverStatus` before making an acquisition decision.
 - **Never** use `AddFreeAgentForCurrentWeek` when the phase is `waiver_window`.
-- **Never** use `SubmitWaiverClaimForCurrentWeek` when the phase is `free_agency`.
-- Do not call `SubmitWaiverClaims` or `AddFreeAgent` directly unless you were explicitly instructed to do admin or debug work.
+- **Never** use `SubmitWaiverClaims` when the phase is `free_agency`.
+- During `waiver_window`, submit 2–3 ranked claims when you have viable fallback targets — a single claim risks getting shut out entirely.
+- Do not call `AddFreeAgent` directly unless you were explicitly instructed to do admin or debug work.
 - A newly added player always lands on `BN`. Manually move them to a starter slot if they should be starting.
 - If you drop a starter, their slot becomes empty. Use `SetPlayerSlot` or `AutoSetLineup` to fill it.
 

@@ -281,7 +281,7 @@ public sealed class YahooOAuthService(
         if (!IsConfigured())
         {
             throw new InvalidOperationException(
-                "Yahoo OAuth is not configured. Set YahooOAuth:ClientId and YahooOAuth:ClientSecret or the YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET environment variables.");
+                "Yahoo OAuth is not configured. Set the YahooClientId and YahooClientSecret environment variables.");
         }
 
         if (string.IsNullOrWhiteSpace(GetRedirectUri()))
@@ -315,22 +315,22 @@ public sealed class YahooOAuthService(
 
     private string GetClientId()
     {
-        return string.IsNullOrWhiteSpace(_yahooOAuthOptions.ClientId)
-            ? Environment.GetEnvironmentVariable("YAHOO_CLIENT_ID") ?? string.Empty
-            : _yahooOAuthOptions.ClientId;
+        return Environment.GetEnvironmentVariable("YahooClientId")
+            ?? _yahooOAuthOptions.ClientId
+            ?? string.Empty;
     }
 
     private string GetClientSecret()
     {
-        return string.IsNullOrWhiteSpace(_yahooOAuthOptions.ClientSecret)
-            ? Environment.GetEnvironmentVariable("YAHOO_CLIENT_SECRET") ?? string.Empty
-            : _yahooOAuthOptions.ClientSecret;
+        return Environment.GetEnvironmentVariable("YahooClientSecret")
+            ?? _yahooOAuthOptions.ClientSecret
+            ?? string.Empty;
     }
 
     private string GetRedirectUri()
     {
-        return string.IsNullOrWhiteSpace(_yahooOAuthOptions.RedirectUri)
-            ? Environment.GetEnvironmentVariable("YAHOO_REDIRECT_URI") ?? string.Empty
-            : _yahooOAuthOptions.RedirectUri;
+        return Environment.GetEnvironmentVariable("YAHOO_REDIRECT_URI")
+            ?? _yahooOAuthOptions.RedirectUri
+            ?? string.Empty;
     }
 }

@@ -81,6 +81,11 @@ foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
 
 logger.LogInformation("Number of agents initialized: " + agents.Count);
 
+// Lets look at the Yahoo Status
+var yahooLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>();
+YahooRunner yahooRunner = new YahooRunner(yahooLogger);
+await yahooRunner.RunAsync();
+
 
 //logger.LogInformation("All agents are bootstrapped! Starting the draft...");
 
@@ -103,12 +108,12 @@ logger.LogInformation("Number of agents initialized: " + agents.Count);
 //Console.WriteLine($"Post-draft response from Player 4: {postResponse}");
 
 // Here, lets test the waver wire again.
-var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
-var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
-Console.WriteLine($"Waiver claim response from Player 4: {waverResponse}");
-logger.LogInformation("Input tokens used: " + waverResponse.Usage.InputTokenCount);
-logger.LogInformation("Output tokens used: " + waverResponse.Usage.OutputTokenCount);
-logger.LogInformation("Total tokens used: " + waverResponse.Usage.TotalTokenCount);
+//var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
+//var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
+//Console.WriteLine($"Waiver claim response from Player 4: {waverResponse}");
+//logger.LogInformation("Input tokens used: " + waverResponse.Usage.InputTokenCount);
+//logger.LogInformation("Output tokens used: " + waverResponse.Usage.OutputTokenCount);
+//logger.LogInformation("Total tokens used: " + waverResponse.Usage.TotalTokenCount);
 
 //var prompt = $"Use the `ReadAgentBootstrap` tool to read your bootstrap file, and then respond with a general summary of your current bootstrap status and team information based on the contents of the bootstrap file. If you don't have a bootstrap file, respond with 'No bootstrap file found.'.";
 //var postResponse = await testAgent.RunAsync(prompt);

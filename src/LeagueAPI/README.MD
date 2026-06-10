@@ -45,9 +45,9 @@ The service respects these environment variables (prefer these over editing conf
 - `DBConnectionString` - **Required.** PostgreSQL connection string. The service fails fast on startup if this is missing or empty.
 
 **Yahoo OAuth:**
-- `YAHOO_CLIENT_ID` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
-- `YAHOO_CLIENT_SECRET` - OAuth client secret (required for Yahoo features)
-- `YAHOO_REDIRECT_URI` - redirect URI for OAuth callback; defaults to `https://localhost:3000` if not set
+- `YahooClientId` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
+- `YahooClientSecret` - OAuth client secret (required for Yahoo features)
+- `YAHOO_REDIRECT_URI` - redirect URI for OAuth callback; defaults to `https://localhost:5001/api/yahoo/auth/callback` if not set
 
 **Yahoo Sync:**
 - `YahooSync__DefaultGameKey` - default game key for syncs; defaults to `461` (2025 NFL) if not set
@@ -62,8 +62,8 @@ The service respects these environment variables (prefer these over editing conf
 
 ```bash
 export DBConnectionString="postgresql://user:pass@localhost/leaguedb"
-export YAHOO_CLIENT_ID="your-client-id"
-export YAHOO_CLIENT_SECRET="your-client-secret"
+export YahooClientId="your-client-id"
+export YahooClientSecret="your-client-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
 dotnet run
 ```
@@ -93,7 +93,7 @@ Required. The service fails fast on startup if this is missing. Prefer setting i
 "YahooOAuth": {
   "ClientId": "",
   "ClientSecret": "",
-  "RedirectUri": "https://localhost:3000",
+  "RedirectUri": "https://localhost:5001/api/yahoo/auth/callback",
   "AuthorizationUrl": "https://api.login.yahoo.com/oauth2/request_auth",
   "TokenUrl": "https://api.login.yahoo.com/oauth2/get_token",
   "FantasyApiBaseUrl": "https://fantasysports.yahooapis.com/fantasy/v2"
@@ -102,10 +102,10 @@ Required. The service fails fast on startup if this is missing. Prefer setting i
 
 Yahoo OAuth tokens are persisted to the `yahoo_oauth_state` Postgres table, so the database must be reachable before running the Yahoo authorization flow.
 
-Prefer setting `ClientId` and `ClientSecret` with environment variables:
+Set Yahoo client credentials with environment variables:
 
-- `YAHOO_CLIENT_ID`
-- `YAHOO_CLIENT_SECRET`
+- `YahooClientId`
+- `YahooClientSecret`
 - `YAHOO_REDIRECT_URI` (optional override)
 
 ### Yahoo sync settings
@@ -144,12 +144,12 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 
 ### Required for Yahoo sync/reads
 
-- `YAHOO_CLIENT_ID` - Your Yahoo app's OAuth client ID. Required for Yahoo OAuth flow.
-- `YAHOO_CLIENT_SECRET` - Your Yahoo app's OAuth client secret. Required for Yahoo OAuth flow.
+- `YahooClientId` - Your Yahoo app's OAuth client ID. Required for Yahoo OAuth flow.
+- `YahooClientSecret` - Your Yahoo app's OAuth client secret. Required for Yahoo OAuth flow.
 
 ### Optional Yahoo overrides
 
-- `YAHOO_REDIRECT_URI` - Override the configured redirect URI for Yahoo OAuth. Defaults to `https://localhost:3000` in config.
+- `YAHOO_REDIRECT_URI` - Override the configured redirect URI for Yahoo OAuth. Defaults to `https://localhost:5001/api/yahoo/auth/callback` in config. Yahoo requires HTTPS, so the API must be listening on an HTTPS URL (see the bootstrap steps).
 
 ### Optional runtime configuration
 
@@ -159,8 +159,8 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 ### Example startup command
 
 ```bash
-export YAHOO_CLIENT_ID="your-app-id"
-export YAHOO_CLIENT_SECRET="your-app-secret"
+export YahooClientId="your-app-id"
+export YahooClientSecret="your-app-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
 
 dotnet run
@@ -423,38 +423,47 @@ dotnet ef database update
 Prefer environment variables:
 
 ```bash
-export YAHOO_CLIENT_ID="your-client-id"
-export YAHOO_CLIENT_SECRET="your-client-secret"
-export YAHOO_REDIRECT_URI="https://localhost:3000"
+export YahooClientId="your-client-id"
+export YahooClientSecret="your-client-secret"
+export YAHOO_REDIRECT_URI="https://localhost:5001/api/yahoo/auth/callback"
 ```
 
 ### 4. Start the API
 
+Yahoo requires the OAuth redirect to use HTTPS, so trust the local dev certificate once
+and start the API listening on both HTTP (for the AgenticLeague clients) and HTTPS (for
+the Yahoo callback):
+
 ```bash
-ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
+dotnet dev-certs https --trust
+ASPNETCORE_URLS="http://localhost:5000;https://localhost:5001" dotnet run
 ```
 
 ### 5. Bootstrap Yahoo auth
 
+In the Yahoo Developer Console, register this exact redirect URI:
+
+```
+https://localhost:5001/api/yahoo/auth/callback
+```
+
 1. Create an authorization URL:
 
    ```bash
-   curl -X POST http://127.0.0.1:5181/api/yahoo/auth/authorize-url
+   curl -X POST http://127.0.0.1:5000/api/yahoo/auth/authorize-url
    ```
 
-2. Open the returned URL in a browser, approve access, and copy the full redirect URL.
-3. Exchange the redirect URL for tokens:
+2. Open the returned `authorizationUrl` in a browser and approve access. Yahoo redirects
+   back to `/api/yahoo/auth/callback`, which automatically exchanges the code and saves
+   the tokens — no copy-paste required. The page shows a confirmation message when done.
+
+   > Manual fallback: if you need to exchange a code yourself, POST the full redirect URL
+   > to `/api/yahoo/auth/exchange` with body `{"redirectUrl":"...?code=...&state=..."}`.
+
+3. Verify the token works:
 
    ```bash
-   curl -X POST http://127.0.0.1:5181/api/yahoo/auth/exchange \
-     -H "Content-Type: application/json" \
-     -d '{"redirectUrl":"https://localhost:3000?code=...&state=..."}'
-   ```
-
-4. Verify the token works:
-
-   ```bash
-   curl http://127.0.0.1:5181/api/yahoo/auth/test-connection
+   curl http://127.0.0.1:5000/api/yahoo/auth/test-connection
    ```
 
 ### 6. Seed an active scoring template

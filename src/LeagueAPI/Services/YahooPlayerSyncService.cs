@@ -332,6 +332,62 @@ public sealed class YahooPlayerSyncService(
             .GroupBy(player => player.YahooId)
             .ToDictionary(group => group.Key, group => group.First().SleeperPlayerId);
 
+        var overrideSleeperIdsByYahooId = await dbContext.YahooPlayerIdOverrides
+            .Where(playerOverride => yahooPlayerIds.Contains(playerOverride.YahooPlayerId))
+            .ToDictionaryAsync(
+                playerOverride => playerOverride.YahooPlayerId,
+                playerOverride => playerOverride.SleeperPlayerId,
+                cancellationToken);
+
+        var sleeperDefenseIdsByTeam = (await dbContext.Players
+            .AsNoTracking()
+            .Where(player => player.Active && player.Position == "DEF")
+            .Select(player => new
+            {
+                TeamKey = NormalizeTeamKey(player.TeamAbbr) ?? NormalizeTeamKey(player.Team),
+                player.SleeperPlayerId
+            })
+            .ToListAsync(cancellationToken))
+            .Where(player => !string.IsNullOrWhiteSpace(player.TeamKey))
+            .GroupBy(player => player.TeamKey!)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.First().SleeperPlayerId);
+
+        var fallbackCandidates = players
+            .Where(player =>
+                !sleeperPlayerIdsByYahooId.ContainsKey(player.YahooPlayerId)
+                && !overrideSleeperIdsByYahooId.ContainsKey(player.YahooPlayerId))
+            .ToList();
+
+        var fallbackNames = fallbackCandidates
+            .Select(player => PlayerRecordFactory.NormalizeName(player.FullName))
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Distinct()
+            .ToArray();
+
+        var sleeperIdsByNameAndPosition = new Dictionary<(string Name, string Position), string>();
+        if (fallbackNames.Length > 0)
+        {
+            var nameMatches = (await dbContext.Players
+                .AsNoTracking()
+                .Where(player =>
+                    player.Active
+                    && player.Position != null
+                    && fallbackNames.Contains(player.SearchFullNameNormalized))
+                .Select(player => new { player.SearchFullNameNormalized, player.Position, player.SleeperPlayerId })
+                .ToListAsync(cancellationToken))
+                .GroupBy(player => (player.SearchFullNameNormalized, player.Position!.ToUpperInvariant()))
+                .Where(group => group.Count() == 1)
+                .ToList();
+
+            foreach (var group in nameMatches)
+            {
+                sleeperIdsByNameAndPosition[group.Key] = group.First().SleeperPlayerId;
+            }
+        }
+
+        var backfillSleeperIdsByYahooId = new Dictionary<int, string>();
+
         var touchedStats = new List<WeeklyPlayerStat>(players.Count);
 
         foreach (var player in players)
@@ -359,7 +415,38 @@ public sealed class YahooPlayerSyncService(
                 }
             }
 
-            playerStat.SleeperPlayerId = sleeperPlayerIdsByYahooId.GetValueOrDefault(player.YahooPlayerId);
+            var sleeperPlayerId = sleeperPlayerIdsByYahooId.GetValueOrDefault(player.YahooPlayerId);
+
+            if (sleeperPlayerId is null
+                && overrideSleeperIdsByYahooId.TryGetValue(player.YahooPlayerId, out var overrideSleeperId))
+            {
+                sleeperPlayerId = overrideSleeperId;
+                backfillSleeperIdsByYahooId[player.YahooPlayerId] = overrideSleeperId;
+            }
+
+            if (sleeperPlayerId is null
+                && string.Equals(player.Position, "DEF", StringComparison.OrdinalIgnoreCase))
+            {
+                var defenseTeamKey = NormalizeTeamKey(player.EditorialTeamAbbr);
+                if (defenseTeamKey is not null
+                    && sleeperDefenseIdsByTeam.TryGetValue(defenseTeamKey, out var defenseSleeperId))
+                {
+                    sleeperPlayerId = defenseSleeperId;
+                    backfillSleeperIdsByYahooId[player.YahooPlayerId] = defenseSleeperId;
+                }
+            }
+
+            if (sleeperPlayerId is null)
+            {
+                var nameKey = (PlayerRecordFactory.NormalizeName(player.FullName), (player.Position ?? string.Empty).ToUpperInvariant());
+                if (sleeperIdsByNameAndPosition.TryGetValue(nameKey, out var nameMatchSleeperId))
+                {
+                    sleeperPlayerId = nameMatchSleeperId;
+                    backfillSleeperIdsByYahooId[player.YahooPlayerId] = nameMatchSleeperId;
+                }
+            }
+
+            playerStat.SleeperPlayerId = sleeperPlayerId;
             playerStat.FullName = player.FullName;
             playerStat.Team = player.Team;
             playerStat.Position = player.Position;
@@ -379,6 +466,23 @@ public sealed class YahooPlayerSyncService(
             }
 
             touchedStats.Add(playerStat);
+        }
+
+        if (backfillSleeperIdsByYahooId.Count > 0)
+        {
+            var backfillSleeperIds = backfillSleeperIdsByYahooId.Values.Distinct().ToArray();
+            var trackedPlayersBySleeperId = await dbContext.Players
+                .Where(player => backfillSleeperIds.Contains(player.SleeperPlayerId))
+                .ToDictionaryAsync(player => player.SleeperPlayerId, cancellationToken);
+
+            foreach (var (yahooPlayerId, sleeperPlayerId) in backfillSleeperIdsByYahooId)
+            {
+                if (trackedPlayersBySleeperId.TryGetValue(sleeperPlayerId, out var trackedPlayer)
+                    && trackedPlayer.YahooId is null)
+                {
+                    trackedPlayer.YahooId = yahooPlayerId;
+                }
+            }
         }
 
         return touchedStats;
@@ -428,12 +532,20 @@ public sealed class YahooPlayerSyncService(
             return null;
         }
 
+        var position = FindFirstString(playerNode, "display_position");
+        var editorialTeamFullName = FindFirstString(playerNode, "editorial_team_full_name");
+        var editorialTeamAbbr = FindFirstString(playerNode, "editorial_team_abbr");
+
         return new YahooParsedPlayer(
             yahooPlayerId,
-            FindFirstString(playerNode, "full"),
-            FindFirstString(playerNode, "editorial_team_full_name") ?? FindFirstString(playerNode, "editorial_team_abbr"),
-            FindFirstString(playerNode, "display_position"),
-            FindFirstString(playerNode, "editorial_team_abbr"),
+            ResolveYahooPlayerFullName(
+                FindFirstString(playerNode, "full"),
+                position,
+                editorialTeamFullName,
+                editorialTeamAbbr),
+            editorialTeamFullName ?? editorialTeamAbbr,
+            position,
+            editorialTeamAbbr,
             playerNode.ToJsonString(),
             statValues);
     }
@@ -595,6 +707,36 @@ public sealed class YahooPlayerSyncService(
 
     private static bool TryParseDecimal(string? value, out decimal parsedValue) =>
         decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedValue);
+
+    private static string? NormalizeTeamKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim().ToUpperInvariant();
+    }
+
+    private static string? ResolveYahooPlayerFullName(string? fullName, string? position, string? editorialTeamFullName, string? editorialTeamAbbr)
+    {
+        if (!string.IsNullOrWhiteSpace(fullName))
+        {
+            return fullName.Trim();
+        }
+
+        if (!string.Equals(position, "DEF", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(editorialTeamFullName))
+        {
+            return $"{editorialTeamFullName.Trim()} D/ST";
+        }
+
+        return string.IsNullOrWhiteSpace(editorialTeamAbbr) ? null : $"{editorialTeamAbbr.Trim()} D/ST";
+    }
 
     private static void EnsureDatabaseConfigured(LeagueApiDbContext dbContext)
     {

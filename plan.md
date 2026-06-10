@@ -123,9 +123,9 @@ GET  /api/yahoo/auth/test-connection  — verify token works against Yahoo API
 Configuration via environment variables (never committed):
 
 ```bash
-export YAHOO_CLIENT_ID="your-client-id"
-export YAHOO_CLIENT_SECRET="your-client-secret"
-export YAHOO_REDIRECT_URI="https://localhost:3000"
+export YahooClientId="your-client-id"
+export YahooClientSecret="your-client-secret"
+export YAHOO_REDIRECT_URI="https://localhost:5001/api/yahoo/auth/callback"
 ```
 
 Or via `appsettings.json` under the `YahooOAuth` section.

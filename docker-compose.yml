@@ -30,9 +30,9 @@ services:
       - SportsDataSync__ApiKey=${SPORTSDATA_API_KEY:?SportsData API key required}
       
       # Yahoo Fantasy configuration
-      - YahooOAuth__ClientId=${YAHOO_CLIENT_ID:?Yahoo OAuth client ID required}
-      - YahooOAuth__ClientSecret=${YAHOO_CLIENT_SECRET:?Yahoo OAuth client secret required}
-      - YahooOAuth__RedirectUri=${YAHOO_REDIRECT_URI:-http://localhost:3000}
+      - YahooClientId=${YahooClientId:?Yahoo OAuth client ID required}
+      - YahooClientSecret=${YahooClientSecret:?Yahoo OAuth client secret required}
+      - YAHOO_REDIRECT_URI=${YAHOO_REDIRECT_URI:-https://localhost:5001/api/yahoo/auth/callback}
       - YahooOAuth__AuthorizationUrl=https://api.login.yahoo.com/oauth2/request_auth
       - YahooOAuth__TokenUrl=https://api.login.yahoo.com/oauth2/get_token
       - YahooOAuth__FantasyApiBaseUrl=https://fantasysports.yahooapis.com/fantasy/v2
