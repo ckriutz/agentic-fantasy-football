@@ -11,6 +11,7 @@ public static class LeagueStateDefaults
 
 public static class LeagueStatePhases
 {
+    public const string Drafting = "drafting";
     public const string GamesLocked = "games_locked";
     public const string WaiverWindow = "waiver_window";
     public const string FreeAgency = "free_agency";

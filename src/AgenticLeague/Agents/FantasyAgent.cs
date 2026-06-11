@@ -33,8 +33,8 @@ public class FantasyAgent
         var imageGenerationTool = new ImageGenerationTool(_profile.AgentId);
         var searchTool = new SearchTool();
         
-        var leaguePrompt = LoadPrompt("Prompts/FantasyAgent.league.md");
-        var howToPlayPrompt = LoadPrompt("Prompts/FantasyAgent.how-to-play.md");
+        var leaguePrompt = await blobStorageTools.GetPromptFromBlobStorageAsync("FantasyAgent.league.md");
+        var howToPlayPrompt = await blobStorageTools.GetPromptFromBlobStorageAsync("FantasyAgent.how-to-play.md");
 
         // The LeaugeAPI has a LOT of tools as well, and this is how we get to them.
         var mcpTransport = new HttpClientTransport(new HttpClientTransportOptions
@@ -156,20 +156,6 @@ public class FantasyAgent
         }
 
         return await _agent.RunAsync(input); // final attempt, let it throw if it fails
-    }
-
-    private static string LoadPrompt(string relativePath)
-    {
-        var fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
-
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException(
-                $"Prompt file not found at '{fullPath}'.",
-                fullPath);
-        }
-
-        return File.ReadAllText(fullPath);
     }
 
 }

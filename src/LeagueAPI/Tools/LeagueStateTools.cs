@@ -10,7 +10,7 @@ public sealed class LeagueStateTools(ILeagueStateService leagueStateService)
 {
     private readonly ILeagueStateService _leagueStateService = leagueStateService;
 
-    [McpServerTool, Description("Get the current persisted league state, including season, week, and league phase.")]
+    [McpServerTool, Description("Get the current persisted league state, including season, week, and league phase such as drafting, waiver_window, free_agency, games_locked, or complete.")]
     public Task<LeagueState> GetLeagueState()
     {
         return _leagueStateService.GetLeagueStateAsync(CancellationToken.None);

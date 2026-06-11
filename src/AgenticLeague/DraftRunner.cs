@@ -16,6 +16,7 @@ public class DraftRunner
     const int maxRosterSize = 16;
     const int totalRounds = 16;
     private DraftState _draftState = new();
+    private BlobStorageTools _blobStorageTools;
 
     // We start by creating a DraftRunner class that will manage the state of the draft
     // and orchestrate the drafting process. It will keep track of the draft state,
@@ -25,6 +26,7 @@ public class DraftRunner
     {
         _agents = agents.ToList();
         _logger = logger;
+        _blobStorageTools = new BlobStorageTools();
     }
 
     public async Task RunDraftAsync()
@@ -255,8 +257,7 @@ public class DraftRunner
     // Once the draft is done, the agents need to look though their rosters, assign them to starting positions, and update their strategy.
     public async Task RunPostDraftAsync(List<FantasyAgent> fantasyAgents)
     {
-        var postDraftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts/FantasyAgent.post-draft.md");
-        var prompt = await File.ReadAllTextAsync(postDraftPromptPath);
+        var prompt = await _blobStorageTools.GetPromptFromBlobStorageAsync("FantasyAgent.post-draft.md");
         foreach(var agent in fantasyAgents)
         {
             var response = await agent.RunAsync(prompt);

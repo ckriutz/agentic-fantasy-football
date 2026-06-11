@@ -8,6 +8,7 @@ public sealed class PostgresLeagueStateService(IDbContextFactory<LeagueApiDbCont
 {
     private static readonly HashSet<string> ValidPhases =
     [
+        LeagueStatePhases.Drafting,
         LeagueStatePhases.GamesLocked,
         LeagueStatePhases.WaiverWindow,
         LeagueStatePhases.FreeAgency,
@@ -91,7 +92,7 @@ public sealed class PostgresLeagueStateService(IDbContextFactory<LeagueApiDbCont
 
         var normalizedPhase = phase.Trim();
         if (!ValidPhases.Contains(normalizedPhase))
-            throw new ArgumentException("phase must be one of: games_locked, waiver_window, free_agency, complete.", nameof(phase));
+            throw new ArgumentException("phase must be one of: drafting, games_locked, waiver_window, free_agency, complete.", nameof(phase));
 
         return normalizedPhase;
     }

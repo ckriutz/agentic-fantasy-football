@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -37,36 +38,36 @@ catch (Exception ex)
 
 // Now the current leauge state.
 var leagueStateResponse = await _http.GetAsync("api/league/state");
-if (leagueStateResponse.IsSuccessStatusCode)
-    {
-        // Deserialize the league state and print out the current phase of the league.
-        var leagueStateJson = await leagueStateResponse.Content.ReadAsStringAsync();
-        var leagueState = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(leagueStateJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        if (leagueState.ValueKind == System.Text.Json.JsonValueKind.Object)
-        {
-            logger.LogInformation($"Current League State - Season: {leagueState.GetProperty("season")}, Week: {leagueState.GetProperty("week")}, Phase: {leagueState.GetProperty("phase")}");
-        }
-    }
+if (!leagueStateResponse.IsSuccessStatusCode)
+{
+    logger.LogError("Failed to load league state. Status code: " + leagueStateResponse.StatusCode);
+    return;
+}
+
+var leagueStateJson = await leagueStateResponse.Content.ReadAsStringAsync();
+var leagueState = JsonSerializer.Deserialize<JsonElement>(leagueStateJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+if (leagueState.ValueKind != JsonValueKind.Object)
+{
+    logger.LogError("League state response was not a JSON object.");
+    return;
+}
+
+var phase = leagueState.GetProperty("phase").GetString();
+if (string.IsNullOrWhiteSpace(phase))
+{
+    logger.LogError("League state phase was missing from the API response.");
+    return;
+}
 
 logger.LogInformation("Starting Agentic Fantasy Football League...");
 
+// Load all the agents.
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
 response.EnsureSuccessStatusCode();
 var agentProfilesJson = await response.Content.ReadAsStringAsync();
 var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
 List<FantasyAgent> agents = new List<FantasyAgent>();
 var fantasyAgentLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FantasyAgent>();
-
-
-//Console.WriteLine("Testing one agent to make sure the bootstrapping process works...");
-//FantasyAgent testAgent = new FantasyAgent(new AgenticLeague.Models.AgentConfig
-//{
-//    AgentName = "test-player-01",
-//    Model = "google/gemini-3.5-flash",
-//    Connection = "OpenRouter"
-//});
-//await testAgent.InitializeAsync();
-//await testAgent.EnsureBootstrappedAsync();
 
 logger.LogInformation("Initializing agents...");
 foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
@@ -82,30 +83,26 @@ foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
 logger.LogInformation("Number of agents initialized: " + agents.Count);
 
 // Lets look at the Yahoo Status
-var yahooLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>();
-YahooRunner yahooRunner = new YahooRunner(yahooLogger);
-await yahooRunner.RunAsync();
+//var yahooLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>();
+//YahooRunner yahooRunner = new YahooRunner(yahooLogger);
+//await yahooRunner.RunAsync();
 
 
-//logger.LogInformation("All agents are bootstrapped! Starting the draft...");
+if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
+{
+    logger.LogInformation("League state is drafting. Starting the draft runner...");
+    DraftRunner draftRunner = new DraftRunner(agents, logger);
+    await draftRunner.RunDraftAsync();
+    logger.LogInformation("Draft runner completed.");
+}
+else
+{
+    logger.LogInformation("Skipping draft runner because league phase is {Phase}.", phase);
+}
 
-// Going to simulate the draft. Since this is a snake draft, the order will reverse every other round.
-// So in round 1, the order will be 1-10, in round 2, the order will be 10-1, and so on.
-// Each agent will look at their roster and identify if they have room for additional players.
-// If so, they'll use the tools available to them to do research and find a player to add to their roster.
-// Then they'll use the tools to add that player to their roster. They'll select ONE player only.
-// They'll respond with the name of the player they added and why they chose that player based on their strategy and team needs.
-// To make things fair, lets randomize the order of the agents before starting the draft.
-// This will ensure that no agent has an inherent advantage based on their position in the draft order.
-//DraftRunner draftRunner = new DraftRunner(agents, logger);
-//await draftRunner.RunDraftAsync();
-//logger.LogInformation("Draft is complete!");
-
-// Now that the draft is complete, the agentes need to review theitr rosters and place their players on the appropriate slots on their roster (e.g. starting lineup, bench, injured reserve, etc.) based on their strategy and the players they drafted.
-//var postDraftPromptPath = Path.Combine(AppContext.BaseDirectory, "Prompts/FantasyAgent.post-draft.md");
-//var prompt = await File.ReadAllTextAsync(postDraftPromptPath);
-//var postResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
-//Console.WriteLine($"Post-draft response from Player 4: {postResponse}");
+var bst = new BlobStorageTools();
+var promptFile = await bst.GetPromptFromBlobStorageAsync("FantasyAgent.how-to-play.md");
+logger.LogInformation("Prompt content loaded from Blob Storage: " + promptFile.Substring(0, Math.Min(200, promptFile.Length)) + "...");
 
 // Here, lets test the waver wire again.
 //var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
@@ -125,15 +122,3 @@ await yahooRunner.RunAsync();
 
 //var response10 = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(waverPrompt);
 //Console.WriteLine($"Post-draft response from Player 5: {response10}");
-
- static string LoadPrompt(string relativePath)
- {
-     var fullPath = Path.Combine(AppContext.BaseDirectory, relativePath);
-
-     if (!File.Exists(fullPath))
-     {
-        throw new FileNotFoundException($"Prompt file not found at '{fullPath}'.",fullPath);
-     }
-
-     return File.ReadAllText(fullPath);
- }

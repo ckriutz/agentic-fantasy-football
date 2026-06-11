@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
+using Microsoft.Extensions.Logging;
 
 // This class provides tools for interacting with Azure Blob Storage to manage markdown and image data for the agents.
 // Right now, we're only using it for the bootstrap.md file, and the logo, but it can be extended to manage any files the agents need to read or write as part of their operation.
@@ -14,6 +15,7 @@ public sealed class BlobStorageTools
     private readonly string _connectionString = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING") ?? throw new InvalidOperationException("Azure Storage connection string is not set in environment variables.");
     private BlobServiceClient _blobServiceClient;
     private readonly string _containerName = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONTAINER_NAME") ?? "agentdata";
+    private ILogger<BlobStorageTools>? _logger;
     public BlobStorageTools()
     {
         // Initialize Azure Blob Storage client here using connection string and container name from environment variables.
@@ -32,22 +34,22 @@ public sealed class BlobStorageTools
             using (var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(content)))
             {
                 await blobClient.UploadAsync(stream, true);
-                Console.WriteLine($"Bootstrap file uploaded successfully for agent '{agentId}'.");
+                _logger?.LogInformation($"Bootstrap file uploaded successfully for agent '{agentId}'.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to upload bootstrap for agent '{agentId}'. Error: {ex.Message}");
+            _logger?.LogError($"Failed to upload bootstrap for agent '{agentId}'. Error: {ex.Message}");
             return $"Failed to upload bootstrap for agent '{agentId}'. Error: {ex.Message}";
         }
         
 
         if (!await blobClient.ExistsAsync())
         {
-            Console.WriteLine($"Failed to upload bootstrap for agent '{agentId}'.");
+            _logger?.LogError($"Failed to upload bootstrap for agent '{agentId}'.");
             return $"Failed to upload bootstrap for agent '{agentId}'. Maybe try again?";
         }
-        Console.WriteLine($"Bootstrap file uploaded successfully for agent '{agentId}'.");
+        _logger?.LogInformation($"Bootstrap file uploaded successfully for agent '{agentId}'.");
         return "Bootstrap uploaded successfully.";
     }
 
@@ -61,14 +63,14 @@ public sealed class BlobStorageTools
 
         if (!await blobClient.ExistsAsync())
         {
-            Console.WriteLine($"Bootstrap file not found for agent '{agentId}'.");
+            _logger?.LogWarning($"Bootstrap file not found for agent '{agentId}'.");
             return $"Bootstrap file not found for agent '{agentId}'. Maybe create and upload it first?";
         }
 
         var downloadInfo = await blobClient.DownloadAsync();
         using (var reader = new StreamReader(downloadInfo.Value.Content))
         {
-            Console.WriteLine($"Bootstrap file read successfully for agent '{agentId}'.");
+            _logger?.LogInformation($"Bootstrap file read successfully for agent '{agentId}'.");
             return await reader.ReadToEndAsync();
         }
     }
@@ -77,7 +79,7 @@ public sealed class BlobStorageTools
     {
         var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
         BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
-        Console.WriteLine($"Uploading image for agent '{agentId}' to blob '{agentId}/{fileName}'.");
+        _logger?.LogInformation($"Uploading image for agent '{agentId}' to blob '{agentId}/{fileName}'.");
         await blobClient.UploadAsync(stream, true);
 
         if (!await blobClient.ExistsAsync())
@@ -85,7 +87,7 @@ public sealed class BlobStorageTools
             throw new InvalidOperationException($"Image upload did not create blob '{agentId}/{fileName}'.");
         }
 
-        Console.WriteLine($"Image uploaded successfully for agent '{agentId}' to blob '{agentId}/{fileName}'.");
+        _logger?.LogInformation($"Image uploaded successfully for agent '{agentId}' to blob '{agentId}/{fileName}'.");
         return blobClient.Uri;
     }
 
@@ -106,35 +108,23 @@ public sealed class BlobStorageTools
         BlobClient blobClient = containerClient.GetBlobClient($"{agentId}/{fileName}");
         return blobClient.Exists();
     }
+
+    public async Task<string> GetPromptFromBlobStorageAsync(string promptName)
+    {
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_containerName);
+        BlobClient blobClient = containerClient.GetBlobClient($"prompts/{promptName}");
+
+        if (!await blobClient.ExistsAsync())
+        {
+            _logger?.LogWarning($"Blob 'prompts/{promptName}' not found.");
+            return $"Blob 'prompts/{promptName}' not found.";
+        }
+
+        var downloadInfo = await blobClient.DownloadAsync();
+        using (var reader = new StreamReader(downloadInfo.Value.Content))
+        {
+            _logger?.LogInformation($"Blob 'prompts/{promptName}' read successfully.");
+            return await reader.ReadToEndAsync();
+        }
+    }
 }
-
-//     [Description("Lists the blobs for the specified agent in Azure Blob Storage. Returns the blob name and a full URL for each item so the agent can read or reference the files.")]
-//     public async Task<List<BlobInfo>> ListFilesAsync([Description("The agent ID, such as player-01.")] string agentId)
-//     {
-//         // We need to list all of the files for an agent in their specific folder in blob storage.
-//         // This will allow the agent to know what files they have access to and read them as needed for their bootstrapping and operation.
-//         var containerClient = _blobServiceClient.GetBlobContainerClient("agentdata");
-//         var results = new List<BlobInfo>();
-
-//         await foreach (var blobItem in containerClient.GetBlobsByHierarchyAsync(
-//             BlobTraits.None,
-//             BlobStates.All,
-//             prefix: $"{agentId}/",
-//             delimiter: "/",
-//             cancellationToken: CancellationToken.None))
-//         {
-//             if (blobItem.IsBlob)
-//             {
-//                 var blobClient = containerClient.GetBlobClient(blobItem.Blob.Name);
-//                 results.Add(new BlobInfo(blobItem.Blob.Name, blobClient.Uri.ToString()));
-//             }
-//         }
-
-//         return results;
-//     }
-// }
-
-/// <summary>
-/// Represents a blob in Azure Storage with its name and a direct URL the agent can use to read or reference it.
-/// </summary>
-//public record BlobInfo(string Name, string Url);
