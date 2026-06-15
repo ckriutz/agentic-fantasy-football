@@ -155,7 +155,7 @@ public class FantasyAgent
             throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
         }
 
-        return await _agent.RunAsync(input); // final attempt, let it throw if it fails
+        return await _agent.RunAsync(input);
     }
 
 }

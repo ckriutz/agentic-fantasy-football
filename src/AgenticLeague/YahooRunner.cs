@@ -9,7 +9,7 @@ public class YahooRunner
         _logger = logger;
     }
 
-    public async Task RunAsync()
+    public async Task CheckYahooStatusAsync()
     {
 
         using HttpClient httpClient = new() { BaseAddress = new Uri("http://localhost:5000/") };
@@ -25,6 +25,7 @@ public class YahooRunner
         else
         {
             _logger.LogError("Failed to connect to the Yahoo API. Status code: " + response.StatusCode);
+            return;
         }
 
         // Now we check Auth Status.

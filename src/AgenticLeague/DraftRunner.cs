@@ -115,7 +115,7 @@ public class DraftRunner
                     await MakeAutoDraftPickAsync(agentName);
                     // Now lets add an entry to the decision log so we can track that this pick was auto-drafted due to agent failure.
                     var decisionText = "Auto-drafted best available player due to agent failure.";
-                    await LogDecisionAsync(agentName, 0, "Add Player", decisionText, "Draft", _logger);
+                    await DecisionLogger.LogDecisionAsync(agentName, 0, "Add Player", decisionText, "Draft", _logger);
                     rosterCountAfter = await GetAgentRosterCountAsync(agentName);
                 }
 
@@ -123,7 +123,7 @@ public class DraftRunner
                 _logger.LogInformation("Pick complete — Round={Round} Pick={Pick} PickInRound={PickInRound} Agent={Agent} Success={Success}", _draftState.Round, _draftState.Pick, pickInRound, agentName, pickSucceeded);
                 if(pickSucceeded)
                 {
-                    await LogDecisionAsync(agentName, 0, "Draft Pick", response, $"Round { _draftState.Round} Pick {pickInRound}", _logger);
+                    await DecisionLogger.LogDecisionAsync(agentName, 0, "Draft Pick", response, $"Round { _draftState.Round} Pick {pickInRound}", _logger);
                 }
                 _draftState.Pick++;
                 await SaveDraftStateAsync();
@@ -158,9 +158,7 @@ public class DraftRunner
             return _agents.ToList();
         }
 
-        var agentsByName = _agents
-            .Where(agent => !string.IsNullOrWhiteSpace(agent.GetAgentName()))
-            .ToDictionary(agent => agent.GetAgentName(), StringComparer.OrdinalIgnoreCase);
+        var agentsByName = _agents.Where(agent => !string.IsNullOrWhiteSpace(agent.GetAgentName())).ToDictionary(agent => agent.GetAgentName(), StringComparer.OrdinalIgnoreCase);
 
         return _draftState.DraftOrder.Select(agentName =>
         {
@@ -262,7 +260,7 @@ public class DraftRunner
         {
             var response = await agent.RunAsync(prompt);
             _logger.LogInformation($"Post-draft response from {agent.GetAgentName()}: {response}");
-            await LogDecisionAsync(agent.GetAgentName()!, 0, "Post-Draft Review", response, "Post-Draft", _logger);
+            await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, 0, "Post-Draft Review", response, "Post-Draft", _logger);
         }
     }
     
@@ -350,60 +348,4 @@ public class DraftRunner
         }
     }
 
-    // This is a helper method for the agents to log the decisoons they make during the draft.
-    // This can be useful for tracking the agents' reasoning and actions, and for debugging if needed.
-    static async Task LogDecisionAsync(string agentId, int week, string type, AgentResponse response, string action, ILogger logger)
-    {
-        var usage = response.Usage;
-        var payload = new
-        {
-            agentId,
-            week,
-            type,
-            reasoning = response.Text,
-            action,
-            inputTokenCount = (int?)usage?.InputTokenCount,
-            outputTokenCount = (int?)usage?.OutputTokenCount,
-            cachedInputTokenCount = (int?)usage?.CachedInputTokenCount,
-            reasoningTokenCount = (int?)usage?.ReasoningTokenCount
-        };
-
-        try
-        {
-            var decisionResponse = await _http.PostAsJsonAsync("/api/decisions", payload);
-            decisionResponse.EnsureSuccessStatusCode();
-            logger.LogInformation("Logged decision for {AgentId}: {Type} - {Action}", agentId, type, action);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to log decision for {AgentId}", agentId);
-        }
-    }
-
-    static async Task LogDecisionAsync(string agentId, int week, string type, string response, string action, ILogger logger)
-    {
-        var payload = new
-        {
-            agentId,
-            week,
-            type,
-            reasoning = response,
-            action,
-            inputTokenCount = 0,
-            outputTokenCount = 0,
-            cachedInputTokenCount = 0,
-            reasoningTokenCount = 0
-        };
-
-        try
-        {
-            var decisionResponse = await _http.PostAsJsonAsync("/api/decisions", payload);
-            decisionResponse.EnsureSuccessStatusCode();
-            logger.LogInformation("Logged decision for {AgentId}: {Type} - {Action}", agentId, type, action);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to log decision for {AgentId}", agentId);
-        }
-    } 
 }

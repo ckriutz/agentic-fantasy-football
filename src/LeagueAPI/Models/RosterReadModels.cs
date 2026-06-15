@@ -7,4 +7,8 @@ public sealed record RosterPlayerResult(
     DateTimeOffset? AcquiredAtUtc,
     string? AcquisitionSource,
     string? SlotType,
-    bool IsStarter);
+    bool IsStarter,
+    IReadOnlyDictionary<int, decimal> WeeklyPoints)
+{
+    public static IReadOnlyDictionary<int, decimal> EmptyWeeklyPoints { get; } = new Dictionary<int, decimal>();
+}

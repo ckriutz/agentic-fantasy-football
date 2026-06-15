@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Net.Http.Json;
 using System.Text.Json;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -59,9 +60,13 @@ if (string.IsNullOrWhiteSpace(phase))
     return;
 }
 
+// How is yahoo doing?
+YahooRunner yahooRunner = new YahooRunner(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>());
+await yahooRunner.CheckYahooStatusAsync();
+
 logger.LogInformation("Starting Agentic Fantasy Football League...");
 
-// Load all the agents.
+// Load all the agents, and initialze them.
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
 response.EnsureSuccessStatusCode();
 var agentProfilesJson = await response.Content.ReadAsStringAsync();
@@ -87,22 +92,32 @@ logger.LogInformation("Number of agents initialized: " + agents.Count);
 //YahooRunner yahooRunner = new YahooRunner(yahooLogger);
 //await yahooRunner.RunAsync();
 
-
+// Time for the draft!
 if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
 {
     logger.LogInformation("League state is drafting. Starting the draft runner...");
     DraftRunner draftRunner = new DraftRunner(agents, logger);
     await draftRunner.RunDraftAsync();
     logger.LogInformation("Draft runner completed.");
+
+    // Move the league from drafting into the free-agency phase so the agents can
+    // start making roster moves once the draft is complete.
+    var advanceResponse = await _http.PutAsJsonAsync("api/league/state", new
+    {
+        phase = "free_agency",
+        updatedBy = "season-runner"
+    });
+    advanceResponse.EnsureSuccessStatusCode();
 }
 else
 {
     logger.LogInformation("Skipping draft runner because league phase is {Phase}.", phase);
 }
 
-var bst = new BlobStorageTools();
-var promptFile = await bst.GetPromptFromBlobStorageAsync("FantasyAgent.how-to-play.md");
-logger.LogInformation("Prompt content loaded from Blob Storage: " + promptFile.Substring(0, Math.Min(200, promptFile.Length)) + "...");
+// After the draft, we can start the season runner, which will advance the league through the season, and run the games each week.
+
+SeasonRunner seasonRunner = new SeasonRunner(agents, logger);
+await seasonRunner.RunAsync();
 
 // Here, lets test the waver wire again.
 //var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");

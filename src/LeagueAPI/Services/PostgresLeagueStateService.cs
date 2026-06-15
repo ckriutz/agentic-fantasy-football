@@ -31,18 +31,28 @@ public sealed class PostgresLeagueStateService(IDbContextFactory<LeagueApiDbCont
         return MapToState(entity);
     }
 
-    public async Task<LeagueState> SetLeagueStateAsync(int season, int week, string phase, string updatedBy, CancellationToken cancellationToken)
+    public async Task<LeagueState> SetLeagueStateAsync(int? season, int? week, string phase, string updatedBy, CancellationToken cancellationToken)
     {
-        ValidateSeason(season);
-        ValidateWeek(week);
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var currentState = await GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
+
+        var effectiveSeason = season ?? currentState.Season;
+        var effectiveWeek = week ?? currentState.Week;
+
+        ValidateSeason(effectiveSeason);
+        ValidateWeek(effectiveWeek);
 
         var normalizedPhase = NormalizePhase(phase);
         var normalizedUpdatedBy = NormalizeUpdatedBy(updatedBy);
 
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var state = await UpsertLeagueStateAsync(dbContext, season, week, normalizedPhase, normalizedUpdatedBy, cancellationToken);
+        currentState.Season = effectiveSeason;
+        currentState.Week = effectiveWeek;
+        currentState.Phase = normalizedPhase;
+        currentState.UpdatedBy = normalizedUpdatedBy;
+        currentState.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
         await dbContext.SaveChangesAsync(cancellationToken);
-        return state;
+        return MapToState(currentState);
     }
 
     internal static async Task<LeagueState> UpsertLeagueStateAsync(LeagueApiDbContext dbContext, int season, int week, string phase, string updatedBy, CancellationToken cancellationToken)
