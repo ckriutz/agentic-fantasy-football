@@ -11,7 +11,7 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
     private readonly IRosterReader _rosterReader = rosterReader;
     private readonly IRosterWriter _rosterWriter = rosterWriter;
 
-    [McpServerTool, Description("Get the current roster for an player. Lists every player currently on the agent's roster.")]
+    [McpServerTool, Description("Get the current roster for an player. Lists every player currently on the agent's roster and includes current add/drop and lineup lock status metadata.")]
     public async Task<IReadOnlyList<RosterToolPlayerResult>> GetMyRoster([Description("The agent ID, such as player-01.")] string agentId)
     {
         var roster = await _rosterReader.GetRosterAsync(agentId, CancellationToken.None);

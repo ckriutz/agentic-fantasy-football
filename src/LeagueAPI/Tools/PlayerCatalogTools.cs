@@ -55,7 +55,7 @@ public sealed class PlayerCatalogTools(
     //         CancellationToken.None);
     // }
 
-    [McpServerTool, Description("Search active players by name, team, position, or bye week and include ownership and availability metadata.")]
+    [McpServerTool, Description("Search active players by name, team, position, or bye week and include ownership, availability, and current lock status metadata.")]
     public Task<IReadOnlyList<RosterPlayerResult>> SearchPlayers(
         [Description("Optional player name search text.")] string? name = null,
         [Description("Optional team abbreviation or team code.")] string? team = null,
@@ -79,7 +79,7 @@ public sealed class PlayerCatalogTools(
             CancellationToken.None);
     }
 
-    [McpServerTool, Description("Search active players that are not currently on any roster, ranked by Sleeper search rank where lower values are better.")]
+    [McpServerTool, Description("Search active players that are not currently on any roster, ranked by Sleeper search rank where lower values are better, and include current add/drop and lineup lock status metadata.")]
     public Task<IReadOnlyList<RosterPlayerResult>> GetAvailablePlayers(
         [Description("Optional player name search text.")] string? name = null,
         [Description("Optional team abbreviation or team code.")] string? team = null,
@@ -99,7 +99,7 @@ public sealed class PlayerCatalogTools(
             CancellationToken.None);
     }
 
-    [McpServerTool, Description("Get ownership and availability for a single player.")]
+    [McpServerTool, Description("Get ownership, availability, and current lock status for a single player.")]
     public Task<RosterPlayerResult?> GetPlayerAvailability([Description("The Sleeper player ID.")] string sleeperPlayerId)
     {
         return _rosterReader.GetPlayerAvailabilityAsync(sleeperPlayerId, CancellationToken.None);

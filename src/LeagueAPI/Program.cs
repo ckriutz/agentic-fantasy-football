@@ -78,6 +78,10 @@ builder.Services.AddSingleton<PostgresLeagueStateService>();
 builder.Services.AddSingleton<ILeagueStateService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresLeagueStateService>());
 
+builder.Services.AddSingleton<PostgresPlayerGameLockService>();
+builder.Services.AddSingleton<IPlayerGameLockService>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresPlayerGameLockService>());
+
 builder.Services.AddSingleton<PostgresWaiverService>();
 builder.Services.AddSingleton<IWaiverService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresWaiverService>());

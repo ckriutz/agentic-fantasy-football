@@ -5,9 +5,10 @@ using Npgsql;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IRosterReader, IRosterWriter
+public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IPlayerGameLockService playerGameLockService) : IRosterReader, IRosterWriter
 {
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
+    private readonly IPlayerGameLockService _playerGameLockService = playerGameLockService;
 
     public async Task<IReadOnlyList<RosterPlayerResult>> GetRosterAsync(
         string agentId,
@@ -37,6 +38,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
             cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
+            cancellationToken);
 
         return results
             .Select(result => CreateRosterPlayerResult(
@@ -47,7 +51,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 result.AcquisitionSource,
                 result.SlotType ?? RosterSlotRules.BenchSlot,
                 RosterSlotRules.IsStarterSlot(result.SlotType),
-                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, result.Player.SleeperPlayerId)))
+                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, result.Player.SleeperPlayerId),
+                GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId)))
             .ToList();
     }
 
@@ -78,8 +83,15 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
+            cancellationToken);
+
         return results
-            .Select(result => MapPlayerResult(result, RosterPlayerResult.EmptyWeeklyPoints))
+            .Select(result => MapPlayerResult(
+                result,
+                RosterPlayerResult.EmptyWeeklyPoints,
+                GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId)))
             .ToList();
     }
 
@@ -103,6 +115,10 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             select player)
             .ToListAsync(cancellationToken);
 
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            players.Select(player => player.SleeperPlayerId).Distinct().ToArray(),
+            cancellationToken);
+
         return players
             .Where(player => RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
             .Select(PlayerRecordFactory.Map)
@@ -118,7 +134,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 acquisitionSource: null,
                 slotType: null,
                 isStarter: false,
-                RosterPlayerResult.EmptyWeeklyPoints))
+                RosterPlayerResult.EmptyWeeklyPoints,
+                GetLockStatus(lockStatusBySleeperPlayerId, player.SleeperPlayerId)))
             .ToList();
     }
 
@@ -144,7 +161,17 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 assignment != null ? assignment.SlotType : null))
             .FirstOrDefaultAsync(cancellationToken);
 
-        return result is null ? null : MapPlayerResult(result, RosterPlayerResult.EmptyWeeklyPoints);
+        if (result is null)
+            return null;
+
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            [result.Player.SleeperPlayerId],
+            cancellationToken);
+
+        return MapPlayerResult(
+            result,
+            RosterPlayerResult.EmptyWeeklyPoints,
+            GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId));
     }
 
     public async Task<RosterPlayerResult> AddPlayerToRosterAsync(
@@ -231,6 +258,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             [normalizedSleeperPlayerId],
             cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            [normalizedSleeperPlayerId],
+            cancellationToken);
 
         return CreateRosterPlayerResult(
             PlayerRecordFactory.Map(player),
@@ -240,7 +270,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             normalizedAcquisitionSource,
             slotType: RosterSlotRules.BenchSlot,
             isStarter: false,
-            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId));
+            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId),
+            GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId));
     }
 
     public async Task<RosterPlayerResult> RemovePlayerFromRosterAsync(
@@ -284,6 +315,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             [normalizedSleeperPlayerId],
             cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            [normalizedSleeperPlayerId],
+            cancellationToken);
 
         return CreateRosterPlayerResult(
             PlayerRecordFactory.Map(player),
@@ -293,7 +327,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             acquisitionSource: null,
             slotType: null,
             isStarter: false,
-            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId));
+            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId),
+            GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId));
     }
 
     public async Task<RosterPlayerResult> SetPlayerSlotAsync(string agentId, string sleeperPlayerId, string slotType, CancellationToken cancellationToken)
@@ -374,6 +409,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             [normalizedSleeperPlayerId],
             cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            [normalizedSleeperPlayerId],
+            cancellationToken);
 
         return CreateRosterPlayerResult(
             PlayerRecordFactory.Map(player),
@@ -383,7 +421,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             targetAssignment.AcquisitionSource,
             normalizedSlotType,
             RosterSlotRules.IsStarterSlot(normalizedSlotType),
-            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId));
+            GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId),
+            GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId));
     }
 
     public async Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineupAsync(string agentId, CancellationToken cancellationToken)
@@ -438,6 +477,9 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
             cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
+            cancellationToken);
 
         return rosterRows
             .OrderBy(row => RosterSlotRules.IsBenchSlot(row.Assignment.SlotType) ? 1 : 0)
@@ -452,7 +494,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 row.Assignment.AcquisitionSource,
                 row.Assignment.SlotType ?? RosterSlotRules.BenchSlot,
                 RosterSlotRules.IsStarterSlot(row.Assignment.SlotType),
-                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, row.Player.SleeperPlayerId)))
+                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, row.Player.SleeperPlayerId),
+                GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId)))
             .ToList();
     }
 
@@ -495,7 +538,12 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
                 StringComparer.Ordinal);
     }
 
-    private static RosterPlayerResult CreateRosterPlayerResult(PlayerRecord player, string? ownerAgentId, bool isAvailable, DateTimeOffset? acquiredAtUtc, string? acquisitionSource, string? slotType, bool isStarter, IReadOnlyDictionary<int, decimal> weeklyPoints)
+    private async Task<IReadOnlyDictionary<string, PlayerLockStatus>> LoadLockStatusBySleeperPlayerIdAsync(IReadOnlyCollection<string> sleeperPlayerIds, CancellationToken cancellationToken)
+    {
+        return await _playerGameLockService.GetPlayerLockStatusesAsync(sleeperPlayerIds, cancellationToken);
+    }
+
+    private static RosterPlayerResult CreateRosterPlayerResult(PlayerRecord player, string? ownerAgentId, bool isAvailable, DateTimeOffset? acquiredAtUtc, string? acquisitionSource, string? slotType, bool isStarter, IReadOnlyDictionary<int, decimal> weeklyPoints, PlayerLockStatus lockStatus)
     {
         return new RosterPlayerResult(
             player,
@@ -505,7 +553,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             acquisitionSource,
             slotType,
             isStarter,
-            weeklyPoints);
+            weeklyPoints,
+            lockStatus);
     }
 
     private static IReadOnlyDictionary<int, decimal> GetWeeklyPoints(Dictionary<string, IReadOnlyDictionary<int, decimal>> weeklyPointsBySleeperPlayerId, string sleeperPlayerId)
@@ -513,6 +562,13 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         return weeklyPointsBySleeperPlayerId.TryGetValue(sleeperPlayerId, out var weeklyPoints)
             ? weeklyPoints
             : RosterPlayerResult.EmptyWeeklyPoints;
+    }
+
+    private static PlayerLockStatus GetLockStatus(IReadOnlyDictionary<string, PlayerLockStatus> lockStatusBySleeperPlayerId, string sleeperPlayerId)
+    {
+        return lockStatusBySleeperPlayerId.TryGetValue(sleeperPlayerId, out var lockStatus)
+            ? lockStatus
+            : PlayerLockStatus.Unlocked;
     }
 
     private static async Task<int> ResolveCurrentSeasonAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)
@@ -531,7 +587,7 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private static RosterPlayerResult MapPlayerResult(PlayerOwnershipRow result, IReadOnlyDictionary<int, decimal> weeklyPoints)
+    private static RosterPlayerResult MapPlayerResult(PlayerOwnershipRow result, IReadOnlyDictionary<int, decimal> weeklyPoints, PlayerLockStatus? lockStatus = null)
     {
         return CreateRosterPlayerResult(
             PlayerRecordFactory.Map(result.Player),
@@ -541,7 +597,8 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             result.AcquisitionSource,
             result.SlotType ?? (result.OwnerAgentId is null ? null : RosterSlotRules.BenchSlot),
             RosterSlotRules.IsStarterSlot(result.SlotType),
-            weeklyPoints);
+            weeklyPoints,
+            lockStatus ?? PlayerLockStatus.Unlocked);
     }
 
     private static string NormalizeAgentId(string agentId)

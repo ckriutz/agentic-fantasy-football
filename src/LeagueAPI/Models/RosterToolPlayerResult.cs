@@ -44,6 +44,8 @@ public sealed class RosterToolPlayerResult
 
     public IReadOnlyDictionary<int, decimal> WeeklyPoints { get; init; } = RosterPlayerResult.EmptyWeeklyPoints;
 
+    public PlayerLockStatus LockStatus { get; init; } = PlayerLockStatus.Unlocked;
+
     public static RosterToolPlayerResult FromRosterPlayerResult(RosterPlayerResult rosterPlayer)
     {
         return new RosterToolPlayerResult
@@ -66,7 +68,8 @@ public sealed class RosterToolPlayerResult
             AcquisitionSource = rosterPlayer.AcquisitionSource,
             SlotType = rosterPlayer.SlotType,
             IsStarter = rosterPlayer.IsStarter,
-            WeeklyPoints = rosterPlayer.WeeklyPoints
+            WeeklyPoints = rosterPlayer.WeeklyPoints,
+            LockStatus = rosterPlayer.LockStatus
         };
     }
 }
