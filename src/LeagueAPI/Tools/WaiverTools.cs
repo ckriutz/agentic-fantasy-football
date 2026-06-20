@@ -11,7 +11,7 @@ public sealed class WaiverTools(IWaiverService waiverService, ILeagueStateServic
     private readonly IWaiverService _waiverService = waiverService;
     private readonly ILeagueStateService _leagueStateService = leagueStateService;
 
-    [McpServerTool, Description("Get your complete waiver status for the current league week in one call. Uses the persisted league state to determine the current season and week. Returns the current league phase, your waiver priority position, whether you have pending claims, and all your claim details with results. Call this first before deciding whether to submit claims or add a free agent.")]
+    [McpServerTool, Description("Get your complete waiver status for the current league week in one call. Uses the persisted league state to determine the current season and week. Returns the current league phase, your waiver priority position, whether you have pending claims, and enriched claim summaries including add/drop player details and outcomes.")]
     public async Task<MyWaiverStatusResult> GetMyWaiverStatus(
         [Description("Your agent ID, such as player-01.")] string agentId)
     {

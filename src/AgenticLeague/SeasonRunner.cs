@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
@@ -214,6 +215,82 @@ public class SeasonRunner
         return true;
     }
 
+    public async Task<string> GetWaiverResultPromptDetailsAsync(string agentId)
+    {
+        if (string.IsNullOrWhiteSpace(agentId))
+            throw new ArgumentException("Agent ID is required.", nameof(agentId));
+
+        var leagueState = await GetLeagueStateAsync();
+        if (leagueState is null)
+            return "Waiver wire results could not be loaded because the league state is unavailable.";
+
+        return await GetWaiverResultPromptDetailsAsync(agentId.Trim(), leagueState.Season, leagueState.Week);
+    }
+
+    private async Task<string> GetWaiverResultPromptDetailsAsync(string agentId, int season, int week)
+    {
+        var response = await new HttpClient { BaseAddress = new Uri("http://localhost:5000/") }
+            .GetAsync($"api/league/waivers/{season}/{week}/agents/{Uri.EscapeDataString(agentId)}/summary");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            _logger.LogError("Failed to load waiver summary for AgentId: {AgentId}, Season: {Season}, Week: {Week}. Status code: {StatusCode}. Response: {Response}", agentId, season, week, response.StatusCode, error);
+            return $"Waiver wire results for agent {agentId} could not be loaded from the API.";
+        }
+
+        var summaryJson = await response.Content.ReadAsStringAsync();
+        var summary = JsonSerializer.Deserialize<WaiverAgentSummary>(summaryJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (summary is null)
+        {
+            _logger.LogError("Waiver summary response for AgentId: {AgentId}, Season: {Season}, Week: {Week} could not be deserialized.", agentId, season, week);
+            return $"Waiver wire results for agent {agentId} could not be parsed from the API response.";
+        }
+
+        var promptDetails = new StringBuilder();
+        promptDetails.AppendLine($"Waiver wire results for {summary.AgentId} for season {summary.Season} week {summary.Week}:");
+        promptDetails.AppendLine($"- League phase: {summary.Phase}");
+        promptDetails.AppendLine(summary.MyPriority.HasValue
+            ? $"- Current waiver priority: {summary.MyPriority.Value} of {summary.TotalAgents}"
+            : $"- Current waiver priority: unavailable (total agents: {summary.TotalAgents})");
+        promptDetails.AppendLine(summary.WaiversProcessedAtUtc.HasValue
+            ? $"- Waiver processing completed at: {summary.WaiversProcessedAtUtc.Value:u}"
+            : "- Waiver processing has not completed yet.");
+        promptDetails.AppendLine(summary.HasPendingClaims
+            ? "- You still have pending waiver claims."
+            : "- You do not have any pending waiver claims.");
+
+        if (summary.MyClaims.Count == 0)
+        {
+            promptDetails.AppendLine("- You did not submit any waiver claims for this week.");
+            return promptDetails.ToString().TrimEnd();
+        }
+
+        promptDetails.AppendLine("- Claims:");
+        foreach (var claim in summary.MyClaims.OrderBy(claim => claim.ClaimOrder))
+        {
+            var addPlayer = FormatWaiverPlayer(claim.AddPlayer);
+            var dropPlayer = claim.DropPlayer is null ? "No drop required" : FormatWaiverPlayer(claim.DropPlayer);
+
+            promptDetails.AppendLine($"  - Claim {claim.ClaimOrder}: add {addPlayer}; drop {dropPlayer}.");
+            promptDetails.AppendLine($"    Status: {claim.Status}. Priority at submission: {claim.PriorityAtSubmission}.");
+
+            if (claim.WasSuccessful)
+                promptDetails.AppendLine("    Outcome: This claim succeeded and the add/drop was applied.");
+            else if (claim.WasSuperseded)
+                promptDetails.AppendLine("    Outcome: This claim was superseded by another successful claim for the same waiver period.");
+
+            if (!string.IsNullOrWhiteSpace(claim.FailureReason))
+                promptDetails.AppendLine($"    Failure reason: {claim.FailureReason}");
+
+            promptDetails.AppendLine($"    Submitted at: {claim.SubmittedAtUtc:u}.");
+            if (claim.ProcessedAtUtc.HasValue)
+                promptDetails.AppendLine($"    Processed at: {claim.ProcessedAtUtc.Value:u}.");
+        }
+
+        return promptDetails.ToString().TrimEnd();
+    }
+
     private async Task<bool> ProcessYahooDataForWeekAsync(int season, int week)
     {
         // This is where we will process the Yahoo data for the week.
@@ -257,4 +334,43 @@ public class SeasonRunner
 
         return lineupPrompt;
     }
+
+    private static string FormatWaiverPlayer(WaiverPlayerSummary player)
+    {
+        var name = string.IsNullOrWhiteSpace(player.FullName) ? player.SleeperPlayerId : player.FullName;
+        var teamAndPosition = string.Join(" ", new[] { player.Team, player.Position }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return string.IsNullOrWhiteSpace(teamAndPosition)
+            ? $"{name} ({player.SleeperPlayerId})"
+            : $"{name} ({player.SleeperPlayerId}, {teamAndPosition})";
+    }
+
+    private sealed record WaiverAgentSummary(
+        string AgentId,
+        int Season,
+        int Week,
+        string Phase,
+        int? MyPriority,
+        int TotalAgents,
+        bool HasPendingClaims,
+        IReadOnlyList<WaiverClaimSummary> MyClaims,
+        DateTimeOffset? WaiversProcessedAtUtc);
+
+    private sealed record WaiverClaimSummary(
+        Guid WaiverClaimId,
+        int ClaimOrder,
+        WaiverPlayerSummary AddPlayer,
+        WaiverPlayerSummary? DropPlayer,
+        int PriorityAtSubmission,
+        string Status,
+        string? FailureReason,
+        DateTimeOffset SubmittedAtUtc,
+        DateTimeOffset? ProcessedAtUtc,
+        bool WasSuccessful,
+        bool WasSuperseded);
+
+    private sealed record WaiverPlayerSummary(
+        string SleeperPlayerId,
+        string? FullName,
+        string? Team,
+        string? Position);
 }

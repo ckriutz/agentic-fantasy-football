@@ -154,6 +154,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/waivers/priority (GET: priority order)",
         "/api/league/waivers/priority/seed (POST: seed from draft order, ?force=true to reset)",
         "/api/league/waivers/{season}/{week} (GET: claims, ?agentId= to filter)",
+        "/api/league/waivers/{season}/{week}/agents/{agentId}/summary",
         "/api/league/waivers/{season}/{week}/claims (POST: submit prioritized claim list)",
         "/api/league/waivers/{season}/{week}/process (POST: run waiver processing)",
         "/api/league/waivers/{season}/{week}/status (GET: has week been processed?)",
@@ -987,6 +988,24 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}/status", async (
 {
     var status = await waiverService.GetWaiverProcessStatusAsync(season, week, cancellationToken);
     return Results.Ok(status);
+});
+
+app.MapGet("/api/league/waivers/{season:int}/{week:int}/agents/{agentId}/summary", async (
+    int season,
+    int week,
+    string agentId,
+    IWaiverService waiverService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var summary = await waiverService.GetMyWaiverStatusAsync(agentId, season, week, cancellationToken);
+        return Results.Ok(summary);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.MapPost("/api/league/free-agents/{season:int}/{week:int}/add", async (

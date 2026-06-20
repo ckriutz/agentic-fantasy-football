@@ -367,6 +367,19 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             ?? throw new RosterPlayerNotFoundException(
                 $"Player '{normalizedSleeperPlayerId}' could not be loaded.");
 
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            [normalizedSleeperPlayerId],
+            cancellationToken);
+        var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId);
+        var currentSlotType = RosterSlotRules.NormalizeSlotType(targetAssignment.SlotType);
+
+        EnsureLineupMoveAllowed(
+            player.FullName ?? normalizedSleeperPlayerId,
+            normalizedSleeperPlayerId,
+            currentSlotType,
+            normalizedSlotType,
+            lockStatus);
+
         if (!RosterSlotRules.CanPlayerOccupySlot(normalizedSlotType, player.Position, player.FantasyPositionsTokenized))
         {
             var eligible = RosterSlotRules.GetEligibleStarterSlots(player.Position, player.FantasyPositionsTokenized);
@@ -409,9 +422,6 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             dbContext,
             [normalizedSleeperPlayerId],
             cancellationToken);
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            [normalizedSleeperPlayerId],
-            cancellationToken);
 
         return CreateRosterPlayerResult(
             PlayerRecordFactory.Map(player),
@@ -439,27 +449,47 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
             select new RosterAssignmentPlayerRow(assignment, player))
             .ToListAsync(cancellationToken);
 
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
+            rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
+            cancellationToken);
+
         foreach (var row in rosterRows)
         {
+            var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId);
+            if (lockStatus.IsLineupMoveLocked)
+            {
+               continue;
+            }
+
             row.Assignment.SlotType = RosterSlotRules.BenchSlot;
         }
 
         var remainingPlayers = rosterRows
+            .Where(row => !GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId).IsLineupMoveLocked)
             .Select(row => new AutoLineupCandidate(
-                row.Assignment,
-                row.Player,
-                PlayerRecordFactory.Map(row.Player)))
+               row.Assignment,
+               row.Player,
+               PlayerRecordFactory.Map(row.Player)))
             .OrderBy(candidate => candidate.PlayerRecord.SearchRank ?? int.MaxValue)
             .ThenBy(candidate => candidate.PlayerRecord.FullName ?? candidate.PlayerRecord.SleeperPlayerId)
             .ThenBy(candidate => candidate.PlayerRecord.SleeperPlayerId)
             .ToList();
 
-        foreach (var slotType in RosterSlotRules.StarterSlots)
+        var lockedStarterSlots = rosterRows
+            .Where(row =>
+            {
+               var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId);
+               return lockStatus.IsLineupMoveLocked && RosterSlotRules.IsStarterSlot(row.Assignment.SlotType);
+            })
+            .Select(row => RosterSlotRules.NormalizeSlotType(row.Assignment.SlotType))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var slotType in RosterSlotRules.StarterSlots.Where(slot => !lockedStarterSlots.Contains(slot)))
         {
             var selectedPlayer = remainingPlayers.FirstOrDefault(candidate =>
-                RosterSlotRules.CanPlayerOccupySlot(
-                    slotType,
-                    candidate.Player.Position,
+               RosterSlotRules.CanPlayerOccupySlot(
+                   slotType,
+                   candidate.Player.Position,
                     candidate.Player.FantasyPositionsTokenized));
 
             if (selectedPlayer is null)
@@ -475,9 +505,6 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
 
         var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(
             dbContext,
-            rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
             rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
             cancellationToken);
 
@@ -569,6 +596,27 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
         return lockStatusBySleeperPlayerId.TryGetValue(sleeperPlayerId, out var lockStatus)
             ? lockStatus
             : PlayerLockStatus.Unlocked;
+    }
+
+    private static void EnsureLineupMoveAllowed(string playerDisplayName, string sleeperPlayerId, string currentSlotType, string targetSlotType, PlayerLockStatus lockStatus)
+    {
+        if (!lockStatus.IsLineupMoveLocked || !IsBenchStarterTransition(currentSlotType, targetSlotType))
+        {
+            return;
+        }
+
+        throw new RosterConflictException(
+            $"Player '{playerDisplayName}' ({sleeperPlayerId}) cannot move from slot '{currentSlotType}' to '{targetSlotType}'. {lockStatus.LineupMoveLockReason ?? "Lineup moves are locked for this player."}");
+    }
+
+    private static bool IsBenchStarterTransition(string currentSlotType, string targetSlotType)
+    {
+        var currentIsBench = RosterSlotRules.IsBenchSlot(currentSlotType);
+        var targetIsBench = RosterSlotRules.IsBenchSlot(targetSlotType);
+        var currentIsStarter = RosterSlotRules.IsStarterSlot(currentSlotType);
+        var targetIsStarter = RosterSlotRules.IsStarterSlot(targetSlotType);
+
+        return (currentIsBench && targetIsStarter) || (currentIsStarter && targetIsBench);
     }
 
     private static async Task<int> ResolveCurrentSeasonAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)

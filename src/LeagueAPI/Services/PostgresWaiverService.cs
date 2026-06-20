@@ -20,12 +20,13 @@ internal static class WaiverProcessRunStatus
     public const string Failed = "Failed";
 }
 
-public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILeagueStateService leagueStateService) : IWaiverService
+public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILeagueStateService leagueStateService, IPlayerGameLockService playerGameLockService) : IWaiverService
 {
     private sealed record ClaimSubmission(int ClaimOrder, string AddSleeperPlayerId, string? DropSleeperPlayerId);
 
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly ILeagueStateService _leagueStateService = leagueStateService;
+    private readonly IPlayerGameLockService _playerGameLockService = playerGameLockService;
 
     public async Task SeedWaiverPriorityAsync(IReadOnlyList<string> draftOrder, bool force, CancellationToken cancellationToken)
     {
@@ -350,6 +351,12 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
         if (leagueState.Season != season || leagueState.Week != week || leagueState.Phase != LeagueStatePhases.FreeAgency)
             throw new InvalidOperationException($"Free agent adds are only allowed during the '{LeagueStatePhases.FreeAgency}' phase for the active league state. Current state is season {leagueState.Season} week {leagueState.Week} phase '{leagueState.Phase}'.");
 
+        var lockStatusBySleeperPlayerId = await _playerGameLockService.GetPlayerLockStatusesAsync(
+            normalizedDropId is null
+                ? [normalizedAddId]
+                : [normalizedAddId, normalizedDropId],
+            cancellationToken);
+
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
 
@@ -360,6 +367,11 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
 
         if (!RosterSlotRules.CanPlayerBeRostered(addPlayer.Position, addPlayer.FantasyPositionsTokenized))
             throw new ArgumentException($"Player '{addPlayer.FullName ?? normalizedAddId}' (position: {addPlayer.Position}) is not eligible for roster slots.", nameof(addSleeperPlayerId));
+
+        EnsureAddDropAllowed(
+            addPlayer.FullName ?? normalizedAddId,
+            normalizedAddId,
+            GetLockStatus(lockStatusBySleeperPlayerId, normalizedAddId));
 
         var existingOwner = await dbContext.RosterAssignments
             .AsNoTracking()
@@ -373,6 +385,16 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             var dropAssignment = await dbContext.RosterAssignments
                 .FirstOrDefaultAsync(a => a.SleeperPlayerId == normalizedDropId && a.AgentId == normalizedAgentId, cancellationToken)
                 ?? throw new RosterPlayerNotFoundException($"Drop player '{normalizedDropId}' is not on agent '{normalizedAgentId}' roster.");
+
+            var dropPlayer = await dbContext.Players
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.SleeperPlayerId == normalizedDropId, cancellationToken)
+                ?? throw new RosterPlayerNotFoundException($"Drop player '{normalizedDropId}' could not be loaded.");
+
+            EnsureAddDropAllowed(
+                dropPlayer.FullName ?? normalizedDropId,
+                normalizedDropId,
+                GetLockStatus(lockStatusBySleeperPlayerId, normalizedDropId));
 
             dbContext.RosterAssignments.Remove(dropAssignment);
         }
@@ -652,6 +674,22 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
+    private static PlayerLockStatus GetLockStatus(IReadOnlyDictionary<string, PlayerLockStatus> lockStatusBySleeperPlayerId, string sleeperPlayerId)
+    {
+        return lockStatusBySleeperPlayerId.TryGetValue(sleeperPlayerId, out var lockStatus)
+            ? lockStatus
+            : PlayerLockStatus.Unlocked;
+    }
+
+    private static void EnsureAddDropAllowed(string playerDisplayName, string sleeperPlayerId, PlayerLockStatus lockStatus)
+    {
+        if (!lockStatus.IsAddDropLocked)
+            return;
+
+        throw new RosterConflictException(
+            $"Player '{playerDisplayName}' ({sleeperPlayerId}) cannot be added or dropped. {lockStatus.AddDropLockReason ?? "Add/drop moves are locked for this player."}");
+    }
+
     public async Task<MyWaiverStatusResult> GetMyWaiverStatusAsync(string agentId, int season, int week, CancellationToken cancellationToken)
     {
         agentId = NormalizeRequired(agentId, nameof(agentId));
@@ -670,15 +708,69 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
 
         var myPriority = priority.Priority.FirstOrDefault(p => p.AgentId == agentId)?.Priority;
         var hasPending = myClaims.Any(c => c.Status == WaiverClaimStatus.Pending);
+        var playerSummaryBySleeperPlayerId = await LoadWaiverPlayerSummaryBySleeperPlayerIdAsync(myClaims, cancellationToken);
 
         return new MyWaiverStatusResult(
+            AgentId: agentId,
             Season: season,
             Week: week,
             Phase: leagueState.Phase,
             MyPriority: myPriority,
             TotalAgents: priority.Priority.Count,
             HasPendingClaims: hasPending,
-            MyClaims: myClaims,
+            MyClaims: myClaims.Select(claim => MapMyWaiverClaimSummary(claim, playerSummaryBySleeperPlayerId)).ToList(),
             WaiversProcessedAtUtc: processStatus.CompletedAtUtc);
+    }
+
+    private async Task<IReadOnlyDictionary<string, WaiverPlayerSummary>> LoadWaiverPlayerSummaryBySleeperPlayerIdAsync(IReadOnlyList<WaiverClaimResult> claims, CancellationToken cancellationToken)
+    {
+        var sleeperPlayerIds = claims
+            .SelectMany(claim => new[] { claim.AddSleeperPlayerId, claim.DropSleeperPlayerId })
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (sleeperPlayerIds.Length == 0)
+            return new Dictionary<string, WaiverPlayerSummary>(StringComparer.Ordinal);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var players = await dbContext.Players
+            .AsNoTracking()
+            .Where(player => sleeperPlayerIds.Contains(player.SleeperPlayerId))
+            .Select(player => new WaiverPlayerSummary(
+                player.SleeperPlayerId,
+                player.FullName,
+                player.Team,
+                player.Position))
+            .ToListAsync(cancellationToken);
+
+        return players.ToDictionary(player => player.SleeperPlayerId, StringComparer.Ordinal);
+    }
+
+    private static MyWaiverClaimSummary MapMyWaiverClaimSummary(WaiverClaimResult claim, IReadOnlyDictionary<string, WaiverPlayerSummary> playerSummaryBySleeperPlayerId)
+    {
+        return new MyWaiverClaimSummary(
+            claim.WaiverClaimId,
+            claim.ClaimOrder,
+            GetWaiverPlayerSummary(playerSummaryBySleeperPlayerId, claim.AddSleeperPlayerId),
+            string.IsNullOrWhiteSpace(claim.DropSleeperPlayerId)
+                ? null
+                : GetWaiverPlayerSummary(playerSummaryBySleeperPlayerId, claim.DropSleeperPlayerId),
+            claim.PriorityAtSubmission,
+            claim.Status,
+            claim.FailureReason,
+            claim.SubmittedAtUtc,
+            claim.ProcessedAtUtc,
+            string.Equals(claim.Status, WaiverClaimStatus.Successful, StringComparison.Ordinal),
+            string.Equals(claim.Status, WaiverClaimStatus.Superseded, StringComparison.Ordinal));
+    }
+
+    private static WaiverPlayerSummary GetWaiverPlayerSummary(IReadOnlyDictionary<string, WaiverPlayerSummary> playerSummaryBySleeperPlayerId, string sleeperPlayerId)
+    {
+        return playerSummaryBySleeperPlayerId.TryGetValue(sleeperPlayerId, out var playerSummary)
+            ? playerSummary
+            : new WaiverPlayerSummary(sleeperPlayerId, null, null, null);
     }
 }

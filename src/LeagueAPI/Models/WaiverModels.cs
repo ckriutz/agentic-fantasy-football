@@ -76,12 +76,32 @@ public sealed record AddFreeAgentResult(
     string? DroppedSleeperPlayerId,
     DateTimeOffset AcquiredAtUtc);
 
+public sealed record WaiverPlayerSummary(
+    string SleeperPlayerId,
+    string? FullName,
+    string? Team,
+    string? Position);
+
+public sealed record MyWaiverClaimSummary(
+    Guid WaiverClaimId,
+    int ClaimOrder,
+    WaiverPlayerSummary AddPlayer,
+    WaiverPlayerSummary? DropPlayer,
+    int PriorityAtSubmission,
+    string Status,
+    string? FailureReason,
+    DateTimeOffset SubmittedAtUtc,
+    DateTimeOffset? ProcessedAtUtc,
+    bool WasSuccessful,
+    bool WasSuperseded);
+
 public sealed record MyWaiverStatusResult(
+    string AgentId,
     int Season,
     int Week,
     string Phase,
     int? MyPriority,
     int TotalAgents,
     bool HasPendingClaims,
-    IReadOnlyList<WaiverClaimResult> MyClaims,
+    IReadOnlyList<MyWaiverClaimSummary> MyClaims,
     DateTimeOffset? WaiversProcessedAtUtc);

@@ -116,8 +116,14 @@ else
 
 // After the draft, we can start the season runner, which will advance the league through the season, and run the games each week.
 
-SeasonRunner seasonRunner = new SeasonRunner(agents, logger);
-await seasonRunner.RunAsync();
+//SeasonRunner seasonRunner = new SeasonRunner(agents, logger);
+//await seasonRunner.RunAsync();
+
+// Lets test the players ability to move a player onto the bench.
+var agent = agents.First(agent => agent.GetAgentName() == "player-02");
+var prompt = "Find one player on your active roster that you think would be better suited for your bench, and move them to the bench. Respond if this was successful or not.";
+var testresponse = await agent.RunAsync(prompt);
+Console.WriteLine($"Response from Player 2: {testresponse}");
 
 // Here, lets test the waver wire again.
 //var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
