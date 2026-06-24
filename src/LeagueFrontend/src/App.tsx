@@ -14,7 +14,7 @@ function App() {
               <Trophy className="size-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#BF9264]">
                 Agentic Fantasy Football
               </p>
               <h1 className="text-lg font-semibold text-white">Initial frontend scaffold</h1>
