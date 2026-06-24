@@ -33,6 +33,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<LeagueStateEntity> LeagueState => Set<LeagueStateEntity>();
 
+    public DbSet<MatchupEntity> Matchups => Set<MatchupEntity>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
@@ -251,6 +253,19 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
                 UpdatedAtUtc = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 UpdatedBy = LeagueStateDefaults.DefaultUpdatedBy
             });
+        });
+
+        modelBuilder.Entity<MatchupEntity>(entity =>
+        {
+            entity.ToTable("matchups");
+            entity.HasKey(matchup => matchup.Id);
+
+            entity.Property(matchup => matchup.HomeAgentId).HasMaxLength(100);
+            entity.Property(matchup => matchup.AwayAgentId).HasMaxLength(100);
+            entity.Property(matchup => matchup.HomePoints).HasPrecision(18, 4);
+            entity.Property(matchup => matchup.AwayPoints).HasPrecision(18, 4);
+
+            entity.HasIndex(matchup => new { matchup.Week, matchup.HomeAgentId });
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

@@ -91,6 +91,10 @@ builder.Services.AddSingleton<PostgresLeagueStateService>();
 builder.Services.AddSingleton<ILeagueStateService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresLeagueStateService>());
 
+builder.Services.AddSingleton<PostgresScheduleService>();
+builder.Services.AddSingleton<IScheduleService>(serviceProvider =>
+    serviceProvider.GetRequiredService<PostgresScheduleService>());
+
 builder.Services.AddSingleton<PostgresPlayerGameLockService>();
 builder.Services.AddSingleton<IPlayerGameLockService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerGameLockService>());
@@ -116,7 +120,8 @@ builder.Services.AddMcpServer()
     .WithTools<RosterTools>()
     .WithTools<WaiverTools>()
     .WithTools<AgentProfileTools>()
-    .WithTools<LeagueStateTools>();
+    .WithTools<LeagueStateTools>()
+    .WithTools<LeagueTools>();
 
 var app = builder.Build();
 
@@ -164,6 +169,8 @@ app.MapGet("/", () => Results.Ok(new
         "/api/agent-profiles/{agentId}",
         "/api/agent-profiles/{agentId}/team-name",
         "/api/agent-profiles/{agentId}/bootstrap-status",
+        "/api/league/schedule (POST: generate, GET: list all, ?force=true on POST to regenerate)",
+        "/api/league/schedule/{week} (GET: list one week)",
         "/api/league/state",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
@@ -265,6 +272,56 @@ app.MapPatch("/api/agent-profiles/{agentId}/bootstrap-status", async (
 });
 
 // --- League State ---
+
+static IResult CreateScheduleErrorResult(Exception exception)
+{
+    return exception switch
+    {
+        ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
+        InvalidOperationException ex => Results.Conflict(new { error = ex.Message }),
+        _ => Results.Problem(exception.Message)
+    };
+}
+
+app.MapPost("/api/league/schedule", async (
+    bool? force,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await scheduleService.GenerateScheduleAsync(force ?? false, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateScheduleErrorResult(ex);
+    }
+});
+
+app.MapGet("/api/league/schedule", async (
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var schedule = await scheduleService.GetScheduleAsync(cancellationToken);
+    return Results.Ok(schedule);
+});
+
+app.MapGet("/api/league/schedule/{week:int}", async (
+    int week,
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var schedule = await scheduleService.GetScheduleForWeekAsync(week, cancellationToken);
+        return Results.Ok(schedule);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 app.MapGet("/api/league/state", async (
     ILeagueStateService leagueStateService,
