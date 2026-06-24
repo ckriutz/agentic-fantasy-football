@@ -11,6 +11,9 @@ using LeagueAPI.Tools;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedCorsOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"] ?? "http://localhost:3000,http://localhost:5173")
+    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
 builder.Services
     .AddOptions<SportsDataSyncOptions>()
     .Bind(builder.Configuration.GetSection(SportsDataSyncOptions.SectionName))
@@ -24,6 +27,16 @@ builder.Services.Configure<YahooOAuthOptions>(
 
 builder.Services.Configure<YahooSyncOptions>(
     builder.Configuration.GetSection(YahooSyncOptions.SectionName));
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(allowedCorsOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 builder.Services.AddMemoryCache();
 
@@ -106,6 +119,8 @@ builder.Services.AddMcpServer()
     .WithTools<LeagueStateTools>();
 
 var app = builder.Build();
+
+app.UseCors();
 
 app.MapGet("/", () => Results.Ok(new
 {
