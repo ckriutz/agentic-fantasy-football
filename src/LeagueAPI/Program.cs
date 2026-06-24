@@ -127,6 +127,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper?force=true",
         "/api/sync/sportsdata/latest",
+        "/api/sync/sportsdata?force=true",
         "/api/sync/yahoo/latest",
         "/api/sync/yahoo/weekly?week=&season=&gameKey=&force=",
         "/api/yahoo/stats/{season}/{week}?position=&limit=",
@@ -635,6 +636,15 @@ app.MapGet("/api/sync/sportsdata/latest", async (
 {
     var state = await sportsDataPlayerSyncService.GetLatestSyncRunAsync(cancellationToken);
     return state is null ? Results.NotFound() : Results.Ok(state);
+});
+
+app.MapPost("/api/sync/sportsdata", async (
+    bool force,
+    SportsDataPlayerSyncService sportsDataPlayerSyncService,
+    CancellationToken cancellationToken) =>
+{
+    var result = await sportsDataPlayerSyncService.SyncPlayersAsync(force, cancellationToken);
+    return Results.Ok(result);
 });
 
 app.MapGet("/api/sync/yahoo/latest", async (
