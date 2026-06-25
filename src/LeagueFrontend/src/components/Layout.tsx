@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Trophy } from 'lucide-react'
+import { Loader2, Trophy } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
@@ -7,7 +7,7 @@ import { apiBaseUrl } from '@/lib/config'
 
 const navItems = [
   { label: 'Overview', to: '/' },
-  { label: 'Rosters', to: '/rosters' },
+  { label: 'Players', to: '/players' },
   { label: 'League State', to: '/league-state' },
   { label: 'Admin', to: '/admin' },
 ]
@@ -18,6 +18,7 @@ function ApiStatusButton() {
   const [apiState, setApiState] = useState<ApiState>('loading')
 
   const check = useCallback(async () => {
+    setApiState('loading')
     try {
       const response = await fetch(`${apiBaseUrl}/`)
       setApiState(response.ok ? 'up' : 'down')
@@ -32,27 +33,31 @@ function ApiStatusButton() {
 
   return (
     <button
-      onClick={() => void check()}
-      className="inline-flex h-9 items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium transition-colors hover:bg-white/10"
-      aria-label="Check API status"
+    type="button"
+    onClick={() => void check()}
+    className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium transition-colors hover:bg-white/10"
+    aria-label="Check API status"
     >
+    {apiState === 'loading' ? (
+      <Loader2 className="size-3 animate-spin text-slate-400" />
+    ) : (
       <span
         className={cn(
           'size-2 rounded-full',
-          apiState === 'loading' && 'animate-pulse bg-slate-400',
           apiState === 'up' && 'bg-emerald-400',
           apiState === 'down' && 'bg-red-400',
         )}
       />
-      <span
-        className={cn(
-          apiState === 'loading' && 'text-slate-400',
-          apiState === 'up' && 'text-emerald-300',
-          apiState === 'down' && 'text-red-400',
-        )}
-      >
-        API
-      </span>
+    )}
+    <span
+      className={cn(
+        apiState === 'loading' && 'text-slate-400',
+        apiState === 'up' && 'text-emerald-300',
+        apiState === 'down' && 'text-red-400',
+      )}
+    >
+      {apiState === 'loading' ? 'Checking…' : 'API'}
+    </span>
     </button>
   )
 }

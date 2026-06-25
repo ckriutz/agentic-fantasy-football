@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -409,9 +409,52 @@ function YahooStatusCard() {
 }
 
 function AdminPage() {
+  const [scheduleExists, setScheduleExists] = useState<boolean | null>(null)
+  const [generatingSchedule, setGeneratingSchedule] = useState(false)
+
+  const checkSchedule = useCallback(async () => {
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/league/schedule`)
+      if (!res.ok) { setScheduleExists(false); return }
+      const data = await res.json() as unknown[]
+      setScheduleExists(Array.isArray(data) && data.length > 0)
+    } catch {
+      setScheduleExists(false)
+    }
+  }, [])
+
+  useEffect(() => { void checkSchedule() }, [checkSchedule])
+
+  const generateSchedule = useCallback(async () => {
+    setGeneratingSchedule(true)
+    try {
+      await fetch(`${apiBaseUrl}/api/league/schedule`, { method: 'POST' })
+      await checkSchedule()
+    } finally {
+      setGeneratingSchedule(false)
+    }
+  }, [checkSchedule])
+
   return (
     <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
-      <h2 className="text-3xl font-semibold tracking-tight text-white">Admin</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-3xl font-semibold tracking-tight text-white">Admin</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={scheduleExists === null || scheduleExists === true || generatingSchedule}
+          onClick={() => void generateSchedule()}
+          className="flex items-center gap-2 border-white/20 text-slate-300 hover:border-white/40 hover:text-white disabled:opacity-40"
+          title={scheduleExists ? 'Schedule already generated for this season' : 'Generate league schedule'}
+        >
+          {generatingSchedule ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <CalendarDays className="size-4" />
+          )}
+          Generate Schedule
+        </Button>
+      </div>
 
       <section className="grid gap-6 md:grid-cols-2">
         <DataStatusCard />
