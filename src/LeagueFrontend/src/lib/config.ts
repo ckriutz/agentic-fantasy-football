@@ -9,6 +9,10 @@ function normalizeApiBaseUrl(value: string | undefined) {
   return trimmedValue.length > 0 ? trimmedValue : fallbackApiBaseUrl
 }
 
+function firstNonEmpty(...values: (string | undefined)[]) {
+  return values.find((value) => value !== undefined && value.trim().length > 0)
+}
+
 export const apiBaseUrl = normalizeApiBaseUrl(
-  window.__APP_CONFIG__?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL,
+  firstNonEmpty(window.__APP_CONFIG__?.apiBaseUrl, import.meta.env.VITE_API_BASE_URL),
 )
