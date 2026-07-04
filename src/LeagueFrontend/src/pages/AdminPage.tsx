@@ -181,12 +181,13 @@ function AgentsTable() {
 }
 
 
-function SyncRow({ label, status, completedAt, recordCount, errorMessage }: {
+function SyncRow({ label, status, completedAt, recordCount, errorMessage, action }: {
   label: string
   status: string | null
   completedAt: string | null
   recordCount: number | null
   errorMessage: string | null
+  action?: React.ReactNode
 }) {
   const isOk = status?.toLowerCase() === 'succeeded' || status?.toLowerCase() === 'skipped'
   const isError = !!errorMessage || status?.toLowerCase() === 'failed' || status?.toLowerCase() === 'error'
@@ -209,9 +210,12 @@ function SyncRow({ label, status, completedAt, recordCount, errorMessage }: {
         </div>
         {errorMessage && <p className="text-xs text-red-400">{errorMessage}</p>}
       </div>
-      <div className="text-right text-xs text-slate-400 shrink-0">
-        {recordCount !== null && <p>{recordCount.toLocaleString()} records</p>}
-        {completedAt && <p>{timeAgo(completedAt)}</p>}
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="text-right text-xs text-slate-400">
+          {recordCount !== null && <p>{recordCount.toLocaleString()} records</p>}
+          {completedAt && <p>{timeAgo(completedAt)}</p>}
+        </div>
+        {action}
       </div>
     </div>
   )
@@ -306,15 +310,19 @@ function YahooStatusCard() {
   const [status, setStatus] = useState<YahooAuthStatus | null>(null)
   const [connectionOk, setConnectionOk] = useState<boolean | null>(null)
   const [syncRun, setSyncRun] = useState<YahooSyncRun | null>(null)
+  const [leagueState, setLeagueState] = useState<{ season: number; week: number } | null>(null)
+  const [manualSyncing, setManualSyncing] = useState(false)
+  const [manualSyncError, setManualSyncError] = useState<string | null>(null)
 
   const checkStatus = useCallback(async () => {
     setState('loading')
     setConnectionOk(null)
     try {
-      const [statusResponse, connectionResponse, syncResponse] = await Promise.all([
+      const [statusResponse, connectionResponse, syncResponse, leagueResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/api/yahoo/auth/status`),
         fetch(`${apiBaseUrl}/api/yahoo/auth/test-connection`),
         fetch(`${apiBaseUrl}/api/sync/yahoo/latest`),
+        fetch(`${apiBaseUrl}/api/league/state`),
       ])
 
       if (!statusResponse.ok) {
@@ -325,6 +333,10 @@ function YahooStatusCard() {
       setStatus((await statusResponse.json()) as YahooAuthStatus)
       setConnectionOk(connectionResponse.ok)
       setSyncRun(syncResponse.ok ? (await syncResponse.json()) as YahooSyncRun : null)
+      if (leagueResponse.ok) {
+        const data = (await leagueResponse.json()) as { season: number; week: number }
+        setLeagueState({ season: data.season, week: data.week })
+      }
       setState('success')
     } catch {
       setState('error')
@@ -335,6 +347,32 @@ function YahooStatusCard() {
     void checkStatus()
   }, [checkStatus])
 
+  const runManualSync = useCallback(async () => {
+    if (!leagueState || !syncRun?.gameKey) return
+    setManualSyncing(true)
+    setManualSyncError(null)
+    try {
+      const params = new URLSearchParams({
+        week: String(leagueState.week),
+        season: String(leagueState.season),
+        gameKey: syncRun.gameKey,
+        force: 'true',
+      })
+      const response = await fetch(`${apiBaseUrl}/api/sync/yahoo/weekly?${params.toString()}`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        throw new Error(`Sync failed (${response.status})`)
+      }
+      await checkStatus()
+    } catch (error) {
+      setManualSyncError(error instanceof Error ? error.message : 'Unknown error')
+    } finally {
+      setManualSyncing(false)
+    }
+  }, [checkStatus, leagueState, syncRun?.gameKey])
+
+  const canManualSync = !!leagueState && !!syncRun?.gameKey && !manualSyncing
 
   return (
     <Card className="border-white/10 bg-slate-900 text-slate-50">
@@ -400,7 +438,32 @@ function YahooStatusCard() {
               completedAt={syncRun?.completedAtUtc ?? null}
               recordCount={syncRun?.recordCount ?? null}
               errorMessage={syncRun?.errorMessage ?? null}
+              action={
+                <Button
+                  size="sm"
+                  onClick={() => void runManualSync()}
+                  disabled={!canManualSync}
+                  className="bg-[#BF9264] text-slate-950 hover:bg-[#caa176] disabled:opacity-40"
+                  title={
+                    !leagueState
+                      ? 'Waiting for league state'
+                      : !syncRun?.gameKey
+                        ? 'Need a prior sync to know the gameKey'
+                        : 'Manually trigger a Yahoo weekly sync'
+                  }
+                >
+                  {manualSyncing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  Sync now
+                </Button>
+              }
             />
+            {manualSyncError && (
+              <p className="text-xs text-red-400">Manual sync failed: {manualSyncError}</p>
+            )}
           </>
         )}
       </CardContent>
@@ -456,7 +519,7 @@ function AdminPage() {
         </Button>
       </div>
 
-      <section className="grid gap-6 md:grid-cols-2">
+      <section className="grid gap-6 md:grid-cols-[1fr_0.85fr]">
         <DataStatusCard />
         <YahooStatusCard />
       </section>

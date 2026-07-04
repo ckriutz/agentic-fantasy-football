@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 
 import Layout from '@/components/Layout'
 import AdminPage from '@/pages/AdminPage'
+import AgentPage from '@/pages/AgentPage'
 import HomePage from '@/pages/HomePage'
 import PlayerDetailPage from '@/pages/PlayerDetailPage'
 import PlayersPage from '@/pages/PlayersPage'
@@ -12,6 +13,7 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="admin" element={<AdminPage />} />
+        <Route path="agents" element={<AgentPage />} />
         <Route path="players" element={<PlayersPage />} />
         <Route path="players/:sleeperId" element={<PlayerDetailPage />} />
       </Route>
