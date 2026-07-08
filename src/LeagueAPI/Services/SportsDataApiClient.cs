@@ -14,7 +14,7 @@ public sealed class SportsDataApiClient(
     {
         if (string.IsNullOrWhiteSpace(_sportsDataSyncOptions.ApiKey))
         {
-            throw new InvalidOperationException("SportsDataSync:ApiKey must be configured.");
+            throw new InvalidOperationException("SPORTSDATA_API_KEY must be configured.");
         }
 
         var httpClient = _httpClientFactory.CreateClient("SportsDataApi");

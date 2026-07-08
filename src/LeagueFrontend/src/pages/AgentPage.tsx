@@ -3,6 +3,7 @@ import { AlertCircle, ArrowLeft, ChevronRight, Loader2, ScrollText, UserCircle2 
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import AgentAvatar from '@/components/AgentAvatar'
 
 type AgentProfile = {
   agentId: string
@@ -380,9 +381,7 @@ function AgentPage() {
       {profile && (
         <Card className="border-white/10 bg-slate-900 text-slate-50">
           <CardContent className="flex flex-wrap items-center gap-4 py-3">
-            <div className="flex size-14 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-950 text-slate-400">
-              <UserCircle2 className="size-9" />
-            </div>
+            <AgentAvatar agentId={profile.agentId} sizeClassName="size-14" iconClassName="size-9" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-base font-semibold text-white">{profile.teamName}</p>
               <p className="truncate text-xs text-slate-400">
