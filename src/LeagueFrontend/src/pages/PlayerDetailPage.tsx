@@ -58,7 +58,7 @@ type Availability = {
   acquiredAtUtc: string | null
   slotType: string | null
   isStarter: boolean
-  weeklyPoints: Record<string, number>
+  weeklyPoints: Record<string, number> | null
 }
 
 type WeekPoint = {
@@ -72,7 +72,7 @@ type SeasonPoints = {
   gamesCount: number
   totalFantasyPoints: number
   averageFantasyPoints: number
-  weeklyPoints: WeekPoint[]
+  weeklyPoints: WeekPoint[] | null
 }
 
 function positionBadgeClass(position: string | null): string {
@@ -164,8 +164,9 @@ function PlayerDetailPage() {
     player?.data?.practice_participation
   )
 
-  const maxWeekPoints = seasonPoints
-    ? Math.max(...seasonPoints.weeklyPoints.map(w => w.fantasyPoints), 0)
+  const weeklyPoints = seasonPoints?.weeklyPoints ?? []
+  const maxWeekPoints = weeklyPoints.length > 0
+    ? Math.max(...weeklyPoints.map(w => w.fantasyPoints), 0)
     : 0
 
   return (
@@ -356,11 +357,17 @@ function PlayerDetailPage() {
                         <p className="text-xs text-slate-400 uppercase tracking-widest mt-0.5">Games</p>
                       </div>
                     </div>
-                    <div className="border-t border-white/5 pt-3">
-                      {seasonPoints.weeklyPoints.map(w => (
-                        <WeekBar key={w.week} week={w.week} points={w.fantasyPoints} maxPoints={maxWeekPoints} />
-                      ))}
-                    </div>
+                    {weeklyPoints.length > 0 ? (
+                      <div className="border-t border-white/5 pt-3">
+                        {weeklyPoints.map(w => (
+                          <WeekBar key={w.week} week={w.week} points={w.fantasyPoints} maxPoints={maxWeekPoints} />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="border-t border-white/5 pt-3 text-sm text-slate-500 italic">
+                        No weekly point breakdown available.
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className="text-sm text-slate-500 italic">No {CURRENT_SEASON} stats available.</p>

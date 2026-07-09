@@ -31,28 +31,28 @@ type RosterPlayer = {
 }
 
 type RosterEntry = {
-  player: RosterPlayer
+  player: RosterPlayer | null
   ownerAgentId: string
   isAvailable: boolean
   acquiredAtUtc: string | null
   acquisitionSource: string | null
   slotType: string | null
   isStarter: boolean
-  weeklyPoints: Record<string, number>
+  weeklyPoints: Record<string, number> | null
 }
 
 type Decision = {
   decisionId: number
   agentId: string
   week: number
-  type: string
-  reasoning: string
-  action: string
+  type: string | null
+  reasoning: string | null
+  action: string | null
   createdAtUtc: string
-  inputTokenCount: number
-  outputTokenCount: number
-  cachedInputTokenCount: number
-  reasoningTokenCount: number
+  inputTokenCount: number | null
+  outputTokenCount: number | null
+  cachedInputTokenCount: number | null
+  reasoningTokenCount: number | null
 }
 
 const SLOT_ORDER: Record<string, number> = {
@@ -110,9 +110,10 @@ function injuryBadgeClass(status: string | null): string | null {
 }
 
 function RosterRow({ entry, currentWeek }: { entry: RosterEntry; currentWeek: number | null }) {
+  const player = entry.player
   const group = slotGroup(entry.slotType)
-  const points = currentWeek != null ? entry.weeklyPoints[String(currentWeek)] : undefined
-  const injuryCls = injuryBadgeClass(entry.player.injuryStatus)
+  const points = currentWeek != null ? entry.weeklyPoints?.[String(currentWeek)] : undefined
+  const injuryCls = injuryBadgeClass(player?.injuryStatus ?? null)
 
   return (
     <li className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
@@ -125,22 +126,22 @@ function RosterRow({ entry, currentWeek }: { entry: RosterEntry; currentWeek: nu
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            to={`/players/${entry.player.sleeperPlayerId}`}
+            to={player ? `/players/${player.sleeperPlayerId}` : '#'}
             className="truncate text-sm font-semibold text-white hover:text-emerald-300"
           >
-            {entry.player.fullName}
+            {player?.fullName ?? 'Unknown player'}
           </Link>
-          {entry.player.position && (
-            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${positionBadgeClass(entry.player.position)}`}>
-              {entry.player.position}
+          {player?.position && (
+            <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${positionBadgeClass(player.position)}`}>
+              {player.position}
             </span>
           )}
-          {entry.player.team && (
-            <span className="text-xs font-medium text-slate-400">{entry.player.team}</span>
+          {player?.team && (
+            <span className="text-xs font-medium text-slate-400">{player.team}</span>
           )}
-          {entry.player.injuryStatus && injuryCls && (
+          {player?.injuryStatus && injuryCls && (
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${injuryCls}`}>
-              {entry.player.injuryStatus}
+              {player.injuryStatus}
             </span>
           )}
         </div>
@@ -157,9 +158,13 @@ function RosterRow({ entry, currentWeek }: { entry: RosterEntry; currentWeek: nu
   )
 }
 
-function decisionPreview(reasoning: string, maxLen = 140): string {
-  const flat = reasoning.replace(/\s+/g, ' ').trim()
+function decisionPreview(reasoning: string | null, maxLen = 140): string {
+  const flat = (reasoning ?? '').replace(/\s+/g, ' ').trim()
   return flat.length > maxLen ? `${flat.slice(0, maxLen).trimEnd()}…` : flat
+}
+
+function formatTokenCount(value: number | null) {
+  return (value ?? 0).toLocaleString()
 }
 
 function DecisionItem({ decision }: { decision: Decision }) {
@@ -170,10 +175,10 @@ function DecisionItem({ decision }: { decision: Decision }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded border border-emerald-400/40 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-200">
-              {decision.type}
+              {decision.type ?? 'Decision'}
             </span>
             <span className="rounded border border-white/10 bg-slate-950 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-300">
-              {decision.action}
+              {decision.action ?? 'Action'}
             </span>
             <span className="text-[10px] uppercase tracking-widest text-slate-500">
               Wk {decision.week}
@@ -188,9 +193,9 @@ function DecisionItem({ decision }: { decision: Decision }) {
         </div>
       </summary>
       <div className="border-t border-white/5 px-3 py-3 text-sm leading-6 text-slate-200">
-        <pre className="whitespace-pre-wrap font-sans">{decision.reasoning}</pre>
+        <pre className="whitespace-pre-wrap font-sans">{decision.reasoning ?? 'No reasoning recorded.'}</pre>
         <p className="mt-3 text-[10px] uppercase tracking-widest text-slate-500">
-          Tokens · in {decision.inputTokenCount.toLocaleString()} · out {decision.outputTokenCount.toLocaleString()} · cached {decision.cachedInputTokenCount.toLocaleString()} · reasoning {decision.reasoningTokenCount.toLocaleString()}
+          Tokens · in {formatTokenCount(decision.inputTokenCount)} · out {formatTokenCount(decision.outputTokenCount)} · cached {formatTokenCount(decision.cachedInputTokenCount)} · reasoning {formatTokenCount(decision.reasoningTokenCount)}
         </p>
       </div>
     </details>
@@ -447,7 +452,7 @@ function AgentPage() {
                   <ul className="divide-y divide-white/10">
                     {starters.map((entry) => (
                       <RosterRow
-                        key={entry.player.sleeperPlayerId}
+                        key={entry.player?.sleeperPlayerId ?? `${entry.slotType}-starter`}
                         entry={entry}
                         currentWeek={currentWeek}
                       />
@@ -463,7 +468,7 @@ function AgentPage() {
                   <ul className="divide-y divide-white/10">
                     {bench.map((entry) => (
                       <RosterRow
-                        key={entry.player.sleeperPlayerId}
+                        key={entry.player?.sleeperPlayerId ?? `${entry.slotType}-bench`}
                         entry={entry}
                         currentWeek={currentWeek}
                       />
@@ -479,7 +484,7 @@ function AgentPage() {
                   <ul className="divide-y divide-white/10">
                     {ir.map((entry) => (
                       <RosterRow
-                        key={entry.player.sleeperPlayerId}
+                        key={entry.player?.sleeperPlayerId ?? `${entry.slotType}-ir`}
                         entry={entry}
                         currentWeek={currentWeek}
                       />

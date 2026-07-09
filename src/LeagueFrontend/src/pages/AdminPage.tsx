@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
 import { AlertCircle, CalendarDays, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +20,22 @@ type AgentProfile = {
   isBootstrapped: boolean
   isEnabled: boolean
 }
+
+type LeagueState = {
+  season: number
+  week: number
+  phase: string
+  updatedAtUtc: string
+  updatedBy: string
+}
+
+const leagueStatePhaseOptions = [
+  { value: 'drafting', label: 'Drafting' },
+  { value: 'games_locked', label: 'Games Locked' },
+  { value: 'waiver_window', label: 'Waiver Window' },
+  { value: 'free_agency', label: 'Free Agency' },
+  { value: 'complete', label: 'Complete' },
+]
 
 type YahooAuthStatus = {
   isConfigured: boolean
@@ -92,7 +109,18 @@ function formatHoursUntil(utc: string | null) {
 }
 
 const agentColumns: ColumnDef<AgentProfile, unknown>[] = [
-  { accessorKey: 'agentId', header: 'Agent ID' },
+  {
+    accessorKey: 'agentId',
+    header: 'Agent ID',
+    cell: ({ row, getValue }) => (
+      <Link
+        to={`/agents?agentId=${encodeURIComponent(row.original.agentId)}`}
+        className="font-mono text-emerald-300 hover:underline"
+      >
+        {getValue<string>()}
+      </Link>
+    ),
+  },
   { accessorKey: 'teamName', header: 'Team Name' },
   { accessorKey: 'modelName', header: 'Model' },
   { accessorKey: 'connection', header: 'Connection' },
@@ -177,6 +205,138 @@ function AgentsTable() {
       )}
       {state === 'success' && <DataTable columns={agentColumns} data={agents} />}
     </div>
+  )
+}
+
+function LeagueStateCard() {
+  const [state, setState] = useState<FetchState>('loading')
+  const [leagueState, setLeagueState] = useState<LeagueState | null>(null)
+  const [savingPhase, setSavingPhase] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchLeagueState = useCallback(async () => {
+    setState('loading')
+    setError(null)
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/league/state`)
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`)
+      }
+      setLeagueState((await response.json()) as LeagueState)
+      setState('success')
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Unknown error')
+      setState('error')
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchLeagueState()
+  }, [fetchLeagueState])
+
+  const updatePhase = useCallback(async (phase: string) => {
+    if (!leagueState || phase === leagueState.phase) return
+
+    const previousState = leagueState
+    setSavingPhase(true)
+    setError(null)
+    setLeagueState({ ...leagueState, phase })
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/league/state`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          season: previousState.season,
+          week: previousState.week,
+          phase,
+          updatedBy: 'manual',
+        }),
+      })
+
+      if (!response.ok) {
+        const message = await response.text()
+        throw new Error(message || `Request failed with status ${response.status}`)
+      }
+
+      setLeagueState((await response.json()) as LeagueState)
+      setState('success')
+    } catch (ex) {
+      setLeagueState(previousState)
+      setError(ex instanceof Error ? ex.message : 'Unknown error')
+      setState('error')
+    } finally {
+      setSavingPhase(false)
+    }
+  }, [leagueState])
+
+  return (
+    <Card className="border-white/10 bg-slate-900 text-slate-50">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-xl text-white">
+            <CalendarDays className="size-5 text-emerald-300" />
+            League State
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void fetchLeagueState()}
+            className="text-slate-300 hover:bg-white/5 hover:text-white"
+            aria-label="Refresh league state"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {state === 'loading' && (
+          <div className="flex items-center gap-2 text-slate-300">
+            <Loader2 className="size-5 animate-spin" />
+            <span className="text-sm">Loading league state…</span>
+          </div>
+        )}
+        {state === 'error' && !leagueState && (
+          <div className="flex items-center gap-2 text-red-400">
+            <AlertCircle className="size-5" />
+            <span className="text-sm font-medium">Could not load league state: {error}</span>
+          </div>
+        )}
+        {leagueState && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-white/10 bg-slate-950 px-4 py-3">
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Season</span>
+              <span className="text-lg font-semibold text-white">{leagueState.season}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Week</span>
+              <span className="text-lg font-semibold text-white">{leagueState.week}</span>
+            </div>
+            <label className="flex items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">Phase</span>
+              <select
+                value={leagueState.phase}
+                disabled={savingPhase}
+                onChange={(event) => void updatePhase(event.target.value)}
+                className="rounded-md border border-white/10 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-emerald-200 outline-none hover:border-white/20 disabled:opacity-50"
+              >
+                {leagueStatePhaseOptions.map((option) => (
+                  <option key={option.value} value={option.value} className="bg-slate-900 text-slate-100">
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {savingPhase && <Loader2 className="size-4 animate-spin text-slate-400" />}
+            {error && (
+              <p className="basis-full text-xs text-red-400">
+                League state update failed: {error}
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -518,6 +678,8 @@ function AdminPage() {
           Generate Schedule
         </Button>
       </div>
+
+      <LeagueStateCard />
 
       <section className="grid gap-6 md:grid-cols-[1fr_0.85fr]">
         <DataStatusCard />

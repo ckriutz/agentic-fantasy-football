@@ -8,13 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.AI.OpenAI" Version="2.0.0" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.28.0" />
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.13.0" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.13.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0-preview.3.25171.5" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0-preview.3.25171.5" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.7.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.2.0" />
 
   </ItemGroup>
@@ -23,10 +24,10 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Agents\Skills\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Skills\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
-
-  <ItemGroup>
-
-</ItemGroup>
 
 </Project>
