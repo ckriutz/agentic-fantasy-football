@@ -17,6 +17,9 @@ logger.LogInformation("Booting up Agentic Fantasy Football League...");
 // First, the location for where the agents will store their bootstrapping information.
 logger.LogInformation("Agents will store their bootstrapping information in the following directory: " + EnvironmentVariableHelper.GetRequired("AZURE_STORAGE_CONTAINER_NAME"));
 
+var skillsPath = Path.Combine(AppContext.BaseDirectory, "Skills");
+logger.LogInformation($"Skills will be loaded from the following directory: {skillsPath} and have found {skillsPath} to contain {Directory.Exists(skillsPath)} and {Directory.GetFiles(skillsPath).Length} files.");
+
 // Second, I want to make sure the API is up and running, and that we can connect to it successfully.
 try
 {
@@ -61,8 +64,8 @@ if (string.IsNullOrWhiteSpace(phase))
 }
 
 // How is yahoo doing?
-YahooRunner yahooRunner = new YahooRunner(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>());
-await yahooRunner.CheckYahooStatusAsync();
+//YahooRunner yahooRunner = new YahooRunner(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>());
+//await yahooRunner.CheckYahooStatusAsync();
 
 logger.LogInformation("Starting Agentic Fantasy Football League...");
 
@@ -120,10 +123,10 @@ else
 //await seasonRunner.RunAsync();
 
 // Lets test the players ability to move a player onto the bench.
-var agent = agents.First(agent => agent.GetAgentName() == "player-02");
-var prompt = "Find one player on your active roster that you think would be better suited for your bench, and move them to the bench. Respond if this was successful or not.";
+var agent = agents.First(agent => agent.GetAgentName() == "player-01");
+var prompt = "Run the skill smoke test. Don't do anything else.";
 var testresponse = await agent.RunAsync(prompt);
-Console.WriteLine($"Response from Player 2: {testresponse}");
+Console.WriteLine($"Response from Player 1: {testresponse}");
 
 // Here, lets test the waver wire again.
 //var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");

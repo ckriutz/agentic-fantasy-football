@@ -47,6 +47,15 @@ public class FantasyAgent
         _leagueApiMcpClient = await McpClient.CreateAsync(mcpTransport);
         IList<McpClientTool> mcpTools = await _leagueApiMcpClient.ListToolsAsync();
 
+        // Skills are copied to the output directory as Skills/ for normal runs.
+        var skillsPath = Path.Combine(AppContext.BaseDirectory, "Skills");
+        if (!Directory.Exists(skillsPath))
+        {
+            // Support local runs that have not copied project content to output yet.
+            skillsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Agents", "Skills"));
+        }
+        var skillsProvider = new AgentSkillsProvider(skillsPath);
+
         var agentInstructions =
         $"""
         You are {_profile.AgentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
@@ -64,7 +73,7 @@ public class FantasyAgent
         This is where you should keep any information about your team that you want to remember across interactions.
         """;
 
-        ChatClient? chatClient = null;
+        OpenAIClient? openAIClient = null;
         OpenAIClientOptions? options = null;
         if (_profile.Connection == "OpenRouter")
         {
@@ -72,11 +81,8 @@ public class FantasyAgent
             {
                 Endpoint = new Uri(endpoint),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
-                ProjectId = "agentic-fantasy-football",
-                
-                UserAgentApplicationId = "AgenticFantasyFootball"
             };
-            chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(apiKey), options);
+            openAIClient = new OpenAIClient(new ApiKeyCredential(apiKey), options);
         }
         else if (_profile.Connection == "MSFoundry")
         {
@@ -87,25 +93,58 @@ public class FantasyAgent
                 Endpoint = new Uri(foundryEndpoint),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
             };
-            chatClient = new ChatClient(_profile.ModelName, new ApiKeyCredential(key), options);
+            openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
         }
 
-        if (chatClient is null)
+        if (openAIClient is null)
         {
             throw new InvalidOperationException($"Unsupported connection type '{_profile.Connection}'.");
         }
 
-        _agent = chatClient
-            .AsIChatClient()
-            .AsAIAgent(name: _profile.AgentId, instructions: agentInstructions,
-            tools:
-            [
-                AIFunctionFactory.Create(blobStorageTools.ReadAgentBootstrap),
-                AIFunctionFactory.Create(blobStorageTools.WriteAgentBootstrap),
-                AIFunctionFactory.Create(imageGenerationTool.GenerateImage),
-                AIFunctionFactory.Create(searchTool.SearchWeb),
-                ..mcpTools
-            ]);
+        #pragma warning disable OPENAI001
+        var chatClient = openAIClient
+            .GetResponsesClient()
+            .AsIChatClient(_profile.ModelName);
+        #pragma warning restore OPENAI001
+
+        _agent = chatClient.AsAIAgent(new ChatClientAgentOptions
+        {
+            Name = _profile.AgentId,
+            AIContextProviders = [skillsProvider],
+            ChatOptions = new ChatOptions
+            {
+                Instructions = agentInstructions,
+                Tools =
+                [
+                    AIFunctionFactory.Create(blobStorageTools.ReadAgentBootstrap),
+                    AIFunctionFactory.Create(blobStorageTools.WriteAgentBootstrap),
+                    AIFunctionFactory.Create(imageGenerationTool.GenerateImage),
+                    AIFunctionFactory.Create(searchTool.SearchWeb),
+                    ..mcpTools
+                ]
+            }
+        });
+
+        #pragma warning disable MAAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+        _agent = new AIAgentBuilder(_agent)
+        .Use(async (innerAgent, context, next, cancellationToken) =>
+        {
+            _logger.LogInformation(
+                "→ {Function} args={Args}",
+                context.Function.Name,
+                context.Arguments);
+
+            var result = await next(context, cancellationToken);
+
+            _logger.LogInformation("← {Function}", context.Function.Name);
+            return result;
+        })
+        .UseToolApproval(new ToolApprovalAgentOptions
+        {
+            AutoApprovalRules = [AgentSkillsProvider.AllToolsAutoApprovalRule],
+        })
+        .Build();
+        #pragma warning restore MAAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
     }
 
     // Since there is a possibility that the bootstrapping process could fail or be incomplete, we can try it again.
