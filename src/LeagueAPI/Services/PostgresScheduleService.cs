@@ -81,6 +81,40 @@ public sealed class PostgresScheduleService(IDbContextFactory<LeagueApiDbContext
         return matchups.Select(MapToScheduleMatchup).ToList();
     }
 
+    public async Task<IReadOnlyList<AgentStanding>> GetStandingsAsync(CancellationToken cancellationToken)
+    {
+        var profiles = await _agentProfileReader.GetAgentProfilesAsync(true, cancellationToken);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var completedMatchups = await dbContext.Matchups
+            .AsNoTracking()
+            .Where(matchup => matchup.IsComplete)
+            .ToListAsync(cancellationToken);
+
+        var standings = profiles
+            .Select(profile =>
+            {
+                var agentMatchups = completedMatchups
+                    .Where(matchup =>
+                        string.Equals(matchup.HomeAgentId, profile.AgentId, StringComparison.Ordinal)
+                        || string.Equals(matchup.AwayAgentId, profile.AgentId, StringComparison.Ordinal));
+                var ties = agentMatchups.Count(matchup => matchup.IsTie);
+                var wins = agentMatchups.Count(matchup =>
+                    !matchup.IsTie
+                    && string.Equals(matchup.WinnerAgentId, profile.AgentId, StringComparison.Ordinal));
+                var losses = agentMatchups.Count() - wins - ties;
+
+                return new AgentStanding(profile.AgentId, wins, losses, ties);
+            })
+            .OrderByDescending(standing => standing.Wins)
+            .ThenBy(standing => standing.Losses)
+            .ThenByDescending(standing => standing.Ties)
+            .ThenBy(standing => standing.AgentId, StringComparer.Ordinal)
+            .ToList();
+
+        return standings;
+    }
+
     public async Task<WeeklyMatchupResult?> GetMatchupForAgentAsync(string agentId, int week, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeAgentId(agentId);
@@ -192,7 +226,9 @@ public sealed class PostgresScheduleService(IDbContextFactory<LeagueApiDbContext
             matchup.AwayAgentId,
             matchup.HomePoints,
             matchup.AwayPoints,
-            matchup.IsComplete);
+            matchup.IsComplete,
+            matchup.WinnerAgentId,
+            matchup.IsTie);
     }
 
     private static WeeklyMatchupResult MapToWeeklyMatchup(MatchupEntity matchup, string agentId)

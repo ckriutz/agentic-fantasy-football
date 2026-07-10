@@ -15,4 +15,8 @@ public sealed class MatchupEntity
     public decimal AwayPoints { get; set; }
 
     public bool IsComplete { get; set; }
+
+    public string? WinnerAgentId { get; set; }
+
+    public bool IsTie { get; set; }
 }

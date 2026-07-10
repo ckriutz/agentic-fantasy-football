@@ -95,6 +95,10 @@ builder.Services.AddSingleton<PostgresScheduleService>();
 builder.Services.AddSingleton<IScheduleService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresScheduleService>());
 
+builder.Services.AddSingleton<MatchupScoringService>();
+builder.Services.AddSingleton<IMatchupScoringService>(serviceProvider =>
+    serviceProvider.GetRequiredService<MatchupScoringService>());
+
 builder.Services.AddSingleton<PostgresPlayerGameLockService>();
 builder.Services.AddSingleton<IPlayerGameLockService>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerGameLockService>());
@@ -320,6 +324,48 @@ app.MapGet("/api/league/schedule/{week:int}", async (
     catch (ArgumentException ex)
     {
         return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/league/standings", async (
+    IScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    var standings = await scheduleService.GetStandingsAsync(cancellationToken);
+    return Results.Ok(standings);
+});
+
+app.MapPost("/api/league/matchups/{season:int}/{week:int}/scores", async (
+    int season,
+    int week,
+    IMatchupScoringService matchupScoringService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await matchupScoringService.UpdateLiveScoresAsync(season, week, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateScheduleErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/league/matchups/{season:int}/{week:int}/finalize", async (
+    int season,
+    int week,
+    IMatchupScoringService matchupScoringService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await matchupScoringService.FinalizeWeekAsync(season, week, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateScheduleErrorResult(ex);
     }
 });
 

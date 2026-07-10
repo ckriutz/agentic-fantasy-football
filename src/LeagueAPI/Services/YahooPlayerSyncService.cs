@@ -11,6 +11,7 @@ namespace LeagueAPI.Services;
 public sealed class YahooPlayerSyncService(
     YahooFantasyApiClient yahooFantasyApiClient,
     ScoringService scoringService,
+    IMatchupScoringService matchupScoringService,
     IDbContextFactory<LeagueApiDbContext> dbContextFactory,
     IOptions<YahooSyncOptions> yahooSyncOptions,
     ILogger<YahooPlayerSyncService> logger)
@@ -106,6 +107,7 @@ public sealed class YahooPlayerSyncService(
 
     private readonly YahooFantasyApiClient _yahooFantasyApiClient = yahooFantasyApiClient;
     private readonly ScoringService _scoringService = scoringService;
+    private readonly IMatchupScoringService _matchupScoringService = matchupScoringService;
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly YahooSyncOptions _yahooSyncOptions = yahooSyncOptions.Value;
     private readonly ILogger<YahooPlayerSyncService> _logger = logger;
@@ -209,6 +211,7 @@ public sealed class YahooPlayerSyncService(
                 syncRun.ErrorMessage = null;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
+                await _matchupScoringService.UpdateLiveScoresAsync(season, week, cancellationToken);
 
                 _logger.LogInformation(
                     "Yahoo weekly sync completed: {SyncRunId}, game {GameKey}, season {Season}, week {Week}, fetched {FetchedCount} rows across {PageCount} pages, matched {MatchedCount}, unmatched {UnmatchedCount}.",

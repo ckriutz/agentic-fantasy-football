@@ -24,6 +24,13 @@ type AgentProfile = {
   isEnabled: boolean
 }
 
+type AgentStanding = {
+  agentId: string
+  wins: number
+  losses: number
+  ties: number
+}
+
 type Matchup = {
   matchupId: number
   week: number
@@ -194,6 +201,7 @@ function HomePage() {
   const [isLoadingLeagueState, setIsLoadingLeagueState] = useState(true)
 
   const [agents, setAgents] = useState<AgentProfile[]>([])
+  const [standings, setStandings] = useState<AgentStanding[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isLoadingAgents, setIsLoadingAgents] = useState(true)
 
@@ -233,14 +241,17 @@ function HomePage() {
       try {
         setIsLoadingAgents(true)
         setAgentsError(null)
-        const response = await fetch('http://localhost:5000/api/agent-profiles/', {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          throw new Error(`Request failed with status ${response.status}`)
+        const [agentsResponse, standingsResponse] = await Promise.all([
+          fetch('http://localhost:5000/api/agent-profiles/', { signal: controller.signal }),
+          fetch('http://localhost:5000/api/league/standings', { signal: controller.signal }),
+        ])
+        if (!agentsResponse.ok || !standingsResponse.ok) {
+          throw new Error(
+            `Request failed with status ${!agentsResponse.ok ? agentsResponse.status : standingsResponse.status}`,
+          )
         }
-        const data = (await response.json()) as AgentProfile[]
-        setAgents(data)
+        setAgents((await agentsResponse.json()) as AgentProfile[])
+        setStandings((await standingsResponse.json()) as AgentStanding[])
       } catch (error) {
         if ((error as { name?: string }).name === 'AbortError') {
           return
@@ -260,6 +271,25 @@ function HomePage() {
     for (const a of agents) map.set(a.agentId, a)
     return map
   }, [agents])
+  const standingsByAgentId = useMemo(
+    () => new Map(standings.map((standing) => [standing.agentId, standing])),
+    [standings],
+  )
+  const agentsInStandingOrder = useMemo(
+    () =>
+      [...agents].sort((a, b) => {
+        const aStanding = standingsByAgentId.get(a.agentId)
+        const bStanding = standingsByAgentId.get(b.agentId)
+        if (!aStanding || !bStanding) return a.agentId.localeCompare(b.agentId)
+        return (
+          bStanding.wins - aStanding.wins
+          || aStanding.losses - bStanding.losses
+          || bStanding.ties - aStanding.ties
+          || a.agentId.localeCompare(b.agentId)
+        )
+      }),
+    [agents, standingsByAgentId],
+  )
 
   return (
     <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
@@ -271,7 +301,7 @@ function HomePage() {
               Agents & standings
             </CardTitle>
             <CardDescription className="text-slate-300">
-              Wins and losses will populate once matchups are wired up.
+              Records from completed matchups.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -283,7 +313,7 @@ function HomePage() {
               <p className="text-sm text-slate-300">No agents found.</p>
             ) : (
               <ul className="divide-y divide-white/10">
-                {agents.map((agent, index) => (
+                {agentsInStandingOrder.map((agent, index) => (
                   <li
                     key={agent.agentId}
                     className="flex items-center gap-4 py-3 first:pt-0 last:pb-0"
@@ -310,7 +340,13 @@ function HomePage() {
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full border border-white/10 bg-slate-950 px-3 py-1 text-sm font-mono text-slate-200">
-                      0-0
+                      {(() => {
+                        const standing = standingsByAgentId.get(agent.agentId)
+                        if (!standing || standing.ties === 0) {
+                          return `${standing?.wins ?? 0}-${standing?.losses ?? 0}`
+                        }
+                        return `${standing.wins}-${standing.losses}-${standing.ties}`
+                      })()}
                     </span>
                   </li>
                 ))}

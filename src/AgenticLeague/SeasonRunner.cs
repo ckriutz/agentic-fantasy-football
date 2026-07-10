@@ -19,6 +19,11 @@ public class SeasonRunner
     {
         _logger.LogInformation("Season runner is starting.");
         var leaugeState = await GetLeagueStateAsync();
+        if (leaugeState is null)
+        {
+            _logger.LogError("Season runner cannot continue because league state is unavailable.");
+            return;
+        }
 
         // What we do determines what day of the week it is in the league, so we'll want to get the day of the week.
         var dayOfWeek = DateTime.UtcNow.DayOfWeek;
@@ -29,10 +34,39 @@ public class SeasonRunner
         if(dayOfWeek == DayOfWeek.Tuesday)
         {
             // This is where we will first see how the week went and update wins/losses and any other stats.
+            if (leaugeState is not null && leaugeState.Week > 0)
+            {
+                var yahooDataSuccess = await ProcessYahooDataForWeekAsync(leaugeState.Season, leaugeState.Week);
+                if (!yahooDataSuccess)
+                {
+                    _logger.LogError(
+                        "Yahoo data sync failed for season {Season}, week {Week}; league state will not advance.",
+                        leaugeState.Season,
+                        leaugeState.Week);
+                    return;
+                }
+
+                var finalized = await FinalizeMatchupsForWeekAsync(leaugeState.Season, leaugeState.Week);
+                if (!finalized)
+                {
+                    _logger.LogError(
+                        "Matchup finalization failed for season {Season}, week {Week}; league state will not advance.",
+                        leaugeState.Season,
+                        leaugeState.Week);
+                    return;
+                }
+            }
+
             // Once that is done, this is really the first day of the week, so we will make sure the league state is updated to the current week.
             // Set the league state to waiver-wire.
-            int week = (int)(leaugeState?.Week + 1);
-            leaugeState = await SetLeagueStateAsync(leaugeState?.Season, week, "waiver_window", "season-runner");
+            if (leaugeState is null)
+            {
+                _logger.LogError("League state became unavailable before the weekly transition.");
+                return;
+            }
+
+            int week = leaugeState.Week + 1;
+            leaugeState = await SetLeagueStateAsync(leaugeState.Season, week, "waiver_window", "season-runner");
 
             // Then we will prompt the agents to make waiver claims if they want to.
             foreach(var agent in _agents)
@@ -303,6 +337,26 @@ public class SeasonRunner
         }
 
         _logger.LogInformation("Successfully processed Yahoo data for Season: {Season}, Week: {Week}.", season, week);
+        return true;
+    }
+
+    private async Task<bool> FinalizeMatchupsForWeekAsync(int season, int week)
+    {
+        var response = await new HttpClient { BaseAddress = new Uri("http://localhost:5000/") }
+            .PostAsync($"api/league/matchups/{season}/{week}/finalize", null);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            _logger.LogError(
+                "Failed to finalize matchups for season {Season}, week {Week}. Status code: {StatusCode}. Response: {Response}",
+                season,
+                week,
+                response.StatusCode,
+                error);
+            return false;
+        }
+
+        _logger.LogInformation("Finalized matchups for season {Season}, week {Week}.", season, week);
         return true;
     }
 

@@ -35,6 +35,8 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<MatchupEntity> Matchups => Set<MatchupEntity>();
 
+    public DbSet<WeeklyRosterSnapshot> WeeklyRosterSnapshots => Set<WeeklyRosterSnapshot>();
+
     public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
 
     public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
@@ -262,10 +264,30 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
             entity.Property(matchup => matchup.HomeAgentId).HasMaxLength(100);
             entity.Property(matchup => matchup.AwayAgentId).HasMaxLength(100);
+            entity.Property(matchup => matchup.WinnerAgentId).HasMaxLength(100);
             entity.Property(matchup => matchup.HomePoints).HasPrecision(18, 4);
             entity.Property(matchup => matchup.AwayPoints).HasPrecision(18, 4);
 
             entity.HasIndex(matchup => new { matchup.Week, matchup.HomeAgentId });
+        });
+
+        modelBuilder.Entity<WeeklyRosterSnapshot>(entity =>
+        {
+            entity.ToTable("weekly_roster_snapshots");
+            entity.HasKey(snapshot => snapshot.WeeklyRosterSnapshotId);
+
+            entity.Property(snapshot => snapshot.AgentId).HasMaxLength(100);
+            entity.Property(snapshot => snapshot.SleeperPlayerId).HasMaxLength(50);
+            entity.Property(snapshot => snapshot.SlotType).HasMaxLength(8);
+
+            entity.HasIndex(snapshot => new
+            {
+                snapshot.Season,
+                snapshot.Week,
+                snapshot.AgentId,
+                snapshot.SleeperPlayerId
+            }).IsUnique();
+            entity.HasIndex(snapshot => new { snapshot.Season, snapshot.Week, snapshot.AgentId });
         });
 
         modelBuilder.Entity<YahooOAuthStateEntity>(entity =>

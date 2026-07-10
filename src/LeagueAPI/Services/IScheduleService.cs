@@ -10,5 +10,7 @@ public interface IScheduleService
 
     Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleForWeekAsync(int week, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<AgentStanding>> GetStandingsAsync(CancellationToken cancellationToken);
+
     Task<WeeklyMatchupResult?> GetMatchupForAgentAsync(string agentId, int week, CancellationToken cancellationToken);
 }

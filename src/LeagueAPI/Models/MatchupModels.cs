@@ -7,12 +7,20 @@ public sealed record ScheduleMatchupResult(
     string AwayAgentId,
     decimal HomePoints,
     decimal AwayPoints,
-    bool IsComplete);
+    bool IsComplete,
+    string? WinnerAgentId,
+    bool IsTie);
 
 public sealed record GenerateScheduleResult(
     bool Generated,
     string Message,
     int MatchupCount);
+
+public sealed record AgentStanding(
+    string AgentId,
+    int Wins,
+    int Losses,
+    int Ties);
 
 public sealed record WeeklyMatchupResult(
     int MatchupId,
