@@ -8,7 +8,7 @@ import { apiBaseUrl } from '@/lib/config'
 const navItems = [
   { label: 'Overview', to: '/' },
   { label: 'Players', to: '/players' },
-  { label: 'League State', to: '/league-state' },
+  { label: 'Waiver Wire', to: '/waiver-wire' },
   { label: 'Admin', to: '/admin' },
 ]
 

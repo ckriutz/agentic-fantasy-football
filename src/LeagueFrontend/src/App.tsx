@@ -6,6 +6,7 @@ import AgentPage from '@/pages/AgentPage'
 import HomePage from '@/pages/HomePage'
 import PlayerDetailPage from '@/pages/PlayerDetailPage'
 import PlayersPage from '@/pages/PlayersPage'
+import WaiverWirePage from '@/pages/WaiverWirePage'
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
         <Route path="agents" element={<AgentPage />} />
         <Route path="players" element={<PlayersPage />} />
         <Route path="players/:sleeperId" element={<PlayerDetailPage />} />
+        <Route path="waiver-wire" element={<WaiverWirePage />} />
       </Route>
     </Routes>
   )

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, CalendarDays, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -212,6 +212,8 @@ function LeagueStateCard() {
   const [state, setState] = useState<FetchState>('loading')
   const [leagueState, setLeagueState] = useState<LeagueState | null>(null)
   const [savingPhase, setSavingPhase] = useState(false)
+  const [processingWaivers, setProcessingWaivers] = useState(false)
+  const [waiverResult, setWaiverResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const fetchLeagueState = useCallback(async () => {
@@ -270,6 +272,38 @@ function LeagueStateCard() {
     }
   }, [leagueState])
 
+  const processWaivers = useCallback(async () => {
+    if (!leagueState) return
+
+    setProcessingWaivers(true)
+    setWaiverResult(null)
+    setError(null)
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/league/waivers/${leagueState.season}/${leagueState.week}/process`,
+        { method: 'POST' },
+      )
+      if (!response.ok) {
+        const message = await response.text()
+        throw new Error(message || `Request failed with status ${response.status}`)
+      }
+
+      const result = (await response.json()) as {
+        claimsProcessed: number
+        claimsSucceeded: number
+        claimsFailed: number
+      }
+      setWaiverResult(
+        `Processed ${result.claimsProcessed} claims: ${result.claimsSucceeded} successful, ${result.claimsFailed} unsuccessful.`,
+      )
+      await fetchLeagueState()
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Unknown error')
+    } finally {
+      setProcessingWaivers(false)
+    }
+  }, [fetchLeagueState, leagueState])
+
   return (
     <Card className="border-white/10 bg-slate-900 text-slate-50">
       <CardHeader>
@@ -327,7 +361,19 @@ function LeagueStateCard() {
                 ))}
               </select>
             </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={savingPhase || processingWaivers}
+              onClick={() => void processWaivers()}
+              className="border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20 hover:text-emerald-100"
+            >
+              {processingWaivers ? <Loader2 className="animate-spin" /> : <Zap />}
+              Process Waiver Wire
+            </Button>
             {savingPhase && <Loader2 className="size-4 animate-spin text-slate-400" />}
+            {waiverResult && <p className="basis-full text-xs text-emerald-300">{waiverResult}</p>}
             {error && (
               <p className="basis-full text-xs text-red-400">
                 League state update failed: {error}
