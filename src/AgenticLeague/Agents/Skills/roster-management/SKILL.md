@@ -219,7 +219,7 @@ Action examples:
 - `no_change: week 3; lineup already optimal`
 - `start_sit: week 7; CMC→BN (bye); Ford→RB1`
 
-Optional: short bootstrap note only for lasting strategy, not routine moves.
+Optional: after meaningful lineup changes, update `bootstrap.md` with one concise dated note under `## Decision Log` describing the action and rationale. Update `## Strategy Updates` only for lasting strategic implications. Preserve the existing game plan; do not replace it with the newest note.
 
 ## Hard constraints
 

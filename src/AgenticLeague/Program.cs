@@ -17,9 +17,6 @@ logger.LogInformation("Booting up Agentic Fantasy Football League...");
 // First, the location for where the agents will store their bootstrapping information.
 logger.LogInformation("Agents will store their bootstrapping information in the following directory: " + EnvironmentVariableHelper.GetRequired("AZURE_STORAGE_CONTAINER_NAME"));
 
-var skillsPath = Path.Combine(AppContext.BaseDirectory, "Skills");
-logger.LogInformation($"Skills will be loaded from the following directory: {skillsPath} and have found {skillsPath} to contain {Directory.Exists(skillsPath)} and {Directory.GetFiles(skillsPath).Length} files.");
-
 // Second, I want to make sure the API is up and running, and that we can connect to it successfully.
 try
 {
@@ -40,34 +37,12 @@ catch (Exception ex)
     return;
 }
 
-// Now the current leauge state.
-var leagueStateResponse = await _http.GetAsync("api/league/state");
-if (!leagueStateResponse.IsSuccessStatusCode)
-{
-    logger.LogError("Failed to load league state. Status code: " + leagueStateResponse.StatusCode);
-    return;
-}
+// Now the current leauge state. This is important because we want to make sure the league is in the correct state before we start running the agents.
+var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
 
-var leagueStateJson = await leagueStateResponse.Content.ReadAsStringAsync();
-var leagueState = JsonSerializer.Deserialize<JsonElement>(leagueStateJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-if (leagueState.ValueKind != JsonValueKind.Object)
-{
-    logger.LogError("League state response was not a JSON object.");
-    return;
-}
 
-var phase = leagueState.GetProperty("phase").GetString();
-if (string.IsNullOrWhiteSpace(phase))
-{
-    logger.LogError("League state phase was missing from the API response.");
-    return;
-}
-
-// How is yahoo doing?
-//YahooRunner yahooRunner = new YahooRunner(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>());
-//await yahooRunner.CheckYahooStatusAsync();
-
-logger.LogInformation("Starting Agentic Fantasy Football League...");
+logger.LogInformation("✅ All checks passed. API is healthy, and league state is valid. Current league phase: " + leagueState.Phase);
+logger.LogInformation("🏈 Starting Agentic Fantasy Football League!");
 
 // Load all the agents, and initialze them.
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
@@ -77,7 +52,7 @@ var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeag
 List<FantasyAgent> agents = new List<FantasyAgent>();
 var fantasyAgentLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FantasyAgent>();
 
-logger.LogInformation("Initializing agents...");
+logger.LogInformation("🤖 Initializing agents...");
 foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
 {
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
@@ -88,50 +63,65 @@ foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
     agents.Add(fantasyAgent);
 }
 
-logger.LogInformation("Number of agents initialized: " + agents.Count);
+logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Count);
 
-// Lets look at the Yahoo Status
-//var yahooLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<YahooRunner>();
-//YahooRunner yahooRunner = new YahooRunner(yahooLogger);
-//await yahooRunner.RunAsync();
+// Now to run the draft, if the league is in the drafting phase. If not, we can skip this step and move on to the season runner.
+await RunDraftAsync(agents, leagueState.Phase, _http, host);
+await RunSeasonAsync(agents, leagueState.Phase, host, _http, leagueState);
 
-// Time for the draft!
-if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
+
+static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {
-    logger.LogInformation("League state is drafting. Starting the draft runner...");
-    DraftRunner draftRunner = new DraftRunner(agents, logger);
-    await draftRunner.RunDraftAsync();
-    logger.LogInformation("Draft runner completed.");
-
-    // Move the league from drafting into the free-agency phase so the agents can
-    // start making roster moves once the draft is complete.
-    var advanceResponse = await _http.PutAsJsonAsync("api/league/state", new
+    ILogger draftLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DraftRunner");
+    if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
     {
-        phase = "free_agency",
-        updatedBy = "season-runner"
-    });
-    advanceResponse.EnsureSuccessStatusCode();
+        draftLogger.LogInformation("League state is drafting. Starting the draft runner...");
+        DraftRunner draftRunner = new DraftRunner(agents, draftLogger);
+        await draftRunner.RunDraftAsync();
+        draftLogger.LogInformation("🎉 Draft runner completed.");
+
+        // Move the league from drafting into the free-agency phase so the agents can
+        // start making roster moves once the draft is complete.
+        var advanceResponse = await _http.PutAsJsonAsync("api/league/state", new
+        {
+            phase = "free_agency",
+            updatedBy = "season-runner"
+        });
+        advanceResponse.EnsureSuccessStatusCode();
+    }
+    else
+    {
+        draftLogger.LogInformation("Skipping draft runner because league phase is {Phase}.", phase);
+    }
 }
-else
+
+static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost host, HttpClient http, LeagueState leagueState)
 {
-    logger.LogInformation("Skipping draft runner because league phase is {Phase}.", phase);
+    ILogger seasonLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeasonRunner");
+    // We don't want to run the season runner if we are in the drafting phase, because the draft runner will handle moving the league into the free-agency phase once the draft is complete.
+    if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
+    {
+        seasonLogger.LogInformation("Skipping season runner because league is in drafting phase.");
+        return;
+    }
+    seasonLogger.LogInformation("League state is {Phase}. Starting the season runner...", phase);
+    SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, leagueState);
+    await seasonRunner.RunAsync();
+    seasonLogger.LogInformation("🎉 Season runner completed.");
+
 }
 
-// After the draft, we can start the season runner, which will advance the league through the season, and run the games each week.
-
-//SeasonRunner seasonRunner = new SeasonRunner(agents, logger);
-//await seasonRunner.RunAsync();
 
 // Lets test the players ability to move a player onto the bench.
-var agent = agents.First(agent => agent.GetAgentName() == "player-01");
-var prompt = "Run the skill smoke test. Don't do anything else.";
-var testresponse = await agent.RunAsync(prompt);
-Console.WriteLine($"Response from Player 1: {testresponse}");
+//var agent = agents.First(agent => agent.GetAgentName() == "player-01");
+//var prompt = "Run the skill smoke test. Don't do anything else.";
+//var testresponse = await agent.RunAsync(prompt);
+//Console.WriteLine($"Response from Player 1: {testresponse}");
 
-// Here, lets test the waver wire again.
-//var prompt = LoadPrompt("Prompts/FantasyAgent.waiver-claim.md");
-//var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
-//Console.WriteLine($"Waiver claim response from Player 4: {waverResponse}");
+// Here, lets test free agency.
+//var prompt = "Use the `weekly-player-management` skill to evaluate your roster and make any necessary moves.";
+//var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(prompt);
+//Console.WriteLine($"Response from Player 5: {waverResponse}");
 //logger.LogInformation("Input tokens used: " + waverResponse.Usage.InputTokenCount);
 //logger.LogInformation("Output tokens used: " + waverResponse.Usage.OutputTokenCount);
 //logger.LogInformation("Total tokens used: " + waverResponse.Usage.TotalTokenCount);

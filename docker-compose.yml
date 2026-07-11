@@ -31,6 +31,8 @@ services:
     environment:
       # Database connection
       - DBConnectionString=${DBConnectionString:?DBConnectionString required}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
+      - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME:-agentdata}
       
       # Sleeper API configuration
       - SleeperSync__Mode=Auto
