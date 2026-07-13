@@ -138,15 +138,8 @@ public class FantasyAgent
         var agentInstructions =
         $"""
         You are {aProfile.AgentId}, a fantasy football manager, and your job is to manage your fantasy football team to victory.
-        
         Your current team name, strategy, status, and memory can be found by using `ReadAgentBootstrap` tool to read your bootstrapping file. Always read this file before making any decisions.
-
-        Here are instructions on how to play fantasy football and manage your team:
-        {howToPlayPrompt}
-
-        Use the `SearchWeb` tool whenever you need current external research about players, injuries, depth charts, rankings, or matchup context before making a move.
-        Use the `ReadAgentBootstrap` and `WriteAgentBootstrap` tools to read and write your bootstrap file, which contains your strategy, team name, logo path, and bootstrap status.
-        This is where you should keep any information about your team that you want to remember across interactions.
+        This bootstrapping file is where you should keep any information about your team that you want to remember across interactions.
         """;
 
         AIAgent agent = chatClient.AsAIAgent(new ChatClientAgentOptions

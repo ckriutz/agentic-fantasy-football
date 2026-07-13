@@ -31,3 +31,8 @@ export function getAgentLogoUrl(agentId: string): string | null {
   if (!blobBaseUrl) return null
   return `${blobBaseUrl.replace(/\/$/, '')}/${blobContainerName}/${encodeURIComponent(agentId)}/logo.jpg`
 }
+
+export function getAgentBootstrapUrl(agentId: string): string | null {
+  if (!blobBaseUrl) return null
+  return `${blobBaseUrl.replace(/\/$/, '')}/${blobContainerName}/${encodeURIComponent(agentId)}/bootstrap.md`
+}

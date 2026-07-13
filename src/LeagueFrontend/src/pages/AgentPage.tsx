@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, ChevronRight, Loader2, ScrollText, UserCircle2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ChevronRight, FileText, Loader2, ScrollText, UserCircle2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AgentAvatar from '@/components/AgentAvatar'
+import { getAgentBootstrapUrl } from '@/lib/config'
 
 type AgentProfile = {
   agentId: string
@@ -67,6 +69,8 @@ const SLOT_ORDER: Record<string, number> = {
   BN: 8,
   IR: 9,
 }
+
+const MARKDOWN_CONTENT_CLASS_NAME = 'text-sm leading-6 text-slate-200 [&_a]:text-emerald-300 [&_a]:underline [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-emerald-400/50 [&_blockquote]:pl-3 [&_blockquote]:text-slate-300 [&_code]:rounded [&_code]:bg-slate-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:text-white [&_h2]:mb-2 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-white [&_h3]:mb-2 [&_h3]:mt-5 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:text-white [&_hr]:my-5 [&_hr]:border-white/10 [&_li]:my-1 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:my-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-slate-900 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6'
 
 function slotGroup(slotType: string | null): string {
   if (!slotType) return 'BN'
@@ -167,6 +171,14 @@ function formatTokenCount(value: number | null) {
   return (value ?? 0).toLocaleString()
 }
 
+function MarkdownContent({ content, className = '' }: { content: string; className?: string }) {
+  return (
+    <div className={`${MARKDOWN_CONTENT_CLASS_NAME} ${className}`}>
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  )
+}
+
 function DecisionItem({ decision }: { decision: Decision }) {
   return (
     <details className="group rounded-lg border border-white/10 bg-slate-950 open:bg-slate-900/60">
@@ -193,7 +205,7 @@ function DecisionItem({ decision }: { decision: Decision }) {
         </div>
       </summary>
       <div className="border-t border-white/5 px-3 py-3 text-sm leading-6 text-slate-200">
-        <pre className="whitespace-pre-wrap font-sans">{decision.reasoning ?? 'No reasoning recorded.'}</pre>
+        <MarkdownContent content={decision.reasoning ?? 'No reasoning recorded.'} />
         <p className="mt-3 text-[10px] uppercase tracking-widest text-slate-500">
           Tokens · in {formatTokenCount(decision.inputTokenCount)} · out {formatTokenCount(decision.outputTokenCount)} · cached {formatTokenCount(decision.cachedInputTokenCount)} · reasoning {formatTokenCount(decision.reasoningTokenCount)}
         </p>
@@ -213,6 +225,10 @@ function AgentPage() {
   const [roster, setRoster] = useState<RosterEntry[]>([])
   const [rosterError, setRosterError] = useState<string | null>(null)
   const [isLoadingRoster, setIsLoadingRoster] = useState(true)
+
+  const [bootstrapContent, setBootstrapContent] = useState<string | null>(null)
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null)
+  const [isLoadingBootstrap, setIsLoadingBootstrap] = useState(true)
 
   const [leagueState, setLeagueState] = useState<LeagueState | null>(null)
 
@@ -271,6 +287,39 @@ function AgentPage() {
     }
 
     fetchRoster()
+    return () => controller.abort()
+  }, [agentId])
+
+  useEffect(() => {
+    if (!agentId) return
+
+    const bootstrapUrl = getAgentBootstrapUrl(agentId)
+    if (!bootstrapUrl) {
+      setBootstrapContent(null)
+      setBootstrapError('Blob storage is not configured.')
+      setIsLoadingBootstrap(false)
+      return
+    }
+
+    const url = bootstrapUrl
+    const controller = new AbortController()
+
+    async function fetchBootstrap() {
+      try {
+        setIsLoadingBootstrap(true)
+        setBootstrapError(null)
+        const response = await fetch(url, { signal: controller.signal })
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
+        setBootstrapContent(await response.text())
+      } catch (error) {
+        if ((error as { name?: string }).name === 'AbortError') return
+        setBootstrapError(error instanceof Error ? error.message : 'Unknown error')
+      } finally {
+        setIsLoadingBootstrap(false)
+      }
+    }
+
+    fetchBootstrap()
     return () => controller.abort()
   }, [agentId])
 
@@ -495,6 +544,28 @@ function AgentPage() {
             </div>
           )}
         </CardContent>
+      </Card>
+
+      <Card className="border-white/10 bg-slate-900 text-slate-50">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4">
+            <ChevronRight className="size-5 shrink-0 text-slate-400 transition-transform group-open:rotate-90" />
+            <FileText className="size-5 text-emerald-300" />
+            <span className="text-lg font-semibold text-white">Bootstrap</span>
+          </summary>
+          <CardContent className="border-t border-white/10 pt-4">
+            {isLoadingBootstrap ? (
+              <p className="text-sm text-slate-300">Loading bootstrap…</p>
+            ) : bootstrapError ? (
+              <p className="text-sm text-rose-300">Failed to load bootstrap: {bootstrapError}</p>
+            ) : (
+              <MarkdownContent
+                content={bootstrapContent ?? ''}
+                className="max-h-[32rem] overflow-auto rounded-lg border border-white/10 bg-slate-950 p-4"
+              />
+            )}
+          </CardContent>
+        </details>
       </Card>
 
       <Card className="border-white/10 bg-slate-900 text-slate-50">

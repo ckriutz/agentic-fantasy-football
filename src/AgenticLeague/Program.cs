@@ -67,8 +67,10 @@ logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Cou
 
 // Now to run the draft, if the league is in the drafting phase. If not, we can skip this step and move on to the season runner.
 await RunDraftAsync(agents, leagueState.Phase, _http, host);
-await RunSeasonAsync(agents, leagueState.Phase, host, _http, leagueState);
 
+// Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
+//var testAgents = agents.Where(a => a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
+await RunSeasonAsync(agents, leagueState.Phase, host, _http, leagueState);
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {

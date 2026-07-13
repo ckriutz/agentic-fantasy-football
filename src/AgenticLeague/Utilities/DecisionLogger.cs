@@ -9,6 +9,11 @@ internal static class DecisionLogger
 
     internal static Task LogDecisionAsync(string agentId, int week, string type, AgentResponse response, string action, ILogger logger)
     {
+        if (string.IsNullOrWhiteSpace(response.Text))
+        {
+            logger.LogWarning("Agent response text is empty for {AgentId}", agentId);
+            return Task.CompletedTask;
+        }
         var usage = response.Usage;
         var decision = new Decision
         {
@@ -28,6 +33,11 @@ internal static class DecisionLogger
 
     internal static Task LogDecisionAsync(string agentId, int week, string type, string response, string action, ILogger logger)
     {
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            logger.LogWarning("Agent response text is empty for {AgentId}", agentId);
+            return Task.CompletedTask;
+        }
         var decision = new Decision
         {
             AgentId = agentId,
