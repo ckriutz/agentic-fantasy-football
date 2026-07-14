@@ -18,6 +18,11 @@ type Player = {
   position: string | null
 }
 
+type AgentProfile = {
+  agentId: string
+  teamName: string
+}
+
 type WaiverClaim = {
   waiverClaimId: string
   agentId: string
@@ -72,6 +77,7 @@ function WaiverWirePage() {
   const [priority, setPriority] = useState<WaiverPriority[]>([])
   const [processStatus, setProcessStatus] = useState<WaiverProcessStatus | null>(null)
   const [players, setPlayers] = useState<Player[]>([])
+  const [agents, setAgents] = useState<AgentProfile[]>([])
   const [state, setState] = useState<FetchState>('loading')
   const [error, setError] = useState<string | null>(null)
 
@@ -96,13 +102,14 @@ function WaiverWirePage() {
     setState('loading')
     setError(null)
     try {
-      const [claimsResponse, priorityResponse, statusResponse, playersResponse] = await Promise.all([
+      const [claimsResponse, priorityResponse, statusResponse, playersResponse, agentsResponse] = await Promise.all([
         fetch(`${apiBaseUrl}/api/league/waivers/${leagueState.season}/${week}`),
         fetch(`${apiBaseUrl}/api/league/waivers/priority`),
         fetch(`${apiBaseUrl}/api/league/waivers/${leagueState.season}/${week}/status`),
         fetch(`${apiBaseUrl}/api/players?limit=1000`),
+        fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=false`),
       ])
-      const failedResponse = [claimsResponse, priorityResponse, statusResponse, playersResponse]
+      const failedResponse = [claimsResponse, priorityResponse, statusResponse, playersResponse, agentsResponse]
         .find((response) => !response.ok)
       if (failedResponse) throw new Error(`Request failed with status ${failedResponse.status}`)
 
@@ -110,6 +117,7 @@ function WaiverWirePage() {
       setPriority(((await priorityResponse.json()) as { priority: WaiverPriority[] }).priority)
       setProcessStatus((await statusResponse.json()) as WaiverProcessStatus)
       setPlayers((await playersResponse.json()) as Player[])
+      setAgents((await agentsResponse.json()) as AgentProfile[])
       setState('success')
     } catch (ex) {
       setError(ex instanceof Error ? ex.message : 'Unknown error')
@@ -124,6 +132,10 @@ function WaiverWirePage() {
   const playersById = useMemo(
     () => new Map(players.map((player) => [player.sleeperPlayerId, player])),
     [players],
+  )
+  const agentsById = useMemo(
+    () => new Map(agents.map((agent) => [agent.agentId, agent])),
+    [agents],
   )
   const claimsInProcessingOrder = useMemo(
     () => [...claims].sort((a, b) =>
@@ -147,7 +159,7 @@ function WaiverWirePage() {
           size="sm"
           onClick={() => void fetchWaiverWire()}
           disabled={state === 'loading' || !leagueState}
-          className="border-white/20 text-slate-300 hover:border-white/40 hover:text-white"
+          className="bg-[#BF9264] text-slate-950 hover:bg-[#caa176] disabled:opacity-40"
         >
           {state === 'loading' ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           Refresh
@@ -226,7 +238,7 @@ function WaiverWirePage() {
                           <li key={entry.agentId} className="flex items-center gap-3 rounded-md bg-slate-950 px-3 py-2">
                             <span className="w-5 text-right font-mono text-sm text-emerald-300">{entry.priority}</span>
                             <Link to={`/agents?agentId=${encodeURIComponent(entry.agentId)}`} className="text-sm font-medium text-slate-100 hover:text-emerald-300 hover:underline">
-                              {entry.agentId}
+                              {entry.agentId} | {agentsById.get(entry.agentId)?.teamName ?? 'Unknown team'}
                             </Link>
                           </li>
                         ))}

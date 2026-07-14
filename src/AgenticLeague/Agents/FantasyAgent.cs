@@ -191,7 +191,28 @@ public class FantasyAgent
             throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
         }
 
-        return await _agent.RunAsync(input);
+        var retryDelays = new[] { TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(120) };
+        for (var attempt = 0; attempt <= retryDelays.Length; attempt++)
+        {
+            try
+            {
+                return await _agent.RunAsync(input);
+            }
+            catch (ClientResultException ex) when (ex.Status == 429)
+            {
+                if (attempt == retryDelays.Length)
+                {
+                    _logger.LogError(ex, "Agent {AgentId} received HTTP 429 after {AttemptCount} attempts. Moving on.", _profile.AgentId, attempt + 1);
+                    return new AgentResponse();
+                }
+
+                var retryDelay = retryDelays[attempt];
+                _logger.LogWarning(ex, "Agent {AgentId} received HTTP 429 on attempt {Attempt}. Retrying in {RetryDelaySeconds} seconds.", _profile.AgentId, attempt + 1, retryDelay.TotalSeconds);
+                await Task.Delay(retryDelay);
+            }
+        }
+
+        throw new InvalidOperationException("Agent execution ended without a response.");
     }
 
 }

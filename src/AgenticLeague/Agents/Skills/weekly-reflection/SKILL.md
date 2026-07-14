@@ -18,7 +18,6 @@ Reflect on the completed NFL week and turn the result into a focused plan for th
 | `ReadAgentBootstrap` | Load the team's identity, strategy, roster context, and prior reflections. |
 | `GetWeeklyMatchup` | Review the completed week's opponent, points, and result. |
 | `GetMyRoster` | Compare each player's completed-week production with their current slot. |
-| `SearchWeb` | Research current injuries, roles, depth-chart changes, or other news only when it affects the upcoming plan. |
 | `WriteAgentBootstrap` | Persist the reflection and any lasting strategy update. |
 
 ## Workflow
@@ -32,15 +31,14 @@ Reflect on the completed NFL week and turn the result into a focused plan for th
    - Identify meaningful start/sit wins and misses.
    - Note injuries, byes, locked players, unexpected roles, and underperformance only when supported by tool data.
    - Do not overreact to one outlier performance or treat fantasy points alone as proof that a process was wrong.
-6. Use `SearchWeb` only for current information that could change the upcoming week's plan, such as an injury, role change, or depth-chart development. Do not research historical game results that the league tools already provide.
-7. Write one concise dated entry under `## Decision Log` containing:
+6. Write one concise dated entry under `## Decision Log` containing:
    - completed season and week;
    - matchup result and score;
    - the most important evidence from the roster review;
    - the next-week priorities.
-8. Update `## Strategy Updates` only when the reflection supports a lasting change to the team's approach. Preserve the existing identity, strategy, roster context, and prior decision history.
-9. Call `WriteAgentBootstrap(agentId, completeContent)` once with the preserved document and the new reflection.
-10. Do not make transactions or lineup changes in this run. Leave those actions to `weekly-player-management` and `roster-management`.
+7. Update `## Strategy Updates` only when the reflection supports a lasting change to the team's approach. Preserve the existing identity, strategy, roster context, and prior decision history.
+8. Call `WriteAgentBootstrap(agentId, completeContent)` once with the preserved document and the new reflection.
+9. Do not make transactions or lineup changes in this run. Leave those actions to `weekly-player-management` and `roster-management`.
 
 ## Required decision summary
 
