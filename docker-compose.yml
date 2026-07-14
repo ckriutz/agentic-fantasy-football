@@ -94,15 +94,10 @@ services:
       context: ./src/FantasyProsDataSync
       dockerfile: Dockerfile
     environment:
-      - FantasyProsSync__ScheduleHour=6
-      - FantasyProsSync__ScheduleMinute=30
-      - FantasyProsSync__TimeZoneId=America/New_York
-      - FantasyProsSync__ApiBaseUrl=https://api.fantasypros.com/public/v2/json
-      - FantasyProsSync__LeagueApiBaseUrl=http://leagueapi:8080
       - FANTASY_PROS_API_KEY=${FANTASY_PROS_API_KEY:?FantasyPros API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - FANTASYPROS_STORAGE_CONTAINER_NAME=${FANTASYPROS_STORAGE_CONTAINER_NAME:-fantasyprosdata}
-      - FantasyProsSync__RequestTimeoutSeconds=30
+      - LEAGUE_API_BASE_URL=http://leagueapi:8080
     depends_on:
       leagueapi:
         condition: service_healthy

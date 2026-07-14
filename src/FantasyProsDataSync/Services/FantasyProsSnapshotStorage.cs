@@ -2,13 +2,11 @@ using System.Text;
 using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using FantasyProsDataSync.Configuration;
 using FantasyProsDataSync.Models;
-using Microsoft.Extensions.Options;
 
 namespace FantasyProsDataSync.Services;
 
-public sealed class FantasyProsSnapshotStorage(BlobServiceClient blobServiceClient, IOptions<FantasyProsSyncOptions> fantasyProsSyncOptions)
+public sealed class FantasyProsSnapshotStorage(BlobServiceClient blobServiceClient, string blobContainerName)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -16,11 +14,11 @@ public sealed class FantasyProsSnapshotStorage(BlobServiceClient blobServiceClie
     };
 
     private readonly BlobServiceClient _blobServiceClient = blobServiceClient;
-    private readonly FantasyProsSyncOptions _fantasyProsSyncOptions = fantasyProsSyncOptions.Value;
+    private readonly string _blobContainerName = blobContainerName;
 
     public async Task<string> SaveAsync(FantasyProsPlayersSnapshot snapshot, CancellationToken cancellationToken)
     {
-        var containerClient = _blobServiceClient.GetBlobContainerClient(_fantasyProsSyncOptions.BlobContainerName);
+        var containerClient = _blobServiceClient.GetBlobContainerClient(_blobContainerName);
         await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
         var blobName = $"fantasypros/{snapshot.Season}/week-{snapshot.Week:D2}/players.json";
