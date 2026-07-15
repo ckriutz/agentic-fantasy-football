@@ -43,14 +43,6 @@ services:
       - SleeperSync__SnapshotDirectory=/data/sleeper
       - SleeperSync__StateFilePath=/data/sleeper/latest-sync.json
       
-      # SportsData.io configuration
-      - SportsDataSync__Enabled=${SPORTSDATA_ENABLED:-true}
-      - SportsDataSync__RunOnStartup=false
-      - SportsDataSync__DailySyncHourUtc=7
-      - SportsDataSync__BaseUrl=https://api.sportsdata.io/v3/nfl/stats/json
-      - SportsDataSync__FantasyPlayersEndpoint=FantasyPlayers
-      - SportsDataSync__ApiKey=${SPORTSDATA_API_KEY:?SportsData API key required}
-      
       # Yahoo Fantasy configuration
       - YahooClientId=${YahooClientId:?Yahoo OAuth client ID required}
       - YahooClientSecret=${YahooClientSecret:?Yahoo OAuth client secret required}
@@ -97,6 +89,21 @@ services:
       - FANTASY_PROS_API_KEY=${FANTASY_PROS_API_KEY:?FantasyPros API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - FANTASYPROS_STORAGE_CONTAINER_NAME=${FANTASYPROS_STORAGE_CONTAINER_NAME:-fantasyprosdata}
+      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+    depends_on:
+      leagueapi:
+        condition: service_healthy
+    networks:
+      - leagueapi-net
+
+  sportsdataiodatasync:
+    build:
+      context: ./src/SportsDataIODataSync
+      dockerfile: Dockerfile
+    environment:
+      - SPORTSDATA_API_KEY=${SPORTSDATA_API_KEY:?SportsData API key required}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
+      - SPORTSDATA_STORAGE_CONTAINER_NAME=${SPORTSDATA_STORAGE_CONTAINER_NAME:-playerdata}
       - LEAGUE_API_BASE_URL=http://leagueapi:8080
     depends_on:
       leagueapi:

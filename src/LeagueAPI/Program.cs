@@ -17,11 +17,6 @@ var builder = WebApplication.CreateBuilder(args);
 var allowedCorsOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"] ?? "http://localhost:3000,http://localhost:5173")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
-builder.Services
-    .AddOptions<SportsDataSyncOptions>()
-    .Bind(builder.Configuration.GetSection(SportsDataSyncOptions.SectionName))
-    .Configure(options => options.ApiKey = builder.Configuration["SPORTSDATA_API_KEY"] ?? options.ApiKey);
-
 builder.Services.Configure<SleeperSyncOptions>(
     builder.Configuration.GetSection(SleeperSyncOptions.SectionName));
 
@@ -44,7 +39,6 @@ builder.Services.AddCors(options =>
 builder.Services.AddMemoryCache();
 
 builder.Services.AddHttpClient("SleeperApi");
-builder.Services.AddHttpClient("SportsDataApi");
 builder.Services.AddHttpClient("YahooOAuth");
 builder.Services.AddHttpClient("YahooFantasyApi");
 
@@ -72,8 +66,8 @@ builder.Services.AddSingleton(new BlobServiceClient(azureStorageConnectionString
 builder.Services.AddSingleton<PostgresYahooAuthStateStore>();
 builder.Services.AddSingleton<SleeperApiClient>();
 builder.Services.AddSingleton<SleeperPlayerSyncService>();
-builder.Services.AddSingleton<SportsDataApiClient>();
 builder.Services.AddSingleton<SportsDataPlayerSyncService>();
+builder.Services.AddSingleton<SportsDataSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
 builder.Services.AddSingleton<YahooOAuthService>();
 builder.Services.AddSingleton<YahooFantasyApiClient>();
@@ -126,7 +120,6 @@ builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
     serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
 
 builder.Services.AddHostedService<NightlySleeperSyncService>();
-builder.Services.AddHostedService<NightlySportsDataSyncService>();
 builder.Services.AddHostedService<NightlyYahooSyncService>();
 
 builder.Services.AddMcpServer()
@@ -163,7 +156,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper?force=true",
         "/api/sync/sportsdata/latest",
-        "/api/sync/sportsdata?force=true",
+        "/api/sync/sportsdata (POST: containerName, blobName, retrievedAtUtc)",
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/yahoo/latest",
         "/api/sync/yahoo/weekly?week=&season=&gameKey=&force=",
@@ -769,13 +762,29 @@ app.MapGet("/api/sync/sportsdata/latest", async (
     return state is null ? Results.NotFound() : Results.Ok(state);
 });
 
-app.MapPost("/api/sync/sportsdata", async (
-    bool force,
-    SportsDataPlayerSyncService sportsDataPlayerSyncService,
-    CancellationToken cancellationToken) =>
+app.MapPost("/api/sync/sportsdata", async (SportsDataSnapshotImportRequest request, SportsDataSnapshotImportService sportsDataSnapshotImportService, CancellationToken cancellationToken) =>
 {
-    var result = await sportsDataPlayerSyncService.SyncPlayersAsync(force, cancellationToken);
-    return Results.Ok(result);
+    try
+    {
+        var result = await sportsDataSnapshotImportService.ImportAsync(request, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (InvalidDataException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (JsonException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (RequestFailedException exception) when (exception.Status == StatusCodes.Status404NotFound)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
 });
 
 app.MapPost("/api/sync/fantasypros", async (FantasyProsSnapshotImportRequest request, FantasyProsSnapshotImportService fantasyProsSnapshotImportService, CancellationToken cancellationToken) =>

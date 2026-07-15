@@ -9,7 +9,6 @@ public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiCli
 {
     private const int ScheduleHour = 6;
     private const int ScheduleMinute = 30;
-
     private readonly FantasyProsApiClient _fantasyProsApiClient = fantasyProsApiClient;
     private readonly FantasyProsSnapshotStorage _fantasyProsSnapshotStorage = fantasyProsSnapshotStorage;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;

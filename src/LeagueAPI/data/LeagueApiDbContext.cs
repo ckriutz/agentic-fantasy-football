@@ -102,7 +102,16 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.ToTable("sportsdata_sync_runs");
             entity.HasKey(syncRun => syncRun.SyncRunId);
 
+            entity.Property(syncRun => syncRun.ContainerName).HasMaxLength(63);
+            entity.Property(syncRun => syncRun.BlobName).HasMaxLength(1024);
+            entity.Property(syncRun => syncRun.BlobETag).HasMaxLength(128);
+            entity.Property(syncRun => syncRun.ContentHash).HasMaxLength(64);
             entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
+            entity.Property(syncRun => syncRun.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(syncRun => new { syncRun.ContainerName, syncRun.BlobName, syncRun.RetrievedAtUtc });
+            entity.HasIndex(syncRun => syncRun.StartedAtUtc);
+            entity.HasIndex(syncRun => syncRun.ContentHash);
         });
 
         modelBuilder.Entity<FantasyProsRankingPlayerEntity>(entity =>
