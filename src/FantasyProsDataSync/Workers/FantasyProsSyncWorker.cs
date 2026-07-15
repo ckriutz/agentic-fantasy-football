@@ -1,23 +1,25 @@
 using Azure;
+using System.Net.Http.Json;
+using FantasyProsDataSync.Models;
 using FantasyProsDataSync.Services;
 
 namespace FantasyProsDataSync.Workers;
 
-public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiClient, FantasyProsSnapshotStorage fantasyProsSnapshotStorage, ILogger<FantasyProsSyncWorker> logger) : BackgroundService
+public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiClient, FantasyProsSnapshotStorage fantasyProsSnapshotStorage, IHttpClientFactory httpClientFactory, ILogger<FantasyProsSyncWorker> logger) : BackgroundService
 {
     private const int ScheduleHour = 6;
     private const int ScheduleMinute = 30;
-    private const string TimeZoneId = "America/New_York";
 
     private readonly FantasyProsApiClient _fantasyProsApiClient = fantasyProsApiClient;
     private readonly FantasyProsSnapshotStorage _fantasyProsSnapshotStorage = fantasyProsSnapshotStorage;
+    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ILogger<FantasyProsSyncWorker> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await TryGetRankingsAsync(stoppingToken);
 
-        var timeZone = GetTimeZone(TimeZoneId);
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -35,14 +37,13 @@ public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiCli
         {
             var playerSnapshot = await _fantasyProsApiClient.GetConsensusRankingsAsync(cancellationToken);
             var blobName = await _fantasyProsSnapshotStorage.SaveAsync(playerSnapshot, cancellationToken);
-            _logger.LogInformation("Saved FantasyPros master player file for season {Season}, week {Week}: {PlayerCount} players at {BlobName}.", playerSnapshot.Season, playerSnapshot.Week, playerSnapshot.Players.Count, blobName);
+            await ImportSnapshotAsync(blobName, playerSnapshot, cancellationToken);
+            _logger.LogInformation("Saved and imported FantasyPros player file for season {Season}, week {Week}: {PlayerCount} players at {BlobName}.", playerSnapshot.Season, playerSnapshot.Week, playerSnapshot.Players.Count, blobName);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (HttpRequestException exception)
         {
-            _logger.LogError(exception, "FantasyPros rankings request failed with status code {StatusCode}.", exception.StatusCode);
+            _logger.LogError(exception, "FantasyPros sync HTTP request failed with status code {StatusCode}.", exception.StatusCode);
         }
         catch (RequestFailedException exception)
         {
@@ -50,20 +51,13 @@ public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiCli
         }
     }
 
-    private static TimeZoneInfo GetTimeZone(string timeZoneId)
+    private async Task ImportSnapshotAsync(string blobName, FantasyProsPlayersSnapshot snapshot, CancellationToken cancellationToken)
     {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-        }
-        catch (TimeZoneNotFoundException exception)
-        {
-            throw new InvalidOperationException($"FantasyPros sync time zone '{timeZoneId}' was not found.", exception);
-        }
-        catch (InvalidTimeZoneException exception)
-        {
-            throw new InvalidOperationException($"FantasyPros sync time zone '{timeZoneId}' is invalid.", exception);
-        }
+        var request = new FantasyProsSnapshotImportRequest(_fantasyProsSnapshotStorage.ContainerName, blobName, snapshot.Season, snapshot.Week, snapshot.RetrievedAtUtc);
+
+        var leagueApiClient = _httpClientFactory.CreateClient("LeagueApi");
+        using var response = await leagueApiClient.PostAsJsonAsync("api/sync/fantasypros", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 
     private static TimeSpan GetDelayUntilNextRun(DateTimeOffset nowUtc, TimeZoneInfo timeZone, int scheduleHour, int scheduleMinute)

@@ -13,6 +13,10 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<SportsDataSyncRun> SportsDataSyncRuns => Set<SportsDataSyncRun>();
 
+    public DbSet<FantasyProsRankingPlayerEntity> FantasyProsRankingPlayers => Set<FantasyProsRankingPlayerEntity>();
+
+    public DbSet<FantasyProsSyncRun> FantasyProsSyncRuns => Set<FantasyProsSyncRun>();
+
     public DbSet<YahooSyncRun> YahooSyncRuns => Set<YahooSyncRun>();
 
     public DbSet<WeeklyPlayerStat> WeeklyPlayerStats => Set<WeeklyPlayerStat>();
@@ -99,6 +103,58 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasKey(syncRun => syncRun.SyncRunId);
 
             entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
+        });
+
+        modelBuilder.Entity<FantasyProsRankingPlayerEntity>(entity =>
+        {
+            entity.ToTable("fantasypros_ranking_players");
+            entity.HasKey(player => player.PlayerId);
+
+            entity.Property(player => player.PlayerId).ValueGeneratedNever();
+            entity.Property(player => player.PlayerName).HasMaxLength(200);
+            entity.Property(player => player.SportsDataId).HasMaxLength(50);
+            entity.Property(player => player.PlayerTeamId).HasMaxLength(20);
+            entity.Property(player => player.PlayerPositionId).HasMaxLength(20);
+            entity.Property(player => player.PlayerPositions).HasMaxLength(100);
+            entity.Property(player => player.PlayerShortName).HasMaxLength(100);
+            entity.Property(player => player.PlayerEligibility).HasMaxLength(100);
+            entity.Property(player => player.PlayerYahooPositions).HasMaxLength(100);
+            entity.Property(player => player.PlayerPageUrl).HasMaxLength(2048);
+            entity.Property(player => player.PlayerFilename).HasMaxLength(255);
+            entity.Property(player => player.PlayerYahooId).HasMaxLength(50);
+            entity.Property(player => player.CbsPlayerId).HasMaxLength(50);
+            entity.Property(player => player.PlayerByeWeek).HasMaxLength(10);
+            entity.Property(player => player.PlayerOwnedAverage).HasPrecision(18, 4);
+            entity.Property(player => player.PlayerOwnedEspn).HasPrecision(18, 4);
+            entity.Property(player => player.PlayerOwnedYahoo).HasPrecision(18, 4);
+            entity.Property(player => player.PlayerEcrDelta).HasPrecision(18, 4);
+            entity.Property(player => player.RankMinimum).HasMaxLength(32);
+            entity.Property(player => player.RankMaximum).HasMaxLength(32);
+            entity.Property(player => player.RankAverage).HasMaxLength(32);
+            entity.Property(player => player.RankStandardDeviation).HasMaxLength(32);
+            entity.Property(player => player.PositionRank).HasMaxLength(20);
+            entity.Property(player => player.RawJson).HasColumnType("text");
+
+            entity.HasIndex(player => player.SportsDataId);
+            entity.HasIndex(player => player.PlayerYahooId);
+            entity.HasIndex(player => new { player.Season, player.Week });
+        });
+
+        modelBuilder.Entity<FantasyProsSyncRun>(entity =>
+        {
+            entity.ToTable("fantasypros_sync_runs");
+            entity.HasKey(syncRun => syncRun.SyncRunId);
+
+            entity.Property(syncRun => syncRun.ContainerName).HasMaxLength(63);
+            entity.Property(syncRun => syncRun.BlobName).HasMaxLength(1024);
+            entity.Property(syncRun => syncRun.BlobETag).HasMaxLength(128);
+            entity.Property(syncRun => syncRun.ContentHash).HasMaxLength(64);
+            entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
+            entity.Property(syncRun => syncRun.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(syncRun => new { syncRun.ContainerName, syncRun.BlobName, syncRun.Season, syncRun.Week, syncRun.RetrievedAtUtc });
+            entity.HasIndex(syncRun => syncRun.StartedAtUtc);
+            entity.HasIndex(syncRun => syncRun.ContentHash);
         });
 
         modelBuilder.Entity<YahooSyncRun>(entity =>

@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Azure;
+using Azure.Storage.Blobs;
 using ModelContextProtocol.Server;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +49,7 @@ builder.Services.AddHttpClient("YahooOAuth");
 builder.Services.AddHttpClient("YahooFantasyApi");
 
 var connectionString = builder.Configuration["DBConnectionString"];
+var azureStorageConnectionString = builder.Configuration["AZURE_STORAGE_CONNECTION_STRING"];
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -53,16 +57,24 @@ if (string.IsNullOrWhiteSpace(connectionString))
         "DBConnectionString is required. Set it in configuration or via the DBConnectionString environment variable to point at your Postgres database.");
 }
 
+if (string.IsNullOrWhiteSpace(azureStorageConnectionString))
+{
+    throw new InvalidOperationException(
+        "AZURE_STORAGE_CONNECTION_STRING is required. Set it to the Azure Storage account that contains FantasyPros snapshots.");
+}
+
 builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
 });
 
+builder.Services.AddSingleton(new BlobServiceClient(azureStorageConnectionString));
 builder.Services.AddSingleton<PostgresYahooAuthStateStore>();
 builder.Services.AddSingleton<SleeperApiClient>();
 builder.Services.AddSingleton<SleeperPlayerSyncService>();
 builder.Services.AddSingleton<SportsDataApiClient>();
 builder.Services.AddSingleton<SportsDataPlayerSyncService>();
+builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
 builder.Services.AddSingleton<YahooOAuthService>();
 builder.Services.AddSingleton<YahooFantasyApiClient>();
 builder.Services.AddSingleton<ScoringService>();
@@ -152,6 +164,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/sleeper?force=true",
         "/api/sync/sportsdata/latest",
         "/api/sync/sportsdata?force=true",
+        "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/yahoo/latest",
         "/api/sync/yahoo/weekly?week=&season=&gameKey=&force=",
         "/api/yahoo/stats/{season}/{week}?position=&limit=",
@@ -763,6 +776,31 @@ app.MapPost("/api/sync/sportsdata", async (
 {
     var result = await sportsDataPlayerSyncService.SyncPlayersAsync(force, cancellationToken);
     return Results.Ok(result);
+});
+
+app.MapPost("/api/sync/fantasypros", async (FantasyProsSnapshotImportRequest request, FantasyProsSnapshotImportService fantasyProsSnapshotImportService, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await fantasyProsSnapshotImportService.ImportAsync(request, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (InvalidDataException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (JsonException exception)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (RequestFailedException exception) when (exception.Status == StatusCodes.Status404NotFound)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
 });
 
 app.MapGet("/api/sync/yahoo/latest", async (

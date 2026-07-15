@@ -16,6 +16,8 @@ public sealed class FantasyProsSnapshotStorage(BlobServiceClient blobServiceClie
     private readonly BlobServiceClient _blobServiceClient = blobServiceClient;
     private readonly string _blobContainerName = blobContainerName;
 
+    public string ContainerName => _blobContainerName;
+
     public async Task<string> SaveAsync(FantasyProsPlayersSnapshot snapshot, CancellationToken cancellationToken)
     {
         var containerClient = _blobServiceClient.GetBlobContainerClient(_blobContainerName);
