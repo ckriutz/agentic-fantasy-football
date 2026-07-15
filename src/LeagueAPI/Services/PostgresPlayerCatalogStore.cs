@@ -68,24 +68,6 @@ public sealed class PostgresPlayerCatalogStore(
         return players.Select(PlayerRecordFactory.Map).ToArray();
     }
 
-    public async Task RecordSyncStartedAsync(
-        Guid syncRunId,
-        DateTimeOffset startedAtUtc,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogInformation("Sync started: {SyncRunId} at {StartedAtUtc}", syncRunId, startedAtUtc);
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        dbContext.SleeperSyncRuns.Add(new SleeperSyncRun
-        {
-            SyncRunId = syncRunId,
-            StartedAtUtc = startedAtUtc,
-            Status = "Started"
-        });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
     public async Task PersistPlayersAsync(
         IReadOnlyCollection<PlayerRecord> players,
         Guid syncRunId,
@@ -157,49 +139,6 @@ public sealed class PostgresPlayerCatalogStore(
         await dbContext.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Successfully persisted {TotalPlayers} players: {NewCount} new, {UpdatedCount} updated (sync run: {SyncRunId})", 
             filteredPlayers.Length, newPlayerCount, updatedPlayerCount, syncRunId);
-    }
-
-    public async Task RecordSyncCompletedAsync(SleeperSyncState syncState, CancellationToken cancellationToken)
-    {
-        var syncRunId = syncState.SyncRunId
-            ?? throw new InvalidOperationException("A completed sync state must include a sync run ID.");
-
-        _logger.LogInformation("Sync completed successfully: {SyncRunId}, {RecordCount} records",
-            syncRunId, syncState.RecordCount);
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var syncRun = await dbContext.SleeperSyncRuns
-            .FirstOrDefaultAsync(entity => entity.SyncRunId == syncRunId, cancellationToken)
-            ?? throw new InvalidOperationException($"Sync run {syncRunId} was not found.");
-
-        syncRun.CompletedAtUtc = syncState.LastSuccessfulSyncAtUtc ?? DateTimeOffset.UtcNow;
-        syncRun.Status = syncState.Status;
-        syncRun.RecordCount = syncState.RecordCount;
-        syncRun.ErrorMessage = syncState.ErrorMessage;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-    }
-
-    public async Task RecordSyncFailedAsync(
-        Guid syncRunId,
-        DateTimeOffset failedAtUtc,
-        string errorMessage,
-        CancellationToken cancellationToken)
-    {
-        _logger.LogError("Sync failed: {SyncRunId} - Error: {ErrorMessage}", syncRunId, errorMessage);
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var syncRun = await dbContext.SleeperSyncRuns
-            .FirstOrDefaultAsync(entity => entity.SyncRunId == syncRunId, cancellationToken)
-            ?? throw new InvalidOperationException($"Sync run {syncRunId} was not found.");
-
-        syncRun.CompletedAtUtc = failedAtUtc;
-        syncRun.Status = "Failed";
-        syncRun.ErrorMessage = errorMessage;
-
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<SleeperSyncState> GetLatestSyncStateAsync(CancellationToken cancellationToken)

@@ -34,15 +34,6 @@ services:
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME:-agentdata}
       
-      # Sleeper API configuration
-      - SleeperSync__Mode=Auto
-      - SleeperSync__Enabled=true
-      - SleeperSync__RunOnStartup=false
-      - SleeperSync__DailySyncHourUtc=6
-      - SleeperSync__PlayersEndpoint=https://api.sleeper.app/v1/players/nfl
-      - SleeperSync__SnapshotDirectory=/data/sleeper
-      - SleeperSync__StateFilePath=/data/sleeper/latest-sync.json
-      
       # Yahoo Fantasy configuration
       - YahooClientId=${YahooClientId:?Yahoo OAuth client ID required}
       - YahooClientSecret=${YahooClientSecret:?Yahoo OAuth client secret required}
@@ -82,9 +73,8 @@ services:
       start_period: 10s
 
   fantasyprosdatasync:
-    build:
-      context: ./src/FantasyProsDataSync
-      dockerfile: Dockerfile
+    image: ghcr.io/ckriutz/fantasyprosdatasync:latest
+    pull_policy: always
     environment:
       - FANTASY_PROS_API_KEY=${FANTASY_PROS_API_KEY:?FantasyPros API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
@@ -97,13 +87,25 @@ services:
       - leagueapi-net
 
   sportsdataiodatasync:
-    build:
-      context: ./src/SportsDataIODataSync
-      dockerfile: Dockerfile
+    image: ghcr.io/ckriutz/sportsdataiodatasync:latest
+    pull_policy: always
     environment:
       - SPORTSDATA_API_KEY=${SPORTSDATA_API_KEY:?SportsData API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - SPORTSDATA_STORAGE_CONTAINER_NAME=${SPORTSDATA_STORAGE_CONTAINER_NAME:-playerdata}
+      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+    depends_on:
+      leagueapi:
+        condition: service_healthy
+    networks:
+      - leagueapi-net
+
+  sleepersync:
+    image: ghcr.io/ckriutz/sleepersync:latest
+    pull_policy: always
+    environment:
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
+      - SLEEPER_STORAGE_CONTAINER_NAME=${SLEEPER_STORAGE_CONTAINER_NAME:-playerdata}
       - LEAGUE_API_BASE_URL=http://leagueapi:8080
     depends_on:
       leagueapi:
