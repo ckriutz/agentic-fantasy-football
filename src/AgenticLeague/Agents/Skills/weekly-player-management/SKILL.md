@@ -62,9 +62,13 @@ Improve the roster only when an available player materially addresses a current 
    1. Availability for the current and upcoming weeks: not on bye, injury outlook, and expected snaps.
    2. Role security: depth-chart position and recent role changes.
    3. `projectedFantasyPoints`.
-   4. `searchRank` (lower is better; treat null or `9999999` as unranked).
-   5. Recent `weeklyPoints`, without overweighting one outlier.
-   6. `lastSeasonFantasyPoints` and `auctionValue` as secondary context.
+   4. `rankAverage` (lower is better; FantasyPros consensus rank when present).
+   5. `positionRank` (lower/better positional label, e.g. `RB1` over `RB3`).
+   6. `tier` (lower is better FantasyPros tier).
+   7. `playerOwnedAverage` (higher is better ownership %).
+   8. `searchRank` (lower is better; treat null or `9999999` as unranked; fallback when FantasyPros ranks are missing).
+   9. Recent `weeklyPoints`, without overweighting one outlier.
+   10. `lastSeasonFantasyPoints` and `auctionValue` as secondary context.
 3. Use `SearchWeb` for the leading candidates when injury news, depth-chart role, target share, or a recent breakout determines whether the move is worthwhile.
 4. Do not add a player merely because they are available. The candidate must fill an identified need or be a material improvement over the proposed drop.
 

@@ -92,8 +92,12 @@ For each player, inspect:
 - `slotType`, `isStarter`, `position`
 - `byeWeek`
 - `injuryStatus`, `injury_body_part`
-- `searchRank` (lower is better; `9999999` / missing ≈ unranked)
 - `projectedFantasyPoints`, `lastSeasonFantasyPoints`
+- `rankAverage` (lower better; FantasyPros consensus rank)
+- `positionRank` (e.g. `QB1` better than `QB2`)
+- `tier` (lower better)
+- `playerOwnedAverage` (higher better ownership %)
+- `searchRank` (lower better; `9999999` / missing ≈ unranked; fallback if FantasyPros ranks absent)
 - `depth_chart_order` (1 ≈ starter)
 - `weeklyPoints` (recent form)
 - `lockStatus` — especially `isLineupMoveLocked`, `hasPlayedThisWeek`, `lineupMoveLockReason`

@@ -32,6 +32,14 @@ public sealed class RosterToolPlayerResult
 
     public int? AuctionValue { get; init; }
 
+    public decimal? PlayerOwnedAverage { get; init; }
+
+    public string? RankAverage { get; init; }
+
+    public string? PositionRank { get; init; }
+
+    public int? Tier { get; init; }
+
     public string? OwnerAgentId { get; init; }
 
     public bool IsAvailable { get; init; }
@@ -63,6 +71,10 @@ public sealed class RosterToolPlayerResult
             LastSeasonFantasyPoints = rosterPlayer.Player.LastSeasonFantasyPoints,
             ProjectedFantasyPoints = rosterPlayer.Player.ProjectedFantasyPoints,
             AuctionValue = rosterPlayer.Player.AuctionValue,
+            PlayerOwnedAverage = rosterPlayer.Player.PlayerOwnedAverage,
+            RankAverage = rosterPlayer.Player.RankAverage,
+            PositionRank = rosterPlayer.Player.PositionRank,
+            Tier = rosterPlayer.Player.Tier,
             OwnerAgentId = rosterPlayer.OwnerAgentId,
             IsAvailable = rosterPlayer.IsAvailable,
             AcquisitionSource = rosterPlayer.AcquisitionSource,

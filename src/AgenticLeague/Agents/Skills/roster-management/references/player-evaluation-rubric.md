@@ -23,16 +23,21 @@ Compare players **at the same decision point** (e.g. two RBs fighting for RB2/FL
 |----------|--------|-----------|-------|
 | 1 | Expected to play meaningful snaps this week | Higher better | Injuries, depth chart, coach speak via `SearchWeb` when needed |
 | 2 | `projectedFantasyPoints` | Higher better | Best week-oriented scoring proxy when present |
-| 3 | `searchRank` | **Lower** better | Consensus overall rank; ignore absurd sentinels like `9999999` as "unranked" |
-| 4 | Recent `weeklyPoints` | Higher / trend up better | Form check; do not overweight one fluke week alone |
-| 5 | `depth_chart_order` | Lower better (`1` preferred) | Playing-time stability |
-| 6 | `lastSeasonFantasyPoints` | Higher better | Prior production; weaker than current projections/rank |
-| 7 | `auctionValue` | Higher better | Soft market-value tie-break |
+| 3 | `rankAverage` | **Lower** better | FantasyPros consensus rank; prefer over `searchRank` when present |
+| 4 | `positionRank` | **Lower** better | Positional rank string (e.g. `QB1` > `QB2`); compare within same position |
+| 5 | `tier` | **Lower** better | FantasyPros tier bucket; useful for broad quality bands |
+| 6 | `playerOwnedAverage` | Higher better | Global ownership %; higher implies more consensus demand |
+| 7 | `searchRank` | **Lower** better | Platform overall rank; ignore absurd sentinels like `9999999` as "unranked" |
+| 8 | Recent `weeklyPoints` | Higher / trend up better | Form check; do not overweight one fluke week alone |
+| 9 | `depth_chart_order` | Lower better (`1` preferred) | Playing-time stability |
+| 10 | `lastSeasonFantasyPoints` | Higher better | Prior production; weaker than current projections/rank |
+| 11 | `auctionValue` | Higher better | Soft market-value tie-break |
 
 ### Interpreting weak data
 
-- Missing projections ⇒ lean harder on `searchRank`, depth chart, and (if needed) web consensus.
-- Unranked (`searchRank` null/`9999999`) with low projected points ⇒ usually bench vs any normal skill starter.
+- Missing projections ⇒ lean harder on `rankAverage` / `positionRank` / `searchRank`, depth chart, and (if needed) web consensus.
+- Missing FantasyPros fields (`rankAverage`, `positionRank`, `tier`, `playerOwnedAverage` null) ⇒ fall back to `searchRank` and projections as before.
+- Unranked (`searchRank` null/`9999999`, or empty `rankAverage`) with low projected points ⇒ usually bench vs any normal skill starter.
 - Large projection vs last-season gap ⇒ do not auto-trust either; if the start is critical, a quick `SearchWeb` check helps.
 
 ## Position fill strategy
@@ -70,7 +75,7 @@ Usually thin benches. Start the rostered K/DEF unless bye/out/locked-to-bench fo
 When two players are nearly equal:
 
 1. Prefer the healthier / more certain to play
-2. Prefer better projection, then better (lower) `searchRank`
+2. Prefer better projection, then better (lower) `rankAverage` / `positionRank` / `searchRank`
 3. Prefer higher recent form if both are healthy
 4. Prefer not moving slots if already set correctly (stability / fewer failed locked moves)
 

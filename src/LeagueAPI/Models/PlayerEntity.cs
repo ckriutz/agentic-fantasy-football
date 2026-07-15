@@ -44,4 +44,13 @@ public sealed class PlayerEntity
     public decimal? ProjectedFantasyPoints { get; set; }
 
     public int? AuctionValue { get; set; }
+
+    // FantasyPros enrichment fields (populated by FantasyPros snapshot imports)
+    public decimal? PlayerOwnedAverage { get; set; }
+
+    public string? RankAverage { get; set; }
+
+    public string? PositionRank { get; set; }
+
+    public int? Tier { get; set; }
 }

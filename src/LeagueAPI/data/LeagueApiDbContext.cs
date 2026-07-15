@@ -69,6 +69,9 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(player => player.FantasyPositionsTokenized).HasMaxLength(100);
             entity.Property(player => player.Status).HasMaxLength(50);
             entity.Property(player => player.Sport).HasMaxLength(20);
+            entity.Property(player => player.PlayerOwnedAverage).HasPrecision(18, 4);
+            entity.Property(player => player.RankAverage).HasMaxLength(32);
+            entity.Property(player => player.PositionRank).HasMaxLength(20);
 
             entity.HasIndex(player => player.YahooId);
             entity.HasIndex(player => player.FantasyDataId);

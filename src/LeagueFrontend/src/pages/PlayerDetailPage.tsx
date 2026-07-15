@@ -49,6 +49,10 @@ type Player = {
   lastSeasonFantasyPoints: number | null
   projectedFantasyPoints: number | null
   auctionValue: number | null
+  playerOwnedAverage: number | null
+  rankAverage: string | null
+  positionRank: string | null
+  tier: number | null
   data: PlayerData | null
 }
 
@@ -327,6 +331,11 @@ function PlayerDetailPage() {
                 <StatRow label="Projected Pts" value={player.projectedFantasyPoints} />
                 <StatRow label="Last Season Pts" value={player.lastSeasonFantasyPoints} />
                 <StatRow label="Search Rank" value={player.searchRank} />
+                <div className="my-2 border-t border-white/5" />
+                <StatRow label="FP Owned %" value={player.playerOwnedAverage} />
+                <StatRow label="FP Rank Avg" value={player.rankAverage} />
+                <StatRow label="FP Pos Rank" value={player.positionRank} />
+                <StatRow label="FP Tier" value={player.tier} />
               </CardContent>
             </Card>
 

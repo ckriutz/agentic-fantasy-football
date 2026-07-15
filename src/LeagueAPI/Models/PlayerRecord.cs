@@ -45,6 +45,15 @@ public sealed class PlayerRecord
 
     public int? AuctionValue { get; init; }
 
+    // FantasyPros enrichment fields
+    public decimal? PlayerOwnedAverage { get; init; }
+
+    public string? RankAverage { get; init; }
+
+    public string? PositionRank { get; init; }
+
+    public int? Tier { get; init; }
+
     [JsonIgnore]
     public string SearchFullNameNormalized { get; init; } = string.Empty;
 

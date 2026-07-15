@@ -88,6 +88,8 @@ public sealed class FantasyProsSnapshotImportService(BlobServiceClient blobServi
                     await UpsertPlayersAsync(dbContext, snapshot, rawPlayerJson, cancellationToken);
                 }
 
+                await ApplyFantasyProsEnrichmentAsync(dbContext, snapshot.Players, cancellationToken);
+
                 syncRun.CompletedAtUtc = DateTimeOffset.UtcNow;
                 syncRun.Status = SucceededStatus;
                 syncRun.RecordCount = snapshot.Players.Count;
@@ -274,6 +276,43 @@ public sealed class FantasyProsSnapshotImportService(BlobServiceClient blobServi
             entity.RetrievedAtUtc = snapshot.RetrievedAtUtc;
             entity.RawJson = rawPlayerJson[index];
             entity.UpdatedAtUtc = updatedAtUtc;
+        }
+    }
+
+    private static async Task ApplyFantasyProsEnrichmentAsync(LeagueApiDbContext dbContext, IReadOnlyList<FantasyProsRankingPlayer> fantasyProsPlayers, CancellationToken cancellationToken)
+    {
+        var fantasyProsPlayersByYahooId = fantasyProsPlayers
+            .Where(player => int.TryParse(player.PlayerYahooId, out _))
+            .GroupBy(player => int.Parse(player.PlayerYahooId!))
+            .ToDictionary(group => group.Key, group => group.First());
+
+        await dbContext.Players
+            .Where(player => player.YahooId != null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(player => player.PlayerOwnedAverage, (decimal?)null)
+                    .SetProperty(player => player.RankAverage, (string?)null)
+                    .SetProperty(player => player.PositionRank, (string?)null)
+                    .SetProperty(player => player.Tier, (int?)null),
+                cancellationToken);
+
+        if (fantasyProsPlayersByYahooId.Count == 0)
+        {
+            return;
+        }
+
+        var yahooIds = fantasyProsPlayersByYahooId.Keys.ToArray();
+        var matchedPlayers = await dbContext.Players
+            .Where(player => player.YahooId != null && yahooIds.Contains(player.YahooId.Value))
+            .ToListAsync(cancellationToken);
+
+        foreach (var player in matchedPlayers)
+        {
+            var fantasyProsPlayer = fantasyProsPlayersByYahooId[player.YahooId!.Value];
+            player.PlayerOwnedAverage = fantasyProsPlayer.PlayerOwnedAverage;
+            player.RankAverage = fantasyProsPlayer.RankAverage;
+            player.PositionRank = fantasyProsPlayer.PositionRank;
+            player.Tier = fantasyProsPlayer.Tier;
         }
     }
 

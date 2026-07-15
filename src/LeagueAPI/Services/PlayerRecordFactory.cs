@@ -76,7 +76,11 @@ public static class PlayerRecordFactory
             ByeWeek = entity.ByeWeek,
             LastSeasonFantasyPoints = entity.LastSeasonFantasyPoints,
             ProjectedFantasyPoints = entity.ProjectedFantasyPoints,
-            AuctionValue = entity.AuctionValue
+            AuctionValue = entity.AuctionValue,
+            PlayerOwnedAverage = entity.PlayerOwnedAverage,
+            RankAverage = entity.RankAverage,
+            PositionRank = entity.PositionRank,
+            Tier = entity.Tier
         };
     }
 
