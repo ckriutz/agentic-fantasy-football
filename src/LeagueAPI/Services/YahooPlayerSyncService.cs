@@ -11,7 +11,7 @@ namespace LeagueAPI.Services;
 public sealed class YahooPlayerSyncService(
     YahooFantasyApiClient yahooFantasyApiClient,
     ScoringService scoringService,
-    IMatchupScoringService matchupScoringService,
+    MatchupScoringService matchupScoringService,
     IDbContextFactory<LeagueApiDbContext> dbContextFactory,
     IOptions<YahooSyncOptions> yahooSyncOptions,
     ILogger<YahooPlayerSyncService> logger)
@@ -107,7 +107,7 @@ public sealed class YahooPlayerSyncService(
 
     private readonly YahooFantasyApiClient _yahooFantasyApiClient = yahooFantasyApiClient;
     private readonly ScoringService _scoringService = scoringService;
-    private readonly IMatchupScoringService _matchupScoringService = matchupScoringService;
+    private readonly MatchupScoringService _matchupScoringService = matchupScoringService;
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly YahooSyncOptions _yahooSyncOptions = yahooSyncOptions.Value;
     private readonly ILogger<YahooPlayerSyncService> _logger = logger;

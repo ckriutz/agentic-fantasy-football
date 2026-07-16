@@ -20,13 +20,13 @@ internal static class WaiverProcessRunStatus
     public const string Failed = "Failed";
 }
 
-public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILeagueStateService leagueStateService, IPlayerGameLockService playerGameLockService) : IWaiverService
+public sealed class WaiverService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, LeagueStateService leagueStateService, PlayerGameLockService playerGameLockService)
 {
     private sealed record ClaimSubmission(int ClaimOrder, string AddSleeperPlayerId, string? DropSleeperPlayerId);
 
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
-    private readonly ILeagueStateService _leagueStateService = leagueStateService;
-    private readonly IPlayerGameLockService _playerGameLockService = playerGameLockService;
+    private readonly LeagueStateService _leagueStateService = leagueStateService;
+    private readonly PlayerGameLockService _playerGameLockService = playerGameLockService;
 
     public async Task SeedWaiverPriorityAsync(IReadOnlyList<string> draftOrder, bool force, CancellationToken cancellationToken)
     {
@@ -278,7 +278,7 @@ public sealed class PostgresWaiverService(IDbContextFactory<LeagueApiDbContext> 
             completedRun.ClaimsSucceeded = succeeded;
             completedRun.ClaimsFailed = failed;
             completedRun.CompletedAtUtc = DateTimeOffset.UtcNow;
-            await PostgresLeagueStateService.UpsertLeagueStateAsync(
+            await LeagueStateService.UpsertLeagueStateAsync(
                 resultDbContext,
                 season,
                 week,

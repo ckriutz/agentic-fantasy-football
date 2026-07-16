@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IMatchupScoringService
+public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> dbContextFactory)
 {
     private const long FinalizationLockKey = 55002;
 

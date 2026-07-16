@@ -4,12 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresPlayerGameLockService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILeagueStateService leagueStateService) : IPlayerGameLockService
+public sealed class PlayerGameLockService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, LeagueStateService leagueStateService)
 {
     private const int GamesPlayedStatId = 0;
 
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
-    private readonly ILeagueStateService _leagueStateService = leagueStateService;
+    private readonly LeagueStateService _leagueStateService = leagueStateService;
 
     public async Task<IReadOnlyDictionary<string, PlayerLockStatus>> GetPlayerLockStatusesAsync(IReadOnlyCollection<string> sleeperPlayerIds, CancellationToken cancellationToken)
     {

@@ -50,7 +50,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 if (string.IsNullOrWhiteSpace(azureStorageConnectionString))
 {
     throw new InvalidOperationException(
-        "AZURE_STORAGE_CONNECTION_STRING is required. Set it to the Azure Storage account that contains FantasyPros snapshots.");
+        "AZURE_STORAGE_CONNECTION_STRING is required. Set it to the Azure Storage account that contains provider snapshots.");
 }
 
 builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
@@ -59,7 +59,7 @@ builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
 });
 
 builder.Services.AddSingleton(new BlobServiceClient(azureStorageConnectionString));
-builder.Services.AddSingleton<PostgresYahooAuthStateStore>();
+builder.Services.AddSingleton<YahooAuthStateStore>();
 builder.Services.AddSingleton<SportsDataPlayerSyncService>();
 builder.Services.AddSingleton<SportsDataSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
@@ -70,49 +70,35 @@ builder.Services.AddSingleton<ScoringService>();
 builder.Services.AddSingleton<YahooPlayerSyncService>();
 builder.Services.AddSingleton<YahooReadService>();
 
-builder.Services.AddSingleton<PostgresRosterStore>();
+builder.Services.AddSingleton<RosterStore>();
 builder.Services.AddSingleton<IRosterReader>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresRosterStore>());
+    serviceProvider.GetRequiredService<RosterStore>());
 builder.Services.AddSingleton<IRosterWriter>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresRosterStore>());
+    serviceProvider.GetRequiredService<RosterStore>());
 
-builder.Services.AddSingleton<PostgresDecisionStore>();
+builder.Services.AddSingleton<DecisionStore>();
 builder.Services.AddSingleton<IDecisionReader>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresDecisionStore>());
+    serviceProvider.GetRequiredService<DecisionStore>());
 builder.Services.AddSingleton<IDecisionWriter>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresDecisionStore>());
+    serviceProvider.GetRequiredService<DecisionStore>());
 
-builder.Services.AddSingleton<PostgresAgentProfileStore>();
+builder.Services.AddSingleton<AgentProfileStore>();
 builder.Services.AddSingleton<IAgentProfileReader>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresAgentProfileStore>());
+    serviceProvider.GetRequiredService<AgentProfileStore>());
 builder.Services.AddSingleton<IAgentProfileWriter>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresAgentProfileStore>());
+    serviceProvider.GetRequiredService<AgentProfileStore>());
 
-builder.Services.AddSingleton<PostgresLeagueStateService>();
-builder.Services.AddSingleton<ILeagueStateService>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresLeagueStateService>());
-
-builder.Services.AddSingleton<PostgresScheduleService>();
-builder.Services.AddSingleton<IScheduleService>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresScheduleService>());
-
+builder.Services.AddSingleton<LeagueStateService>();
+builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<MatchupScoringService>();
-builder.Services.AddSingleton<IMatchupScoringService>(serviceProvider =>
-    serviceProvider.GetRequiredService<MatchupScoringService>());
+builder.Services.AddSingleton<PlayerGameLockService>();
+builder.Services.AddSingleton<WaiverService>();
 
-builder.Services.AddSingleton<PostgresPlayerGameLockService>();
-builder.Services.AddSingleton<IPlayerGameLockService>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresPlayerGameLockService>());
-
-builder.Services.AddSingleton<PostgresWaiverService>();
-builder.Services.AddSingleton<IWaiverService>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresWaiverService>());
-
-builder.Services.AddSingleton<PostgresPlayerCatalogStore>();
+builder.Services.AddSingleton<PlayerCatalogStore>();
 builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
+    serviceProvider.GetRequiredService<PlayerCatalogStore>());
 builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
-    serviceProvider.GetRequiredService<PostgresPlayerCatalogStore>());
+    serviceProvider.GetRequiredService<PlayerCatalogStore>());
 
 builder.Services.AddHostedService<NightlyYahooSyncService>();
 
@@ -277,11 +263,13 @@ app.MapPatch("/api/agent-profiles/{agentId}/bootstrap-status", async (
 
 // --- League State ---
 
-static IResult CreateScheduleErrorResult(Exception exception)
+static IResult CreateDomainErrorResult(Exception exception)
 {
     return exception switch
     {
         ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
+        RosterPlayerNotFoundException ex => Results.NotFound(new { error = ex.Message }),
+        RosterConflictException ex => Results.Conflict(new { error = ex.Message }),
         InvalidOperationException ex => Results.Conflict(new { error = ex.Message }),
         _ => Results.Problem(exception.Message)
     };
@@ -289,7 +277,7 @@ static IResult CreateScheduleErrorResult(Exception exception)
 
 app.MapPost("/api/league/schedule", async (
     bool? force,
-    IScheduleService scheduleService,
+    ScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -299,12 +287,12 @@ app.MapPost("/api/league/schedule", async (
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
-        return CreateScheduleErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
 app.MapGet("/api/league/schedule", async (
-    IScheduleService scheduleService,
+    ScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
     var schedule = await scheduleService.GetScheduleAsync(cancellationToken);
@@ -313,7 +301,7 @@ app.MapGet("/api/league/schedule", async (
 
 app.MapGet("/api/league/schedule/{week:int}", async (
     int week,
-    IScheduleService scheduleService,
+    ScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -328,7 +316,7 @@ app.MapGet("/api/league/schedule/{week:int}", async (
 });
 
 app.MapGet("/api/league/standings", async (
-    IScheduleService scheduleService,
+    ScheduleService scheduleService,
     CancellationToken cancellationToken) =>
 {
     var standings = await scheduleService.GetStandingsAsync(cancellationToken);
@@ -338,7 +326,7 @@ app.MapGet("/api/league/standings", async (
 app.MapPost("/api/league/matchups/{season:int}/{week:int}/scores", async (
     int season,
     int week,
-    IMatchupScoringService matchupScoringService,
+    MatchupScoringService matchupScoringService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -348,14 +336,14 @@ app.MapPost("/api/league/matchups/{season:int}/{week:int}/scores", async (
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
-        return CreateScheduleErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
 app.MapPost("/api/league/matchups/{season:int}/{week:int}/finalize", async (
     int season,
     int week,
-    IMatchupScoringService matchupScoringService,
+    MatchupScoringService matchupScoringService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -365,12 +353,12 @@ app.MapPost("/api/league/matchups/{season:int}/{week:int}/finalize", async (
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
-        return CreateScheduleErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
 app.MapGet("/api/league/state", async (
-    ILeagueStateService leagueStateService,
+    LeagueStateService leagueStateService,
     CancellationToken cancellationToken) =>
 {
     var state = await leagueStateService.GetLeagueStateAsync(cancellationToken);
@@ -379,7 +367,7 @@ app.MapGet("/api/league/state", async (
 
 app.MapPut("/api/league/state", async (
     SetLeagueStateRequest request,
-    ILeagueStateService leagueStateService,
+    LeagueStateService leagueStateService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -483,17 +471,6 @@ static PlayerQuery BuildPlayerQuery(
     };
 }
 
-static IResult CreateRosterErrorResult(Exception exception)
-{
-    return exception switch
-    {
-        ArgumentException argumentException => Results.BadRequest(new { error = argumentException.Message }),
-        RosterPlayerNotFoundException notFoundException => Results.NotFound(new { error = notFoundException.Message }),
-        RosterConflictException conflictException => Results.Conflict(new { error = conflictException.Message }),
-        _ => Results.Problem(exception.Message)
-    };
-}
-
 app.MapGet("/api/players/roster-status", async (
     string? name,
     string? team,
@@ -554,7 +531,7 @@ app.MapGet("/api/rosters/{agentId}", async (
     }
     catch (ArgumentException ex)
     {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -570,7 +547,7 @@ app.MapGet("/api/players/{sleeperPlayerId}/availability", async (
     }
     catch (ArgumentException ex)
     {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -591,17 +568,9 @@ app.MapPost("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
 
         return Results.Ok(player);
     }
-    catch (ArgumentException ex)
+    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
     {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterPlayerNotFoundException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterConflictException ex)
-    {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -620,17 +589,9 @@ app.MapDelete("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
 
         return Results.Ok(player);
     }
-    catch (ArgumentException ex)
+    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
     {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterPlayerNotFoundException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterConflictException ex)
-    {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -651,17 +612,9 @@ app.MapPut("/api/rosters/{agentId}/players/{sleeperPlayerId}/slot", async (
 
         return Results.Ok(player);
     }
-    catch (ArgumentException ex)
+    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
     {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterPlayerNotFoundException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterConflictException ex)
-    {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -675,17 +628,9 @@ app.MapPost("/api/rosters/{agentId}/lineup/auto", async (
         var roster = await rosterWriter.AutoSetLineupAsync(agentId, cancellationToken);
         return Results.Ok(roster);
     }
-    catch (ArgumentException ex)
+    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
     {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterPlayerNotFoundException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterConflictException ex)
-    {
-        return CreateRosterErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
@@ -746,15 +691,7 @@ app.MapPost("/api/sync/sleeper", async (SleeperSnapshotImportRequest request, Sl
         var result = await sleeperSnapshotImportService.ImportAsync(request, cancellationToken);
         return Results.Ok(result);
     }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (InvalidDataException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (JsonException exception)
+    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
     {
         return Results.BadRequest(new { error = exception.Message });
     }
@@ -779,15 +716,7 @@ app.MapPost("/api/sync/sportsdata", async (SportsDataSnapshotImportRequest reque
         var result = await sportsDataSnapshotImportService.ImportAsync(request, cancellationToken);
         return Results.Ok(result);
     }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (InvalidDataException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (JsonException exception)
+    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
     {
         return Results.BadRequest(new { error = exception.Message });
     }
@@ -804,15 +733,7 @@ app.MapPost("/api/sync/fantasypros", async (FantasyProsSnapshotImportRequest req
         var result = await fantasyProsSnapshotImportService.ImportAsync(request, cancellationToken);
         return Results.Ok(result);
     }
-    catch (ArgumentException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (InvalidDataException exception)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (JsonException exception)
+    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
     {
         return Results.BadRequest(new { error = exception.Message });
     }
@@ -1080,20 +1001,8 @@ app.MapGet("/api/yahoo/auth/test-connection", async (
 
 // --- Waivers ---
 
-static IResult CreateWaiverErrorResult(Exception exception)
-{
-    return exception switch
-    {
-        ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
-        RosterPlayerNotFoundException ex => Results.NotFound(new { error = ex.Message }),
-        RosterConflictException ex => Results.Conflict(new { error = ex.Message }),
-        InvalidOperationException ex => Results.Conflict(new { error = ex.Message }),
-        _ => Results.Problem(exception.Message)
-    };
-}
-
 app.MapGet("/api/league/waivers/priority", async (
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     var priority = await waiverService.GetWaiverPriorityAsync(cancellationToken);
@@ -1103,7 +1012,7 @@ app.MapGet("/api/league/waivers/priority", async (
 app.MapPost("/api/league/waivers/priority/seed", async (
     SeedWaiverPriorityRequest request,
     bool? force,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -1122,7 +1031,7 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}", async (
     int season,
     int week,
     string? agentId,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     var claims = await waiverService.GetWaiverClaimsAsync(season, week, agentId, cancellationToken);
@@ -1133,7 +1042,7 @@ app.MapPost("/api/league/waivers/{season:int}/{week:int}/claims", async (
     int season,
     int week,
     SubmitWaiverClaimsRequest request,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -1144,14 +1053,14 @@ app.MapPost("/api/league/waivers/{season:int}/{week:int}/claims", async (
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or RosterPlayerNotFoundException or RosterConflictException)
     {
-        return CreateWaiverErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 
 app.MapPost("/api/league/waivers/{season:int}/{week:int}/process", async (
     int season,
     int week,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -1168,7 +1077,7 @@ app.MapPost("/api/league/waivers/{season:int}/{week:int}/process", async (
 app.MapGet("/api/league/waivers/{season:int}/{week:int}/status", async (
     int season,
     int week,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     var status = await waiverService.GetWaiverProcessStatusAsync(season, week, cancellationToken);
@@ -1179,7 +1088,7 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}/agents/{agentId}/summary
     int season,
     int week,
     string agentId,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -1197,7 +1106,7 @@ app.MapPost("/api/league/free-agents/{season:int}/{week:int}/add", async (
     int season,
     int week,
     AddFreeAgentRequest request,
-    IWaiverService waiverService,
+    WaiverService waiverService,
     CancellationToken cancellationToken) =>
 {
     try
@@ -1208,7 +1117,7 @@ app.MapPost("/api/league/free-agents/{season:int}/{week:int}/add", async (
     }
     catch (Exception ex)
     {
-        return CreateWaiverErrorResult(ex);
+        return CreateDomainErrorResult(ex);
     }
 });
 

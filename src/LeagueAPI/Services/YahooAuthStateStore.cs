@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresYahooAuthStateStore(
+public sealed class YahooAuthStateStore(
     IDbContextFactory<LeagueApiDbContext> dbContextFactory)
 {
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;

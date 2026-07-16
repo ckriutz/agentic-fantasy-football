@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresAgentProfileStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IAgentProfileReader, IAgentProfileWriter
+public sealed class AgentProfileStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IAgentProfileReader, IAgentProfileWriter
 {
     private const int MaxAgentIdLength = 100;
     private const int MaxConnectionLength = 50;

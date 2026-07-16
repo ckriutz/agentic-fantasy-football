@@ -1,37 +1,35 @@
 # LeagueAPI
 
-`LeagueAPI` is the Step 1 service for the fantasy football project. It pulls the NFL player catalog from the Sleeper API, stores it in PostgreSQL, tracks sync runs in the database, and exposes the stored data through both a normal HTTP API and an MCP endpoint.
+`LeagueAPI` stores fantasy football data in PostgreSQL, imports provider snapshots from Azure Blob Storage, synchronizes Yahoo data, and exposes the stored data through both an HTTP API and an MCP endpoint.
 
-The service is Postgres-only. You must provide a connection string via `DBConnectionString` — for local development this typically points at a Postgres docker container, but any reachable Postgres host works.
+The service is Postgres-only. Provide `DBConnectionString` for the database and `AZURE_STORAGE_CONNECTION_STRING` for provider snapshots.
 
 ## What it does
 
-- Downloads the Sleeper NFL players payload from:
-  - `https://api.sleeper.app/v1/players/nfl`
-- Persists players into the `players` table in Postgres
-- Records each sync attempt in the `sleeper_sync_runs` table
+- Imports Sleeper, SportsData, and FantasyPros snapshots from Azure Blob Storage
+- Persists and enriches player records in Postgres
+- Records provider snapshot import attempts in dedicated sync-run tables
 - Supports Yahoo OAuth bootstrap and token refresh for authenticated Fantasy Sports API access (tokens are stored in the `yahoo_oauth_state` table)
-- Supports manual Yahoo weekly stat syncs into the database for later scoring and reads
-- Avoids re-pulling Sleeper more than once per day unless you force a sync
-- Exposes player lookup and search endpoints over HTTP
-- Exposes the same player lookup capabilities plus Yahoo score reads as MCP tools on `/mcp`
+- Supports scheduled and manual Yahoo weekly stat syncs for scoring and reads
+- Exposes league, roster, waiver, player, schedule, and scoring operations over HTTP and MCP
 
 ## How it works
 
 The app has three main layers:
 
-1. **Sync layer**
-   - `NightlySleeperSyncService` runs as a hosted background service.
-   - It can sync once on startup and then again every day at the configured UTC hour.
-   - It calls Sleeper through `SleeperApiClient`.
+1. **Import and sync layer**
+   - Repository data-sync workflows collect Sleeper, SportsData, and FantasyPros data and upload snapshots to Azure Blob Storage.
+   - Snapshot import endpoints load the referenced blobs and persist normalized data.
+   - `NightlyYahooSyncService` optionally synchronizes Yahoo weekly stats on startup and at the configured UTC hour.
 
 2. **Persistence layer**
-   - `PostgresPlayerCatalogStore` persists players and sync-run metadata to Postgres.
-   - `PostgresYahooAuthStateStore` persists Yahoo OAuth tokens to Postgres.
+   - `PlayerCatalogStore` persists players and Sleeper sync-run metadata.
+   - Provider import services persist their own sync-run metadata.
+   - `YahooAuthStateStore` persists Yahoo OAuth tokens.
 
-3. **Read layer**
-   - The HTTP API exposes player queries backed by Postgres.
-   - MCP tools expose the same read functionality at `/mcp`.
+3. **API and tool layer**
+   - The HTTP API exposes operations backed by persisted data.
+   - MCP tools expose agent-facing league operations at `/mcp`.
 
 ## Configuration
 
@@ -43,6 +41,9 @@ The service respects these environment variables (prefer these over editing conf
 
 **Database:**
 - `DBConnectionString` - **Required.** PostgreSQL connection string. The service fails fast on startup if this is missing or empty.
+
+**Snapshot storage:**
+- `AZURE_STORAGE_CONNECTION_STRING` - **Required.** Azure Storage connection string for provider snapshot blobs.
 
 **Yahoo OAuth:**
 - `YahooClientId` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
@@ -62,22 +63,16 @@ The service respects these environment variables (prefer these over editing conf
 
 ```bash
 export DBConnectionString="postgresql://user:pass@localhost/leaguedb"
+export AZURE_STORAGE_CONNECTION_STRING="your-storage-connection-string"
 export YahooClientId="your-client-id"
 export YahooClientSecret="your-client-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
 dotnet run
 ```
 
-### Sleeper sync settings
+### Snapshot imports
 
-```json
-"SleeperSync": {
-  "Enabled": true,
-  "RunOnStartup": true,
-  "DailySyncHourUtc": 6,
-  "PlayersEndpoint": "https://api.sleeper.app/v1/players/nfl"
-}
-```
+Sleeper, SportsData, and FantasyPros imports are triggered through their HTTP endpoints with the Azure Blob container and blob names produced by the corresponding data-sync workflow. Configure `AZURE_STORAGE_CONNECTION_STRING` so the API can read those snapshots.
 
 ### Database connection
 
@@ -115,7 +110,10 @@ Set Yahoo client credentials with environment variables:
   "Enabled": true,
   "DefaultGameKey": "461",
   "DefaultSeason": 2025,
-  "PageSize": 25
+  "DefaultWeek": 1,
+  "PageSize": 25,
+  "DailySyncHourUtc": 6,
+  "RunOnStartup": false
 }
 ```
 
@@ -151,14 +149,20 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 
 - `YAHOO_REDIRECT_URI` - Override the configured redirect URI for Yahoo OAuth. Defaults to `https://localhost:5001/api/yahoo/auth/callback` in config. Yahoo requires HTTPS, so the API must be listening on an HTTPS URL (see the bootstrap steps).
 
+### Required runtime configuration
+
+- `DBConnectionString` - PostgreSQL connection string. The service fails fast without it.
+- `AZURE_STORAGE_CONNECTION_STRING` - Azure Storage connection string for provider snapshots. The service fails fast without it.
+
 ### Optional runtime configuration
 
 - `ASPNETCORE_URLS` - ASP.NET Core listening URL. Example: `http://127.0.0.1:5181`
-- `DBConnectionString` - PostgreSQL connection string (replaces config value if set). Required; the service fails fast without it.
 
 ### Example startup command
 
 ```bash
+export DBConnectionString="Host=localhost;Database=leaguedb;Username=postgres;Password=your-password"
+export AZURE_STORAGE_CONNECTION_STRING="your-storage-connection-string"
 export YahooClientId="your-app-id"
 export YahooClientSecret="your-app-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
@@ -170,11 +174,10 @@ dotnet run
 
 When the service starts:
 
-1. It validates that `ConnectionStrings:LeagueAPI` is configured and fails fast if it is not.
-2. If `SleeperSync:Enabled` is `true`, the hosted sync service starts.
-3. If `SleeperSync:RunOnStartup` is `true`, it attempts an immediate sync.
-4. If a successful sync already happened today, the sync is skipped.
-5. The service then waits until the next configured UTC sync hour and repeats the process.
+1. It validates `DBConnectionString` and `AZURE_STORAGE_CONNECTION_STRING` and fails fast if either is missing.
+2. If `YahooSync:Enabled` is `true`, the Yahoo hosted sync service starts.
+3. If `YahooSync:RunOnStartup` is `true`, it attempts an immediate Yahoo weekly sync.
+4. The hosted service waits until `YahooSync:DailySyncHourUtc` and repeats the Yahoo sync daily.
 
 ## HTTP API
 
@@ -237,17 +240,18 @@ Example:
 curl http://127.0.0.1:5181/api/sync/sleeper/latest
 ```
 
-### Trigger a sync manually
+### Import a Sleeper snapshot
 
-`POST /api/sync/sleeper?force=true`
+`POST /api/sync/sleeper`
 
-- `force=false` respects the once-per-day guard
-- `force=true` bypasses it
+The request identifies a snapshot already uploaded to Azure Blob Storage:
 
-Example:
-
-```bash
-curl -X POST "http://127.0.0.1:5181/api/sync/sleeper?force=true"
+```json
+{
+ "containerName": "provider-snapshots",
+ "blobName": "sleeper/players.json",
+ "retrievedAtUtc": "2026-07-16T12:00:00Z"
+}
 ```
 
 ### Get latest Yahoo sync status
@@ -400,7 +404,7 @@ Makes an authenticated Yahoo request to `game/nfl` using the stored OAuth tokens
 
 To fully test the Yahoo pipeline, you need all of these in place:
 
-1. a real PostgreSQL connection string in `ConnectionStrings:LeagueAPI`
+1. a real PostgreSQL connection string in `DBConnectionString`
 2. the EF migrations applied
 3. Yahoo OAuth credentials configured
 4. a bootstrapped Yahoo token set
@@ -408,7 +412,7 @@ To fully test the Yahoo pipeline, you need all of these in place:
 
 ### 1. Configure the database connection
 
-Set `ConnectionStrings:LeagueAPI` to a real Postgres database before running Yahoo syncs or Yahoo reads.
+Set `DBConnectionString` to a real Postgres database before running Yahoo syncs or Yahoo reads.
 
 ### 2. Apply the database migrations
 
@@ -554,7 +558,6 @@ Use your MCP client against `POST /mcp` and call:
 
 ### Expected current limitations
 
-- Yahoo OAuth bootstrap is still manual copy/paste of the redirect URL.
 - Scoring templates must currently be inserted manually.
 
 ## MCP endpoint
@@ -582,7 +585,7 @@ This route is meant for MCP clients, not normal browser navigation. A plain `GET
 ## Important implementation notes
 
 - Player reads are based on **stored data** in Postgres, not live calls to Sleeper.
-- The once-per-day guard is based on the last successful sync date in UTC, read from `sleeper_sync_runs`.
+- Snapshot imports avoid reprocessing the same provider blob and retrieval timestamp.
 - The full raw Sleeper payload for each player is preserved on the `players.RawJson` column so later ingestion changes can be made without losing the original data.
 - The model already includes `yahoo_id`, so cross-provider lookups are supported when Sleeper includes the mapping.
 - Yahoo OAuth tokens are stored in the `yahoo_oauth_state` Postgres table.
@@ -594,7 +597,7 @@ This route is meant for MCP clients, not normal browser navigation. A plain `GET
 The service is Postgres-backed. To use it:
 
 1. Have a Postgres database reachable (locally, the repo's `docker-compose.yml` starts one).
-2. Set `ConnectionStrings__LeagueAPI` to point at it.
-3. Run `dotnet ef database update` from `src/LeagueAPI` to apply migrations.
-4. Start the service. The Sleeper sync will populate the `players` table on first run.
-5. Query the HTTP API or MCP tools.
+2. Set `DBConnectionString` to point at it.
+3. Set `AZURE_STORAGE_CONNECTION_STRING` to the storage account containing provider snapshots.
+4. Run `dotnet ef database update` from `src/LeagueAPI` to apply migrations.
+5. Start the service, import provider snapshots, and query the HTTP API or MCP tools.

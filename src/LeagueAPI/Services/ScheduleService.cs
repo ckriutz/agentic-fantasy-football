@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresScheduleService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IAgentProfileReader agentProfileReader) : IScheduleService
+public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IAgentProfileReader agentProfileReader)
 {
     private const long ScheduleGenerationLockKey = 55001;
     private const int RequiredTeamCount = 10;

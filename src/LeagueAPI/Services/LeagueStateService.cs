@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresLeagueStateService(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : ILeagueStateService
+public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbContextFactory)
 {
     private static readonly HashSet<string> ValidPhases =
     [

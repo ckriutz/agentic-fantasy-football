@@ -5,10 +5,10 @@ using Npgsql;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IPlayerGameLockService playerGameLockService) : IRosterReader, IRosterWriter
+public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory, PlayerGameLockService playerGameLockService) : IRosterReader, IRosterWriter
 {
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
-    private readonly IPlayerGameLockService _playerGameLockService = playerGameLockService;
+    private readonly PlayerGameLockService _playerGameLockService = playerGameLockService;
 
     public async Task<IReadOnlyList<RosterPlayerResult>> GetRosterAsync(
         string agentId,
@@ -621,7 +621,7 @@ public sealed class PostgresRosterStore(IDbContextFactory<LeagueApiDbContext> db
 
     private static async Task<int> ResolveCurrentSeasonAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)
     {
-        var leagueState = await PostgresLeagueStateService.GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
+        var leagueState = await LeagueStateService.GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
         return leagueState.Season;
     }
 

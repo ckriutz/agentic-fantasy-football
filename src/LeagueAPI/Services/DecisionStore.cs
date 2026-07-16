@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresDecisionStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IDecisionReader, IDecisionWriter
+public sealed class DecisionStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory) : IDecisionReader, IDecisionWriter
 {
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
 

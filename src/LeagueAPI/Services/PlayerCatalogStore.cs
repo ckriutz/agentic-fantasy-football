@@ -4,12 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class PostgresPlayerCatalogStore(
+public sealed class PlayerCatalogStore(
     IDbContextFactory<LeagueApiDbContext> dbContextFactory,
-    ILogger<PostgresPlayerCatalogStore> logger) : IPlayerCatalogReader, IPlayerCatalogPersistence
+    ILogger<PlayerCatalogStore> logger) : IPlayerCatalogReader, IPlayerCatalogPersistence
 {
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
-    private readonly ILogger<PostgresPlayerCatalogStore> _logger = logger;
+    private readonly ILogger<PlayerCatalogStore> _logger = logger;
 
     public async Task<PlayerRecord?> GetBySleeperIdAsync(string sleeperPlayerId, CancellationToken cancellationToken)
     {

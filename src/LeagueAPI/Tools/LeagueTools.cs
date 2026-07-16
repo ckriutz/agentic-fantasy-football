@@ -6,9 +6,9 @@ using ModelContextProtocol.Server;
 namespace LeagueAPI.Tools;
 
 [McpServerToolType]
-public sealed class LeagueTools(IScheduleService scheduleService)
+public sealed class LeagueTools(ScheduleService scheduleService)
 {
-    private readonly IScheduleService _scheduleService = scheduleService;
+    private readonly ScheduleService _scheduleService = scheduleService;
 
     [McpServerTool, Description("Get an agent's matchup for a specific NFL week. Returns null when no matchup exists. Throws if the stored schedule is invalid, such as a matchup missing an opponent.")]
     public Task<WeeklyMatchupResult?> GetWeeklyMatchup(

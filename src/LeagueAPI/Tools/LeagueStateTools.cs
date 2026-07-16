@@ -6,9 +6,9 @@ using ModelContextProtocol.Server;
 namespace LeagueAPI.Tools;
 
 [McpServerToolType]
-public sealed class LeagueStateTools(ILeagueStateService leagueStateService)
+public sealed class LeagueStateTools(LeagueStateService leagueStateService)
 {
-    private readonly ILeagueStateService _leagueStateService = leagueStateService;
+    private readonly LeagueStateService _leagueStateService = leagueStateService;
 
     [McpServerTool, Description("Get the current persisted league state, including season, week, and league phase such as drafting, waiver_window, free_agency, games_locked, or complete.")]
     public Task<LeagueState> GetLeagueState()

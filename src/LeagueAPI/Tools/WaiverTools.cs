@@ -6,10 +6,10 @@ using System.ComponentModel;
 namespace LeagueAPI.Tools;
 
 [McpServerToolType]
-public sealed class WaiverTools(IWaiverService waiverService, ILeagueStateService leagueStateService)
+public sealed class WaiverTools(WaiverService waiverService, LeagueStateService leagueStateService)
 {
-    private readonly IWaiverService _waiverService = waiverService;
-    private readonly ILeagueStateService _leagueStateService = leagueStateService;
+    private readonly WaiverService _waiverService = waiverService;
+    private readonly LeagueStateService _leagueStateService = leagueStateService;
 
     [McpServerTool, Description("Get your complete waiver status for the current league week in one call. Uses the persisted league state to determine the current season and week. Returns the current league phase, your waiver priority position, whether you have pending claims, and enriched claim summaries including add/drop player details and outcomes.")]
     public async Task<MyWaiverStatusResult> GetMyWaiverStatus(

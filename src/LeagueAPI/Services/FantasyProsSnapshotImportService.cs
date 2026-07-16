@@ -112,22 +112,7 @@ public sealed class FantasyProsSnapshotImportService(BlobServiceClient blobServi
                 await MarkFailedAsync(syncRun.SyncRunId, "The FantasyPros snapshot import was canceled.");
                 throw;
             }
-            catch (RequestFailedException exception)
-            {
-                await MarkFailedAsync(syncRun.SyncRunId, exception.Message);
-                throw;
-            }
-            catch (JsonException exception)
-            {
-                await MarkFailedAsync(syncRun.SyncRunId, exception.Message);
-                throw;
-            }
-            catch (InvalidDataException exception)
-            {
-                await MarkFailedAsync(syncRun.SyncRunId, exception.Message);
-                throw;
-            }
-            catch (DbUpdateException exception)
+            catch (Exception exception) when (exception is RequestFailedException or JsonException or InvalidDataException or DbUpdateException)
             {
                 await MarkFailedAsync(syncRun.SyncRunId, exception.Message);
                 throw;
