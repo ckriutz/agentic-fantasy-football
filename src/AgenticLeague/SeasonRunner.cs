@@ -103,8 +103,14 @@ public class SeasonRunner
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, completedWeek, "Weekly Reflection", response, $"Weekly Reflection for week {completedWeek}", _logger);
             }
 
-            // Then we will prompt the agents to make waiver claims if they want to.
-            var prompt = $"Today is Tuesday, a brand-new week. Use the `weekly-player-management` skill to make any waiver claims for season {_leagueState.Season} week {week}.";
+            // Then we will prompt the agents to evaluate whether they should make waiver claims.
+            var prompt =
+            $"""
+            Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
+            Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
+            Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
+            Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
+            """;
             foreach(var agent in _agents)
             {
                 var response = await agent.RunAsync(prompt);
@@ -128,7 +134,13 @@ public class SeasonRunner
                 {
                     // Then we will set a prompt for the agents to let them know the waiver claims were successful and to update their rosters accordingly.
                     // This prompt will not ask the agent to make more waiver claims, it is only to update their roster based on the results of the waiver claims.
-                    var prompt = $"Today is Wednesday, and all the waiver wire claims have been processed. First use the `waiver-results-review` skill to check the results of your waiver claims. Then use the `roster-management` skill to update your lineup for season {_leagueState.Season} week {_leagueState.Week}.";
+                    var prompt =
+                    $"""
+                    Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
+                    Use the `waiver-result-review` skill to review your waiver outcomes.
+                    Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
+                    Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                    """;
                     foreach(var agent in _agents)
                     {
                         var response = await agent.RunAsync(prompt);
@@ -148,9 +160,9 @@ public class SeasonRunner
                 // TODO: Wire in a prompt for free agency moves, as well as to remind the agents to set their lineups for the week if they haven't already, since some games start on Thursday.
                 var prompt =
                 $"""
-                Today is Wednesday We are in season {_leagueState.Season} week {_leagueState.Week}.
-                We are now in the free-agency phase. Use the `weekly-player-management` skill to (optionally) update your lineup for season {_leagueState.Season} week {_leagueState.Week}.
-                When you're done, use the `roster-management` skill to update your lineup for season {_leagueState.Season} week {_leagueState.Week}.
+                Today is Wednesday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                We are now in the free-agency phase. Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
+                Then use the `roster-management` skill to evaluate and optimize your lineup for season {_leagueState.Season} week {_leagueState.Week}.
                 Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
                 """;
                 foreach(var agent in _agents)
@@ -186,6 +198,7 @@ public class SeasonRunner
                 Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
                 We are still in the free-agency phase, however some players may have games today.
                 This is your chance to make sure these players are set correctly for their games today.
+                Remember, all your starting roster slots must be filled.
                 Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
                 When you're done, use the `roster-management` skill to update your lineup.
                 Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
@@ -288,6 +301,7 @@ public class SeasonRunner
             Today is Sunday. We are in season {_leagueState.Season} week {_leagueState.Week}.
             There are games starting today, so this is your last chance to set your lineups for the Sunday games.
             Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
+            This is a lineup-only run. Do not add, drop, claim, or trade players.
             Use the `roster-management` skill to update your lineup.
             Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
             """;
@@ -317,6 +331,7 @@ public class SeasonRunner
             Most of the games for the week have already been played, but there are still games on Monday.
             This is your last chance to set your lineups for the Monday games.
             Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
+            This is a lineup-only run. Do not add, drop, claim, or trade players.
             Use the `roster-management` skill to update your lineup.
             Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
             """;
@@ -395,16 +410,6 @@ public class SeasonRunner
 
         _logger.LogInformation("Finalized matchups for season {Season}, week {Week}.", season, week);
         return true;
-    }
-
-
-    private static string FormatWaiverPlayer(WaiverPlayerSummary player)
-    {
-        var name = string.IsNullOrWhiteSpace(player.FullName) ? player.SleeperPlayerId : player.FullName;
-        var teamAndPosition = string.Join(" ", new[] { player.Team, player.Position }.Where(value => !string.IsNullOrWhiteSpace(value)));
-        return string.IsNullOrWhiteSpace(teamAndPosition)
-            ? $"{name} ({player.SleeperPlayerId})"
-            : $"{name} ({player.SleeperPlayerId}, {teamAndPosition})";
     }
 
     private sealed record WaiverAgentSummary(

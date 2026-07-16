@@ -69,9 +69,7 @@ Primary tools for this skill: `GetLeagueState` → `GetMyRoster` → repeated `S
 - Only if many individual `SetPlayerSlot` calls fail for non-judgment reasons may you consider it — and you must immediately re-read the roster and correct byes, outs, and empty slots with `SetPlayerSlot`.
 
 Preferred decision writing:
-
-1. If a `LogDecision` / decision-logging tool is available, call it (see [decision log format](references/decision-log-format.md)).
-2. Always end with the **required decision summary** below so the host can persist Type / Action / Reasoning.
+- Always end with the **required decision summary** below so the host can persist Type / Action / Reasoning.
 
 ## Workflow
 
@@ -106,7 +104,7 @@ For each player, inspect:
 
 Count how many of the nine starter slots are currently occupied: `QB1`, `RB1`, `RB2`, `WR1`, `WR2`, `TE1`, `FLEX1`, `K1`, `DEF1`.
 
-If **any** of those slots is empty (common case: everyone is on `BN`):
+If **any** of those slots is empty:
 
 1. You are in **full set** mode, not “bench one player” mode.
 2. Build a complete target lineup using the rubric.

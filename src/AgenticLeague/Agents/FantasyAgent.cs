@@ -164,10 +164,7 @@ public class FantasyAgent
         agent = new AIAgentBuilder(agent)
         .Use(async (innerAgent, context, next, cancellationToken) =>
         {
-            _logger.LogInformation(
-                "→ {Function} args={Args}",
-                context.Function.Name,
-                context.Arguments);
+            _logger.LogInformation("{innerAgent} → {Function} args={Args}", innerAgent, context.Function.Name, context.Arguments);
 
             var result = await next(context, cancellationToken);
 
