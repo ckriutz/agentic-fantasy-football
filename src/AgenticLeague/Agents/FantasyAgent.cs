@@ -161,17 +161,19 @@ public class FantasyAgent
         });
 
         #pragma warning disable MAAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+        var agentId = aProfile.AgentId;
         agent = new AIAgentBuilder(agent)
         .Use(async (innerAgent, context, next, cancellationToken) =>
         {
             _logger.LogInformation(
-                "→ {Function} args={Args}",
+                "Agent {AgentId} → {Function} args={Args}",
+                agentId,
                 context.Function.Name,
                 context.Arguments);
 
             var result = await next(context, cancellationToken);
 
-            _logger.LogInformation("← {Function}", context.Function.Name);
+            _logger.LogInformation("Agent {AgentId} ← {Function}", agentId, context.Function.Name);
             return result;
         })
         .UseToolApproval(new ToolApprovalAgentOptions
