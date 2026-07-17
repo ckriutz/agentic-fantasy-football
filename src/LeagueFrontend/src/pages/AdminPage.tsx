@@ -64,6 +64,8 @@ type SportsDataSyncRun = {
   errorMessage: string | null
 }
 
+type FantasyProsSyncRun = SportsDataSyncRun
+
 function timeAgo(utc: string | null) {
   if (!utc) return null
   const ms = Date.now() - new Date(utc).getTime()
@@ -431,20 +433,24 @@ function DataStatusCard() {
   const [state, setState] = useState<FetchState>('loading')
   const [sleeper, setSleeper] = useState<SleeperSyncState | null>(null)
   const [sportsData, setSportsData] = useState<SportsDataSyncRun | null>(null)
+  const [fantasyPros, setFantasyPros] = useState<FantasyProsSyncRun | null>(null)
 
   const checkData = useCallback(async () => {
     setState('loading')
     try {
-      const [sleeperRes, sportsDataRes] = await Promise.all([
+      const [sleeperRes, sportsDataRes, fantasyProsRes] = await Promise.all([
         fetch(`${apiBaseUrl}/api/sync/sleeper/latest`),
         fetch(`${apiBaseUrl}/api/sync/sportsdata/latest`),
+        fetch(`${apiBaseUrl}/api/sync/fantasypros/latest`),
       ])
 
       const sleeperData = sleeperRes.ok ? (await sleeperRes.json()) as SleeperSyncState : null
       const sportsDataData = sportsDataRes.ok ? (await sportsDataRes.json()) as SportsDataSyncRun : null
+      const fantasyProsData = fantasyProsRes.ok ? (await fantasyProsRes.json()) as FantasyProsSyncRun : null
 
       setSleeper(sleeperData)
       setSportsData(sportsDataData)
+      setFantasyPros(fantasyProsData)
       setState('success')
     } catch {
       setState('error')
@@ -502,6 +508,13 @@ function DataStatusCard() {
               completedAt={sportsData?.completedAtUtc ?? null}
               recordCount={sportsData?.recordCount ?? null}
               errorMessage={sportsData?.errorMessage ?? null}
+            />
+            <SyncRow
+              label="FantasyPros"
+              status={fantasyPros?.status ?? null}
+              completedAt={fantasyPros?.completedAtUtc ?? null}
+              recordCount={fantasyPros?.recordCount ?? null}
+              errorMessage={fantasyPros?.errorMessage ?? null}
             />
           </>
         )}

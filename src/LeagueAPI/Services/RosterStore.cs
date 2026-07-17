@@ -12,9 +12,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly PlayerGameLockService _playerGameLockService = playerGameLockService;
 
-    public async Task<IReadOnlyList<RosterPlayerResult>> GetRosterAsync(
-        string agentId,
-        CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RosterPlayerResult>> GetRosterAsync(string agentId, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeAgentId(agentId);
 
@@ -36,13 +34,9 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             })
             .ToListAsync(cancellationToken);
 
-        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(
-            dbContext,
-            results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
+        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync( dbContext, results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
+
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
 
         return results
             .Select(result => CreateRosterPlayerResult(
@@ -58,18 +52,13 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .ToList();
     }
 
-    public async Task<IReadOnlyList<RosterPlayerResult>> QueryPlayersAsync(
-        PlayerQuery query,
-        CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RosterPlayerResult>> QueryPlayersAsync(PlayerQuery query, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var normalizedLimit = PlayerCatalogQueryBuilder.NormalizeLimit(query.Limit);
-        var filteredPlayers = PlayerCatalogQueryBuilder.ApplyFilters(
-            dbContext.Players.AsNoTracking().Where(entity => entity.Active),
-            query);
-        var orderedPlayers = PlayerCatalogQueryBuilder.ApplyOrdering(filteredPlayers, query)
-            .ThenBy(entity => entity.SleeperPlayerId);
+        var filteredPlayers = PlayerCatalogQueryBuilder.ApplyFilters(dbContext.Players.AsNoTracking().Where(entity => entity.Active), query);
+        var orderedPlayers = PlayerCatalogQueryBuilder.ApplyOrdering(filteredPlayers, query).ThenBy(entity => entity.SleeperPlayerId);
 
         var results = await (
             from player in orderedPlayers
@@ -85,9 +74,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
 
         return results
             .Select(result => MapPlayerResult(
@@ -97,9 +84,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .ToList();
     }
 
-    public async Task<IReadOnlyList<RosterPlayerResult>> GetAvailablePlayersAsync(
-        PlayerQuery query,
-        CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<RosterPlayerResult>> GetAvailablePlayersAsync(PlayerQuery query, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -117,9 +102,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             select player)
             .ToListAsync(cancellationToken);
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            players.Select(player => player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(players.Select(player => player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
 
         return players
             .Where(player => RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
@@ -141,9 +124,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .ToList();
     }
 
-    public async Task<RosterPlayerResult?> GetPlayerAvailabilityAsync(
-        string sleeperPlayerId,
-        CancellationToken cancellationToken)
+    public async Task<RosterPlayerResult?> GetPlayerAvailabilityAsync(string sleeperPlayerId, CancellationToken cancellationToken)
     {
         var normalizedSleeperPlayerId = NormalizeSleeperPlayerId(sleeperPlayerId);
 
@@ -163,17 +144,11 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
                 assignment != null ? assignment.SlotType : null))
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (result is null)
-            return null;
+        if (result is null) { return null; }
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            [result.Player.SleeperPlayerId],
-            cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync([result.Player.SleeperPlayerId], cancellationToken);
 
-        return MapPlayerResult(
-            result,
-            RosterPlayerResult.EmptyWeeklyPoints,
-            GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId));
+        return MapPlayerResult(result, RosterPlayerResult.EmptyWeeklyPoints, GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId));
     }
 
     public async Task<RosterPlayerResult> AddPlayerToRosterAsync(

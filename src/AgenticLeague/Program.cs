@@ -69,7 +69,10 @@ logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Cou
 await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
 // Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
-//var testAgents = agents.Where(a => a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
+logger.LogInformation("testing.");
+//var testAgents = agents.Where(a => a.GetAgentName() == "player-03" || a.GetAgentName() == "player-09").ToList();
+//var testAgent = agents.First(agent => agent.GetAgentName() == "player-03");
+
 await RunSeasonAsync(agents, leagueState.Phase, host, _http, leagueState);
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)

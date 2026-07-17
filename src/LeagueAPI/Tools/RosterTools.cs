@@ -19,29 +19,17 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
     }
 
     [McpServerTool, Description("Add a player to an agent roster. Fails if another agent already owns the player.")]
-    public async Task<RosterToolPlayerResult> AddPlayerToRoster(
-        [Description("The agent ID, such as player-01.")] string agentId,
-        [Description("The Sleeper player ID.")] string sleeperPlayerId,
-        [Description("How the player was acquired, such as manual, draft, waiver, or trade.")] string acquisitionSource = "manual")
+    public async Task<RosterToolPlayerResult> AddPlayerToRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId, [Description("How the player was acquired, such as manual, draft, waiver, or trade.")] string acquisitionSource = "manual")
     {
-        var player = await _rosterWriter.AddPlayerToRosterAsync(
-            agentId,
-            sleeperPlayerId,
-            acquisitionSource,
-            CancellationToken.None);
+        var player = await _rosterWriter.AddPlayerToRosterAsync(agentId, sleeperPlayerId, acquisitionSource, CancellationToken.None);
 
         return RosterToolPlayerResult.FromRosterPlayerResult(player);
     }
 
     [McpServerTool, Description("Remove a player from an agent roster.")]
-    public async Task<RosterToolPlayerResult> RemovePlayerFromRoster(
-        [Description("The agent ID, such as player-01.")] string agentId,
-        [Description("The Sleeper player ID.")] string sleeperPlayerId)
+    public async Task<RosterToolPlayerResult> RemovePlayerFromRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId)
     {
-        var player = await _rosterWriter.RemovePlayerFromRosterAsync(
-            agentId,
-            sleeperPlayerId,
-            CancellationToken.None);
+        var player = await _rosterWriter.RemovePlayerFromRosterAsync(agentId, sleeperPlayerId, CancellationToken.None);
 
         return RosterToolPlayerResult.FromRosterPlayerResult(player);
     }

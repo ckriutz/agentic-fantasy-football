@@ -137,6 +137,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/sleeper (POST: containerName, blobName, retrievedAtUtc)",
         "/api/sync/sportsdata/latest",
         "/api/sync/sportsdata (POST: containerName, blobName, retrievedAtUtc)",
+        "/api/sync/fantasypros/latest",
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/yahoo/latest",
         "/api/sync/yahoo/weekly?week=&season=&gameKey=&force=",
@@ -746,6 +747,12 @@ app.MapPost("/api/sync/fantasypros", async (FantasyProsSnapshotImportRequest req
     {
         return Results.NotFound(new { error = exception.Message });
     }
+});
+
+app.MapGet("/api/sync/fantasypros/latest", async (FantasyProsSnapshotImportService fantasyProsSnapshotImportService, CancellationToken cancellationToken) =>
+{
+    var state = await fantasyProsSnapshotImportService.GetLatestSyncRunAsync(cancellationToken);
+    return state is null ? Results.NotFound() : Results.Ok(state);
 });
 
 app.MapGet("/api/sync/yahoo/latest", async (

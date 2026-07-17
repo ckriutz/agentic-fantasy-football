@@ -20,6 +20,15 @@ public sealed class FantasyProsSnapshotImportService(BlobServiceClient blobServi
     private readonly ILogger<FantasyProsSnapshotImportService> _logger = logger;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
+    public async Task<FantasyProsSyncRun?> GetLatestSyncRunAsync(CancellationToken cancellationToken)
+    {
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.FantasyProsSyncRuns
+            .AsNoTracking()
+            .OrderByDescending(run => run.StartedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     /// <summary>
     /// Imports one FantasyPros snapshot from Azure Blob Storage.
     /// </summary>

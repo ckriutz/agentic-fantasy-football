@@ -37,7 +37,8 @@ const playerColumns: ColumnDef<Player, unknown>[] = [
   },
   { accessorKey: 'team', header: 'Team' },
   { accessorKey: 'position', header: 'Position' },
-  { accessorKey: 'searchRank', header: 'Rank' },
+  { accessorKey: 'searchRank', header: 'Search Rank' },
+  { accessorKey: 'rankAverage', header: 'Pros Rank Average' },
   {
     id: 'status',
     header: 'Status',

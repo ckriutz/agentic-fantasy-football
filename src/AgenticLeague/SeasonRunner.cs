@@ -134,15 +134,16 @@ public class SeasonRunner
                 {
                     // Then we will set a prompt for the agents to let them know the waiver claims were successful and to update their rosters accordingly.
                     // This prompt will not ask the agent to make more waiver claims, it is only to update their roster based on the results of the waiver claims.
-                    var prompt =
-                    $"""
-                    Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
-                    Use the `waiver-result-review` skill to review your waiver outcomes.
-                    Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
-                    Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-                    """;
                     foreach(var agent in _agents)
                     {
+                        var prompt =
+                        $"""
+                        Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
+                        You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                        Use the `waiver-result-review` skill to review your waiver outcomes.
+                        Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
+                        Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                        """;
                         var response = await agent.RunAsync(prompt);
                         await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster post Waiver", _logger);
                     }
@@ -156,19 +157,19 @@ public class SeasonRunner
             }
             if (_leagueState?.Phase == "free_agency")
             {
-                // If we want to now, the players can start making roster moves outside of the waiver wire, and then we can prompt the agents to make any roster moves they want to make for the week.
-                // TODO: Wire in a prompt for free agency moves, as well as to remind the agents to set their lineups for the week if they haven't already, since some games start on Thursday.
-                var prompt =
-                $"""
-                Today is Wednesday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                We are now in the free-agency phase. Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                Then use the `roster-management` skill to evaluate and optimize your lineup for season {_leagueState.Season} week {_leagueState.Week}.
-                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-                """;
                 foreach(var agent in _agents)
                 {
+                    var agentId = agent.GetAgentName()!;
+                    var prompt =
+                    $"""
+                    Today is Wednesday of season {_leagueState.Season}, week {_leagueState.Week}, and the league is in free agency.
+                    You are {agentId}. Use this exact agent ID for every tool call.
+                    Use only the `weekly-player-management` skill to decide whether one meaningful free-agent add/drop would improve your roster.
+                    A no-change decision is valid. Do not modify agent profiles or bootstrap status.
+                    Return the skill's required decision summary as visible text, even when no change is made.
+                    """;
                     var response = await agent.RunAsync(prompt);
-                    await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+                    await DecisionLogger.LogDecisionAsync(agentId, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
                 }
             }
 
