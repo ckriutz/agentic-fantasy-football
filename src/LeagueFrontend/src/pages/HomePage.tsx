@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AgentAvatar from '@/components/AgentAvatar'
+import { apiBaseUrl } from '@/lib/config'
 
 type LeagueState = {
   season: number
@@ -100,7 +101,7 @@ function MatchupsCard({
         setIsLoading(true)
         setError(null)
         const response = await fetch(
-          `http://localhost:5000/api/league/schedule/${week}`,
+          `${apiBaseUrl}/api/league/schedule/${week}`,
           { signal: controller.signal },
         )
         if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -166,25 +167,27 @@ function MatchupsCard({
               const homeWinning = m.homePoints > m.awayPoints
               const awayWinning = m.awayPoints > m.homePoints
               return (
-                <li
-                  key={m.matchupId}
-                  className="flex items-center gap-3 rounded-lg border border-white/10 bg-slate-950 px-3 py-2"
-                >
-                  <MatchupSide
-                    agent={homeAgent}
-                    points={m.homePoints}
-                    isWinning={homeWinning}
-                    isLosing={awayWinning}
-                  />
-                  <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                    vs
-                  </span>
-                  <MatchupSide
-                    agent={awayAgent}
-                    points={m.awayPoints}
-                    isWinning={awayWinning}
-                    isLosing={homeWinning}
-                  />
+                <li key={m.matchupId}>
+                  <Link
+                    to={`/matchups/${m.matchupId}`}
+                    className="flex items-center gap-3 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 transition-colors hover:border-emerald-300/40 hover:bg-slate-900"
+                  >
+                    <MatchupSide
+                      agent={homeAgent}
+                      points={m.homePoints}
+                      isWinning={homeWinning}
+                      isLosing={awayWinning}
+                    />
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                      vs
+                    </span>
+                    <MatchupSide
+                      agent={awayAgent}
+                      points={m.awayPoints}
+                      isWinning={awayWinning}
+                      isLosing={homeWinning}
+                    />
+                  </Link>
                 </li>
               )
             })}
@@ -212,7 +215,7 @@ function HomePage() {
       try {
         setIsLoadingLeagueState(true)
         setLeagueStateError(null)
-        const response = await fetch('http://localhost:5000/api/league/state', {
+        const response = await fetch(`${apiBaseUrl}/api/league/state`, {
           signal: controller.signal,
         })
         if (!response.ok) {
@@ -242,8 +245,8 @@ function HomePage() {
         setIsLoadingAgents(true)
         setAgentsError(null)
         const [agentsResponse, standingsResponse] = await Promise.all([
-          fetch('http://localhost:5000/api/agent-profiles/', { signal: controller.signal }),
-          fetch('http://localhost:5000/api/league/standings', { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=false`, { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/league/standings`, { signal: controller.signal }),
         ])
         if (!agentsResponse.ok || !standingsResponse.ok) {
           throw new Error(

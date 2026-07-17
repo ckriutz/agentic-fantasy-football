@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2, Trophy } from 'lucide-react'
+import { Loader2, Menu, Trophy, X } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { cn } from '@/lib/utils'
@@ -63,6 +63,8 @@ function ApiStatusButton() {
 }
 
 function Layout() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-50">
       <header className="border-b border-white/10 bg-slate-950/95">
@@ -96,7 +98,46 @@ function Layout() {
             ))}
             <ApiStatusButton />
           </nav>
+          <button
+            type="button"
+            onClick={() => setIsMobileMenuOpen((isOpen) => !isOpen)}
+            className="inline-flex size-9 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-300 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-primary-navigation"
+            aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          >
+            {isMobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
         </div>
+        {isMobileMenuOpen && (
+          <nav
+            id="mobile-primary-navigation"
+            aria-label="Mobile primary"
+            className="border-t border-white/10 px-6 py-3 md:hidden"
+          >
+            <div className="flex flex-col gap-1">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex h-10 items-center rounded-md px-3 text-sm font-medium transition-colors hover:bg-white/5 hover:text-white',
+                      isActive ? 'bg-white/5 text-white' : 'text-slate-400',
+                    )
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+              <div className="mt-2 border-t border-white/10 pt-3">
+                <ApiStatusButton />
+              </div>
+            </div>
+          </nav>
+        )}
       </header>
 
       <Outlet />
