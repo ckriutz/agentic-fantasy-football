@@ -487,6 +487,11 @@ static IResult CreateRosterErrorResult(Exception exception)
 {
     return exception switch
     {
+        RosterMoveValidationException validationException when validationException.FailureType is RosterMoveFailureType.InvalidSlotType or RosterMoveFailureType.IneligibleSlot
+            => Results.BadRequest(new { error = validationException.Message }),
+        RosterMoveValidationException validationException when validationException.FailureType == RosterMoveFailureType.PlayerNotOnRoster
+            => Results.NotFound(new { error = validationException.Message }),
+        RosterMoveValidationException validationException => Results.Conflict(new { error = validationException.Message }),
         ArgumentException argumentException => Results.BadRequest(new { error = argumentException.Message }),
         RosterPlayerNotFoundException notFoundException => Results.NotFound(new { error = notFoundException.Message }),
         RosterConflictException conflictException => Results.Conflict(new { error = conflictException.Message }),
@@ -651,15 +656,7 @@ app.MapPut("/api/rosters/{agentId}/players/{sleeperPlayerId}/slot", async (
 
         return Results.Ok(player);
     }
-    catch (ArgumentException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterPlayerNotFoundException ex)
-    {
-        return CreateRosterErrorResult(ex);
-    }
-    catch (RosterConflictException ex)
+    catch (Exception ex) when (ex is ArgumentException or RosterMoveValidationException or RosterPlayerNotFoundException or RosterConflictException)
     {
         return CreateRosterErrorResult(ex);
     }
