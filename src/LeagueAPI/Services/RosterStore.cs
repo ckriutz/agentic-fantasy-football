@@ -7,6 +7,8 @@ namespace LeagueAPI.Services;
 
 public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextFactory, PlayerGameLockService playerGameLockService) : IRosterReader, IRosterWriter
 {
+    private const string RosterSlotTypeUniqueConstraintName = "IX_roster_assignments_AgentId_SlotType";
+
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly PlayerGameLockService _playerGameLockService = playerGameLockService;
 
@@ -339,9 +341,14 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
         if (!RosterSlotRules.IsKnownSlotType(normalizedSlotType))
         {
-            throw new ArgumentException(
+            throw new RosterMoveValidationException(
+                RosterMoveFailureType.InvalidSlotType,
                 $"'{normalizedSlotType}' is not a valid slot type. Valid starter slots are: {string.Join(", ", RosterSlotRules.StarterSlots)}. Use '{RosterSlotRules.BenchSlot}' for bench.",
-                nameof(slotType));
+                normalizedSleeperPlayerId,
+                normalizedSlotType)
+            {
+                ValidSlotTypes = RosterSlotRules.AllSlotTypes
+            };
         }
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -351,14 +358,23 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
         if (targetAssignment is null)
         {
-            throw new RosterPlayerNotFoundException(
-                $"Player '{normalizedSleeperPlayerId}' is not currently on a roster.");
+            throw new RosterMoveValidationException(
+                RosterMoveFailureType.PlayerNotOnRoster,
+                $"Player '{normalizedSleeperPlayerId}' is not currently on a roster.",
+                normalizedSleeperPlayerId,
+                normalizedSlotType);
         }
 
         if (!string.Equals(targetAssignment.AgentId, normalizedAgentId, StringComparison.Ordinal))
         {
-            throw new RosterConflictException(
-                $"Player '{normalizedSleeperPlayerId}' is owned by agent '{targetAssignment.AgentId}', not '{normalizedAgentId}'.");
+            throw new RosterMoveValidationException(
+                RosterMoveFailureType.PlayerOwnedByOtherAgent,
+                $"Player '{normalizedSleeperPlayerId}' is owned by agent '{targetAssignment.AgentId}', not '{normalizedAgentId}'.",
+                normalizedSleeperPlayerId,
+                normalizedSlotType)
+            {
+                OwnerAgentId = targetAssignment.AgentId
+            };
         }
 
         var player = await dbContext.Players
@@ -386,10 +402,19 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             var eligibleDesc = eligible.Count > 0
                 ? string.Join(", ", eligible)
                 : RosterSlotRules.BenchSlot;
-            throw new ArgumentException(
+            throw new RosterMoveValidationException(
+                RosterMoveFailureType.IneligibleSlot,
                 $"Player '{player.FullName ?? normalizedSleeperPlayerId}' (position: {player.Position}) cannot be placed in slot '{normalizedSlotType}'. Eligible slots: {eligibleDesc}, {RosterSlotRules.BenchSlot}.",
-                nameof(slotType));
+                normalizedSleeperPlayerId,
+                normalizedSlotType)
+            {
+                CurrentSlotType = currentSlotType,
+                PlayerPosition = player.Position,
+                EligibleSlotTypes = [.. eligible, RosterSlotRules.BenchSlot]
+            };
         }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         if (RosterSlotRules.IsStarterSlot(normalizedSlotType))
         {
@@ -403,6 +428,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             if (occupyingAssignment is not null)
             {
                 occupyingAssignment.SlotType = RosterSlotRules.BenchSlot;
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -410,11 +436,14 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        catch (DbUpdateException ex) when (IsRosterSlotTypeUniqueViolation(ex))
         {
-            throw new RosterConflictException(
-                $"Slot '{normalizedSlotType}' is already occupied on roster '{normalizedAgentId}'.",
+            throw new RosterSlotConflictException(
+                $"Slot '{normalizedSlotType}' is already occupied on roster '{normalizedAgentId}' due to a concurrent lineup update.",
+                normalizedSleeperPlayerId,
+                normalizedSlotType,
                 ex);
         }
 
@@ -605,8 +634,16 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             return;
         }
 
-        throw new RosterConflictException(
-            $"Player '{playerDisplayName}' ({sleeperPlayerId}) cannot move from slot '{currentSlotType}' to '{targetSlotType}'. {lockStatus.LineupMoveLockReason ?? "Lineup moves are locked for this player."}");
+        var lockReason = lockStatus.LineupMoveLockReason ?? "Lineup moves are locked for this player.";
+        throw new RosterMoveValidationException(
+            RosterMoveFailureType.LineupLocked,
+            $"Player '{playerDisplayName}' ({sleeperPlayerId}) cannot move from slot '{currentSlotType}' to '{targetSlotType}'. {lockReason}",
+            sleeperPlayerId,
+            targetSlotType)
+        {
+            CurrentSlotType = currentSlotType,
+            LockReason = lockReason
+        };
     }
 
     private static bool IsBenchStarterTransition(string currentSlotType, string targetSlotType)
@@ -673,6 +710,15 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
     {
         return exception.InnerException is PostgresException postgresException
                && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
+    }
+
+    private static bool IsRosterSlotTypeUniqueViolation(DbUpdateException exception)
+    {
+        return exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation,
+            ConstraintName: RosterSlotTypeUniqueConstraintName
+        };
     }
 
     private static string NormalizeSleeperPlayerId(string sleeperPlayerId)

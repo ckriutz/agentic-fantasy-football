@@ -267,6 +267,11 @@ static IResult CreateDomainErrorResult(Exception exception)
 {
     return exception switch
     {
+        RosterMoveValidationException ex when ex.FailureType is RosterMoveFailureType.InvalidSlotType or RosterMoveFailureType.IneligibleSlot
+            => Results.BadRequest(new { error = ex.Message }),
+        RosterMoveValidationException ex when ex.FailureType == RosterMoveFailureType.PlayerNotOnRoster
+            => Results.NotFound(new { error = ex.Message }),
+        RosterMoveValidationException ex => Results.Conflict(new { error = ex.Message }),
         ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
         RosterPlayerNotFoundException ex => Results.NotFound(new { error = ex.Message }),
         RosterConflictException ex => Results.Conflict(new { error = ex.Message }),
@@ -612,7 +617,7 @@ app.MapPut("/api/rosters/{agentId}/players/{sleeperPlayerId}/slot", async (
 
         return Results.Ok(player);
     }
-    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
+    catch (Exception ex) when (ex is ArgumentException or RosterMoveValidationException or RosterPlayerNotFoundException or RosterConflictException)
     {
         return CreateDomainErrorResult(ex);
     }
