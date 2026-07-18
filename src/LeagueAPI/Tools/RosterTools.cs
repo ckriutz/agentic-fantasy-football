@@ -18,20 +18,104 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         return roster.Select(RosterToolPlayerResult.FromRosterPlayerResult).ToList();
     }
 
-    [McpServerTool, Description("Add a player to an agent roster. Fails if another agent already owns the player.")]
-    public async Task<RosterToolPlayerResult> AddPlayerToRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId, [Description("How the player was acquired, such as manual, draft, waiver, or trade.")] string acquisitionSource = "manual")
+    [McpServerTool(UseStructuredContent = true), Description("Add a player to an agent roster. Check ok in the response; when false, use error details and follow error.nextStep.")]
+    public async Task<ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>> AddPlayerToRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId, [Description("How the player was acquired, such as manual, draft, waiver, or trade.")] string acquisitionSource = "manual")
     {
-        var player = await _rosterWriter.AddPlayerToRosterAsync(agentId, sleeperPlayerId, acquisitionSource, CancellationToken.None);
-
-        return RosterToolPlayerResult.FromRosterPlayerResult(player);
+        try
+        {
+            var player = await _rosterWriter.AddPlayerToRosterAsync(agentId, sleeperPlayerId, acquisitionSource, CancellationToken.None);
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Success(RosterToolPlayerResult.FromRosterPlayerResult(player));
+        }
+        catch (RosterPlayerOwnershipConflictException exception)
+        {
+            var alreadyOnRequestedRoster = string.Equals(exception.RequestedAgentId, exception.OwnerAgentId, StringComparison.Ordinal);
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                alreadyOnRequestedRoster ? "player_already_on_roster" : exception.OwnerAgentId is null ? "player_no_longer_available" : "player_owned_by_other_agent",
+                exception.Message,
+                CreateRosterOperationErrorDetails(exception.RequestedAgentId, exception.SleeperPlayerId, acquisitionSource, exception.OwnerAgentId),
+                alreadyOnRequestedRoster
+                    ? "Do not add the player again. Call GetMyRoster to inspect the current roster."
+                    : "Call GetPlayerAvailability to refresh the player's ownership, then choose an available player.");
+        }
+        catch (RosterFullException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "roster_full",
+                exception.Message,
+                new RosterOperationErrorDetails
+                {
+                    AgentId = exception.AgentId,
+                    SleeperPlayerId = sleeperPlayerId,
+                    AcquisitionSource = acquisitionSource,
+                    CurrentRosterSize = exception.CurrentRosterSize,
+                    MaxRosterSize = exception.MaxRosterSize
+                },
+                "Remove a player from this roster, then retry the add.");
+        }
+        catch (RosterPlayerIneligibleException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "player_ineligible",
+                exception.Message,
+                new RosterOperationErrorDetails
+                {
+                    AgentId = agentId,
+                    SleeperPlayerId = exception.SleeperPlayerId,
+                    PlayerPosition = exception.PlayerPosition,
+                    AcquisitionSource = acquisitionSource
+                },
+                "Choose an active player eligible for this league's roster slots.");
+        }
+        catch (RosterPlayerNotFoundException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "player_not_found",
+                exception.Message,
+                CreateRosterOperationErrorDetails(agentId, sleeperPlayerId, acquisitionSource),
+                "Call SearchPlayers to find a valid active Sleeper player ID, then retry.");
+        }
+        catch (ArgumentException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "invalid_request",
+                exception.Message,
+                CreateRosterOperationErrorDetails(agentId, sleeperPlayerId, acquisitionSource),
+                "Provide a valid agent ID, Sleeper player ID, and acquisition source, then retry.");
+        }
     }
 
-    [McpServerTool, Description("Remove a player from an agent roster.")]
-    public async Task<RosterToolPlayerResult> RemovePlayerFromRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId)
+    [McpServerTool(UseStructuredContent = true), Description("Remove a player from an agent roster. Check ok in the response; when false, use error details and follow error.nextStep.")]
+    public async Task<ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>> RemovePlayerFromRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId)
     {
-        var player = await _rosterWriter.RemovePlayerFromRosterAsync(agentId, sleeperPlayerId, CancellationToken.None);
-
-        return RosterToolPlayerResult.FromRosterPlayerResult(player);
+        try
+        {
+            var player = await _rosterWriter.RemovePlayerFromRosterAsync(agentId, sleeperPlayerId, CancellationToken.None);
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Success(RosterToolPlayerResult.FromRosterPlayerResult(player));
+        }
+        catch (RosterPlayerOwnershipConflictException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "player_owned_by_other_agent",
+                exception.Message,
+                CreateRosterOperationErrorDetails(exception.RequestedAgentId, exception.SleeperPlayerId, ownerAgentId: exception.OwnerAgentId),
+                "Call GetMyRoster and choose a player owned by your agent.");
+        }
+        catch (RosterPlayerNotFoundException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "player_not_on_roster",
+                exception.Message,
+                CreateRosterOperationErrorDetails(agentId, sleeperPlayerId),
+                "Call GetMyRoster to refresh the roster and choose a player currently on it.");
+        }
+        catch (ArgumentException exception)
+        {
+            return ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>.Failure(
+                "invalid_request",
+                exception.Message,
+                CreateRosterOperationErrorDetails(agentId, sleeperPlayerId),
+                "Provide a valid agent ID and Sleeper player ID, then retry.");
+        }
     }
 
     [McpServerTool(UseStructuredContent = true), Description("Move a rostered player into a lineup slot. Valid starter slots are QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1. Use BN for bench. Check ok in the response; when false, use error details and follow error.nextStep.")]
@@ -76,11 +160,33 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         }
     }
 
-    [McpServerTool, Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN.")]
-    public async Task<IReadOnlyList<RosterToolPlayerResult>> AutoSetLineup([Description("The agent ID, such as player-01.")] string agentId)
+    [McpServerTool(UseStructuredContent = true), Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN. Check ok in the response; when false, follow error.nextStep.")]
+    public async Task<ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>> AutoSetLineup([Description("The agent ID, such as player-01.")] string agentId)
     {
-        var roster = await _rosterWriter.AutoSetLineupAsync(agentId, CancellationToken.None);
-        return roster.Select(RosterToolPlayerResult.FromRosterPlayerResult).ToList();
+        try
+        {
+            var roster = await _rosterWriter.AutoSetLineupAsync(agentId, CancellationToken.None);
+            return ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>.Success(roster.Select(RosterToolPlayerResult.FromRosterPlayerResult).ToList());
+        }
+        catch (ArgumentException exception)
+        {
+            return ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>.Failure(
+                "invalid_request",
+                exception.Message,
+                new RosterOperationErrorDetails { AgentId = agentId },
+                "Provide a valid agent ID, then retry.");
+        }
+    }
+
+    private static RosterOperationErrorDetails CreateRosterOperationErrorDetails(string? agentId, string? sleeperPlayerId, string? acquisitionSource = null, string? ownerAgentId = null)
+    {
+        return new RosterOperationErrorDetails
+        {
+            AgentId = agentId,
+            SleeperPlayerId = sleeperPlayerId,
+            OwnerAgentId = ownerAgentId,
+            AcquisitionSource = acquisitionSource
+        };
     }
 
     private static RosterMoveErrorDetails CreateRosterMoveErrorDetails(RosterMoveValidationException exception)

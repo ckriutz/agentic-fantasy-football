@@ -2,12 +2,8 @@ using System.Text.Json;
 using Azure;
 using Azure.Storage.Blobs;
 using ModelContextProtocol.Server;
-using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using LeagueAPI.Configuration;
 using LeagueAPI.Data;
-using LeagueAPI.HostedServices;
 using LeagueAPI.Models;
 using LeagueAPI.Services;
 using LeagueAPI.Tools;
@@ -16,12 +12,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 var allowedCorsOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"] ?? "http://localhost:3000,http://localhost:5173")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-
-builder.Services.Configure<YahooOAuthOptions>(
-    builder.Configuration.GetSection(YahooOAuthOptions.SectionName));
-
-builder.Services.Configure<YahooSyncOptions>(
-    builder.Configuration.GetSection(YahooSyncOptions.SectionName));
 
 builder.Services.AddCors(options =>
 {
@@ -34,9 +24,6 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddMemoryCache();
-
-builder.Services.AddHttpClient("YahooOAuth");
-builder.Services.AddHttpClient("YahooFantasyApi");
 
 var connectionString = builder.Configuration["DBConnectionString"];
 var azureStorageConnectionString = builder.Configuration["AZURE_STORAGE_CONNECTION_STRING"];
@@ -59,15 +46,12 @@ builder.Services.AddDbContextFactory<LeagueApiDbContext>(options =>
 });
 
 builder.Services.AddSingleton(new BlobServiceClient(azureStorageConnectionString));
-builder.Services.AddSingleton<YahooAuthStateStore>();
 builder.Services.AddSingleton<SportsDataPlayerSyncService>();
 builder.Services.AddSingleton<SportsDataSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
 builder.Services.AddSingleton<SleeperSnapshotImportService>();
-builder.Services.AddSingleton<YahooOAuthService>();
-builder.Services.AddSingleton<YahooFantasyApiClient>();
 builder.Services.AddSingleton<ScoringService>();
-builder.Services.AddSingleton<YahooPlayerSyncService>();
+builder.Services.AddSingleton<YahooSnapshotImportService>();
 builder.Services.AddSingleton<YahooReadService>();
 
 builder.Services.AddSingleton<RosterStore>();
@@ -99,8 +83,6 @@ builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
     serviceProvider.GetRequiredService<PlayerCatalogStore>());
 builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
     serviceProvider.GetRequiredService<PlayerCatalogStore>());
-
-builder.Services.AddHostedService<NightlyYahooSyncService>();
 
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
@@ -140,7 +122,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/fantasypros/latest",
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/yahoo/latest",
-        "/api/sync/yahoo/weekly?week=&season=&gameKey=&force=",
+        "/api/sync/yahoo (POST: containerName, blobName, gameKey, season, week, retrievedAtUtc)",
         "/api/yahoo/stats/{season}/{week}?position=&limit=",
         "/api/yahoo/stats/player/{sleeperPlayerId}/{season}/week/{week}",
         "/api/yahoo/stats/by-yahoo/{yahooId}/{season}/week/{week}",
@@ -150,12 +132,6 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/points/by-yahoo/{yahooId}/{season}/week/{week}?templateKey=",
         "/api/yahoo/points/by-yahoo/{yahooId}/{season}?templateKey=",
         "/api/yahoo/scoring-templates?activeOnly=",
-        "/api/yahoo/league/{leagueKey}/settings/raw",
-        "/api/yahoo/auth/status",
-        "/api/yahoo/auth/authorize-url",
-        "/api/yahoo/auth/exchange",
-        "/api/yahoo/auth/refresh",
-        "/api/yahoo/auth/test-connection",
         "/api/agent-profiles?enabledOnly=",
         "/api/agent-profiles/{agentId}",
         "/api/agent-profiles/{agentId}/team-name",
@@ -759,34 +735,27 @@ app.MapGet("/api/sync/yahoo/latest", async (
     string? gameKey,
     int? season,
     int? week,
-    YahooPlayerSyncService yahooPlayerSyncService,
+    YahooSnapshotImportService yahooSnapshotImportService,
     CancellationToken cancellationToken) =>
 {
-    var state = await yahooPlayerSyncService.GetLatestSyncRunAsync(gameKey, season, week, cancellationToken);
+    var state = await yahooSnapshotImportService.GetLatestSyncRunAsync(gameKey, season, week, cancellationToken);
     return state is null ? Results.NotFound() : Results.Ok(state);
 });
 
-app.MapPost("/api/sync/yahoo/weekly", async (
-    int week,
-    int? season,
-    string? gameKey,
-    bool force,
-    IOptions<YahooSyncOptions> yahooSyncOptions,
-    YahooPlayerSyncService yahooPlayerSyncService,
-    CancellationToken cancellationToken) =>
+app.MapPost("/api/sync/yahoo", async (YahooSnapshotImportRequest request, YahooSnapshotImportService yahooSnapshotImportService, CancellationToken cancellationToken) =>
 {
-    var options = yahooSyncOptions.Value;
-    var resolvedGameKey = string.IsNullOrWhiteSpace(gameKey) ? options.DefaultGameKey : gameKey.Trim();
-    var resolvedSeason = season ?? options.DefaultSeason;
-
-    var result = await yahooPlayerSyncService.SyncWeeklyStatsAsync(
-        resolvedGameKey,
-        resolvedSeason,
-        week,
-        force,
-        cancellationToken);
-
-    return Results.Ok(result);
+    try
+    {
+        return Results.Ok(await yahooSnapshotImportService.ImportAsync(request, cancellationToken));
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (RequestFailedException exception) when (exception.Status == StatusCodes.Status404NotFound)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
 });
 
 app.MapGet("/api/yahoo/stats/{season:int}/{week:int}", async (
@@ -937,78 +906,6 @@ app.MapGet("/api/yahoo/scoring-templates", async (
         cancellationToken);
 
     return Results.Ok(templates);
-});
-
-app.MapGet("/api/yahoo/league/{leagueKey}/settings/raw", async (
-    string leagueKey,
-    YahooFantasyApiClient yahooFantasyApiClient,
-    CancellationToken cancellationToken) =>
-{
-    var payload = await yahooFantasyApiClient.GetLeagueSettingsJsonAsync(leagueKey, cancellationToken);
-    return Results.Content(payload, "application/json");
-});
-
-app.MapGet("/api/yahoo/auth/status", async (
-    YahooOAuthService yahooOAuthService,
-    CancellationToken cancellationToken) =>
-{
-    var status = await yahooOAuthService.GetStatusAsync(cancellationToken);
-    return Results.Ok(status);
-});
-
-app.MapPost("/api/yahoo/auth/authorize-url", async (
-    YahooOAuthService yahooOAuthService,
-    CancellationToken cancellationToken) =>
-{
-    var response = await yahooOAuthService.CreateAuthorizationUrlAsync(cancellationToken);
-    return Results.Ok(response);
-});
-
-app.MapPost("/api/yahoo/auth/exchange", async (
-    YahooAuthorizationExchangeRequest request,
-    YahooOAuthService yahooOAuthService,
-    CancellationToken cancellationToken) =>
-{
-    var status = await yahooOAuthService.ExchangeAuthorizationCodeAsync(request, cancellationToken);
-    return Results.Ok(status);
-});
-
-app.MapGet("/api/yahoo/auth/callback", async (HttpRequest httpRequest, YahooOAuthService yahooOAuthService, CancellationToken cancellationToken) =>
-{
-    var error = httpRequest.Query["error"].ToString();
-    if (!string.IsNullOrWhiteSpace(error))
-    {
-        var description = httpRequest.Query["error_description"].ToString();
-        return Results.Content($"<html><body><h1>Yahoo authorization failed</h1><p>{error}: {description}</p></body></html>", "text/html");
-    }
-
-    var exchangeRequest = new YahooAuthorizationExchangeRequest { RedirectUrl = httpRequest.GetDisplayUrl() };
-
-    try
-    {
-        await yahooOAuthService.ExchangeAuthorizationCodeAsync(exchangeRequest, cancellationToken);
-        return Results.Content("<html><body><h1>Yahoo authorization complete</h1><p>Tokens have been saved. You can close this tab.</p></body></html>", "text/html");
-    }
-    catch (Exception ex)
-    {
-        return Results.Content($"<html><body><h1>Yahoo authorization error</h1><p>{ex.Message}</p></body></html>", "text/html");
-    }
-});
-
-app.MapPost("/api/yahoo/auth/refresh", async (
-    YahooOAuthService yahooOAuthService,
-    CancellationToken cancellationToken) =>
-{
-    var status = await yahooOAuthService.RefreshAccessTokenAsync(cancellationToken);
-    return Results.Ok(status);
-});
-
-app.MapGet("/api/yahoo/auth/test-connection", async (
-    YahooFantasyApiClient yahooFantasyApiClient,
-    CancellationToken cancellationToken) =>
-{
-    var payload = await yahooFantasyApiClient.GetGameInfoJsonAsync(cancellationToken);
-    return Results.Content(payload, "application/json");
 });
 
 // --- Waivers ---

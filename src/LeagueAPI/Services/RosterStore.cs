@@ -173,9 +173,10 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
         if (!RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
         {
-            throw new ArgumentException(
-                $"Player '{player.FullName ?? normalizedSleeperPlayerId}' (position: {player.Position}) is not eligible for this league's roster slots.",
-                nameof(sleeperPlayerId));
+            throw new RosterPlayerIneligibleException(
+                normalizedSleeperPlayerId,
+                player.Position,
+                $"Player '{player.FullName ?? normalizedSleeperPlayerId}' (position: {player.Position}) is not eligible for this league's roster slots.");
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(
@@ -199,7 +200,10 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
         if (currentRosterCount >= RosterSlotRules.MaxRosterSize)
         {
-            throw new RosterConflictException(
+            throw new RosterFullException(
+                normalizedAgentId,
+                currentRosterCount,
+                RosterSlotRules.MaxRosterSize,
                 $"Agent '{normalizedAgentId}' already has {currentRosterCount} players on their roster. The maximum roster size is {RosterSlotRules.MaxRosterSize}.");
         }
 
@@ -223,7 +227,10 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         {
             if (IsUniqueViolation(ex))
             {
-                throw new RosterConflictException(
+                throw new RosterPlayerOwnershipConflictException(
+                    normalizedAgentId,
+                    normalizedSleeperPlayerId,
+                    ownerAgentId: null,
                     $"Player '{normalizedSleeperPlayerId}' was added to another roster before this request completed.",
                     ex);
             }
@@ -457,6 +464,8 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
             cancellationToken);
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+
         foreach (var row in rosterRows)
         {
             var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId);
@@ -467,6 +476,8 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
             row.Assignment.SlotType = RosterSlotRules.BenchSlot;
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         var remainingPlayers = rosterRows
             .Where(row => !GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId).IsLineupMoveLocked)
@@ -506,6 +517,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(
             dbContext,
@@ -724,20 +736,22 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         return normalizedSource;
     }
 
-    private static RosterConflictException CreateConflictException(
-        string requestedAgentId,
-        string sleeperPlayerId,
-        string owningAgentId,
-        Exception? innerException = null)
+    private static RosterConflictException CreateConflictException(string requestedAgentId, string sleeperPlayerId, string owningAgentId, Exception? innerException = null)
     {
         if (string.Equals(requestedAgentId, owningAgentId, StringComparison.Ordinal))
         {
-            return new RosterConflictException(
+            return new RosterPlayerOwnershipConflictException(
+                requestedAgentId,
+                sleeperPlayerId,
+                owningAgentId,
                 $"Player '{sleeperPlayerId}' is already on roster '{requestedAgentId}'.",
                 innerException);
         }
 
-        return new RosterConflictException(
+        return new RosterPlayerOwnershipConflictException(
+            requestedAgentId,
+            sleeperPlayerId,
+            owningAgentId,
             $"Player '{sleeperPlayerId}' is already owned by agent '{owningAgentId}'.",
             innerException);
     }

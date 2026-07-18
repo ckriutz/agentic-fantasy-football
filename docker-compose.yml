@@ -34,29 +34,11 @@ services:
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME:-agentdata}
       
-      # Yahoo Fantasy configuration
-      - YahooClientId=${YahooClientId:?Yahoo OAuth client ID required}
-      - YahooClientSecret=${YahooClientSecret:?Yahoo OAuth client secret required}
-      - YAHOO_REDIRECT_URI=${YAHOO_REDIRECT_URI:-https://localhost:5001/api/yahoo/auth/callback}
-      - YahooOAuth__AuthorizationUrl=https://api.login.yahoo.com/oauth2/request_auth
-      - YahooOAuth__TokenUrl=https://api.login.yahoo.com/oauth2/get_token
-      - YahooOAuth__FantasyApiBaseUrl=https://fantasysports.yahooapis.com/fantasy/v2
-      - YahooOAuth__StateFilePath=/data/yahoo/auth-state.json
-      
-      # Yahoo sync configuration
-      - YahooSync__Enabled=${YAHOO_SYNC_ENABLED:-true}
-      - YahooSync__DefaultGameKey=461
-      - YahooSync__DefaultSeason=2025
-      - YahooSync__PageSize=25
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       
       # Logging
       - Logging__LogLevel__Default=Information
       - Logging__LogLevel__Microsoft.AspNetCore=Warning
-    
-    volumes:
-      # Persist data files (snapshots, state, auth tokens)
-      - leagueapi-data:/data
     
     depends_on:
       postgres:
@@ -113,6 +95,35 @@ services:
     networks:
       - leagueapi-net
 
+  # YahooDataSync must remain single-replica because Yahoo rotates refresh tokens.
+  yahoodatasync:
+    image: ghcr.io/ckriutz/yahoodatasync:latest
+    pull_policy: always
+    ports:
+      - "${YAHOODATASYNC_PORT:-8081}:8080"
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+      - YAHOO_CLIENT_ID=${YAHOO_CLIENT_ID:-}
+      - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET:-}
+      - YahooClientId=${YahooClientId:-}
+      - YahooClientSecret=${YahooClientSecret:-}
+      - YAHOO_REDIRECT_URI=${YAHOO_REDIRECT_URI:-http://localhost:8081/api/yahoo/auth/callback}
+      - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
+      - YAHOO_STORAGE_CONTAINER_NAME=${YAHOO_STORAGE_CONTAINER_NAME:-yahoodata}
+      - YAHOO_OAUTH_STATE_BLOB_NAME=${YAHOO_OAUTH_STATE_BLOB_NAME:-yahoo/private/oauth-state.json}
+      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+      - YahooSync__Enabled=${YAHOO_SYNC_ENABLED:-true}
+      - YahooSync__RunOnStartup=${YAHOO_SYNC_RUN_ON_STARTUP:-false}
+      - YahooSync__PageSize=${YAHOO_SYNC_PAGE_SIZE:-25}
+      - YahooSync__DailySyncHourUtc=${YAHOO_SYNC_HOUR_UTC:-6}
+      - YahooSync__DailySyncMinuteUtc=${YAHOO_SYNC_MINUTE_UTC:-45}
+      - YahooSync__GameKey=${YAHOO_GAME_KEY:-}
+    depends_on:
+      leagueapi:
+        condition: service_healthy
+    networks:
+      - leagueapi-net
+
   # PostgreSQL database (optional but recommended)
   postgres:
     image: postgres:17-alpine
@@ -138,7 +149,6 @@ services:
       retries: 5
 
 volumes:
-  leagueapi-data:
   postgres-data:
 
 networks:

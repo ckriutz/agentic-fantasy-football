@@ -1,21 +1,22 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Globalization;
 using System.Text.Json.Nodes;
-using LeagueAPI.Configuration;
+using Azure;
+using Azure.Storage.Blobs;
 using LeagueAPI.Data;
 using LeagueAPI.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace LeagueAPI.Services;
 
-public sealed class YahooPlayerSyncService(
-    YahooFantasyApiClient yahooFantasyApiClient,
-    ScoringService scoringService,
-    MatchupScoringService matchupScoringService,
-    IDbContextFactory<LeagueApiDbContext> dbContextFactory,
-    IOptions<YahooSyncOptions> yahooSyncOptions,
-    ILogger<YahooPlayerSyncService> logger)
+public sealed class YahooSnapshotImportService(BlobServiceClient blobServiceClient, ScoringService scoringService, MatchupScoringService matchupScoringService, IDbContextFactory<LeagueApiDbContext> dbContextFactory, ILogger<YahooSnapshotImportService> logger)
 {
+    private const string StartedStatus = "Started";
+    private const string SucceededStatus = "Succeeded";
+    private const string FailedStatus = "Failed";
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly IReadOnlyDictionary<int, string> DefaultStatNames = new Dictionary<int, string>
     {
         [0] = "Games Played",
@@ -105,41 +106,19 @@ public sealed class YahooPlayerSyncService(
         [84] = "Field Goals Total Yards"
     };
 
-    private readonly YahooFantasyApiClient _yahooFantasyApiClient = yahooFantasyApiClient;
+    private readonly BlobServiceClient _blobServiceClient = blobServiceClient;
     private readonly ScoringService _scoringService = scoringService;
     private readonly MatchupScoringService _matchupScoringService = matchupScoringService;
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
-    private readonly YahooSyncOptions _yahooSyncOptions = yahooSyncOptions.Value;
-    private readonly ILogger<YahooPlayerSyncService> _logger = logger;
+    private readonly ILogger<YahooSnapshotImportService> _logger = logger;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
-    public async Task<YahooSyncRun> SyncWeeklyStatsAsync(
-        string gameKey,
-        int season,
-        int week,
-        bool force,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Imports one Yahoo weekly player snapshot from Azure Blob Storage.
+    /// </summary>
+    public async Task<YahooSyncRun> ImportAsync(YahooSnapshotImportRequest request, CancellationToken cancellationToken)
     {
-        if (!_yahooSyncOptions.Enabled)
-        {
-            throw new InvalidOperationException("Yahoo sync is disabled.");
-        }
-
-        if (string.IsNullOrWhiteSpace(gameKey))
-        {
-            throw new InvalidOperationException("A Yahoo game key is required.");
-        }
-
-        if (season <= 0)
-        {
-            throw new InvalidOperationException("Season must be greater than zero.");
-        }
-
-        if (week <= 0)
-        {
-            throw new InvalidOperationException("Week must be greater than zero.");
-        }
-
+        request = ValidateRequest(request);
         await _syncLock.WaitAsync(cancellationToken);
 
         try
@@ -147,53 +126,74 @@ public sealed class YahooPlayerSyncService(
             await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
             EnsureDatabaseConfigured(dbContext);
 
-            var nowUtc = DateTimeOffset.UtcNow;
-            var latestRun = await GetLatestRunAsync(dbContext, gameKey, season, week, cancellationToken);
-
-            if (!force
-                && latestRun?.Status == "Succeeded"
-                && latestRun.CompletedAtUtc?.UtcDateTime.Date == nowUtc.UtcDateTime.Date)
+            var syncRunId = CreateSyncRunId(request);
+            var syncRun = await dbContext.YahooSyncRuns.SingleOrDefaultAsync(run => run.SyncRunId == syncRunId, cancellationToken);
+            if (syncRun?.Status == SucceededStatus)
             {
-                return new YahooSyncRun
-                {
-                    SyncRunId = latestRun.SyncRunId,
-                    GameKey = latestRun.GameKey,
-                    Season = latestRun.Season,
-                    Week = latestRun.Week,
-                    StartedAtUtc = latestRun.StartedAtUtc,
-                    CompletedAtUtc = latestRun.CompletedAtUtc,
-                    Status = "Skipped",
-                    PageCount = latestRun.PageCount,
-                    RecordCount = latestRun.RecordCount,
-                    MatchedPlayerCount = latestRun.MatchedPlayerCount,
-                    UnmatchedPlayerCount = latestRun.UnmatchedPlayerCount,
-                    ErrorMessage = latestRun.ErrorMessage
-                };
+                syncRun.AlreadyProcessed = true;
+                return syncRun;
             }
 
-            var syncRun = new YahooSyncRun
+            var nowUtc = DateTimeOffset.UtcNow;
+            if (syncRun is null)
             {
-                SyncRunId = Guid.NewGuid(),
-                GameKey = gameKey,
-                Season = season,
-                Week = week,
-                StartedAtUtc = nowUtc,
-                Status = "Started"
-            };
+                syncRun = new YahooSyncRun
+                {
+                    SyncRunId = syncRunId,
+                    GameKey = request.GameKey,
+                    Season = request.Season,
+                    Week = request.Week,
+                    StartedAtUtc = nowUtc,
+                    Status = StartedStatus
+                };
+                dbContext.YahooSyncRuns.Add(syncRun);
+            }
+            else
+            {
+                syncRun.GameKey = request.GameKey;
+                syncRun.Season = request.Season;
+                syncRun.Week = request.Week;
+                syncRun.StartedAtUtc = nowUtc;
+                syncRun.CompletedAtUtc = null;
+                syncRun.Status = StartedStatus;
+                syncRun.PageCount = null;
+                syncRun.RecordCount = null;
+                syncRun.MatchedPlayerCount = null;
+                syncRun.UnmatchedPlayerCount = null;
+                syncRun.ErrorMessage = null;
+            }
 
-            dbContext.YahooSyncRuns.Add(syncRun);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             try
             {
-                var (players, pageCount) = await FetchAllPlayersAsync(gameKey, week, cancellationToken);
+                var blobClient = _blobServiceClient.GetBlobContainerClient(request.ContainerName).GetBlobClient(request.BlobName);
+                var download = await blobClient.DownloadContentAsync(cancellationToken);
+                using var document = JsonDocument.Parse(download.Value.Content.ToMemory());
+                var snapshot = document.RootElement.Deserialize<YahooPlayersSnapshot>(SerializerOptions) ?? throw new InvalidDataException("The Yahoo blob does not contain a valid snapshot.");
+                ValidateSnapshot(snapshot, request);
+
+                var playersById = new Dictionary<int, YahooParsedPlayer>();
+                foreach (var page in snapshot.Pages)
+                {
+                    foreach (var player in ParsePlayers(page.GetRawText()))
+                    {
+                        playersById[player.YahooPlayerId] = player;
+                    }
+                }
+
+                if (playersById.Count == 0)
+                {
+                    throw new InvalidDataException("The Yahoo snapshot did not contain any player statistics.");
+                }
+
                 var touchedStats = await UpsertWeeklyStatsAsync(
                     dbContext,
                     syncRun.SyncRunId,
-                    gameKey,
-                    season,
-                    week,
-                    players,
+                    request.GameKey,
+                    request.Season,
+                    request.Week,
+                    playersById.Values,
                     nowUtc,
                     cancellationToken);
 
@@ -202,46 +202,42 @@ public sealed class YahooPlayerSyncService(
                 var matchedPlayerCount = touchedStats.Count(playerStat => !string.IsNullOrWhiteSpace(playerStat.SleeperPlayerId));
                 var unmatchedPlayerCount = touchedStats.Count - matchedPlayerCount;
 
-                syncRun.CompletedAtUtc = nowUtc;
-                syncRun.Status = "Succeeded";
-                syncRun.PageCount = pageCount;
+                syncRun.PageCount = snapshot.Pages.Count;
                 syncRun.RecordCount = touchedStats.Count;
                 syncRun.MatchedPlayerCount = matchedPlayerCount;
                 syncRun.UnmatchedPlayerCount = unmatchedPlayerCount;
                 syncRun.ErrorMessage = null;
+                syncRun.AlreadyProcessed = false;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
-                await _matchupScoringService.UpdateLiveScoresAsync(season, week, cancellationToken);
+                await _matchupScoringService.UpdateLiveScoresAsync(request.Season, request.Week, cancellationToken);
+                syncRun.CompletedAtUtc = DateTimeOffset.UtcNow;
+                syncRun.Status = SucceededStatus;
+                await dbContext.SaveChangesAsync(cancellationToken);
 
                 _logger.LogInformation(
-                    "Yahoo weekly sync completed: {SyncRunId}, game {GameKey}, season {Season}, week {Week}, fetched {FetchedCount} rows across {PageCount} pages, matched {MatchedCount}, unmatched {UnmatchedCount}.",
+                    "Yahoo snapshot import completed: {SyncRunId}, {ContainerName}/{BlobName}, game {GameKey}, season {Season}, week {Week}, imported {RecordCount} rows across {PageCount} pages, matched {MatchedCount}, unmatched {UnmatchedCount}.",
                     syncRun.SyncRunId,
-                    gameKey,
-                    season,
-                    week,
+                    request.ContainerName,
+                    request.BlobName,
+                    request.GameKey,
+                    request.Season,
+                    request.Week,
                     touchedStats.Count,
-                    pageCount,
+                    snapshot.Pages.Count,
                     matchedPlayerCount,
                     unmatchedPlayerCount);
 
                 return syncRun;
             }
-            catch (Exception exception)
+            catch (OperationCanceledException)
             {
-                syncRun.CompletedAtUtc = DateTimeOffset.UtcNow;
-                syncRun.Status = "Failed";
-                syncRun.ErrorMessage = exception.Message;
-
-                await dbContext.SaveChangesAsync(cancellationToken);
-
-                _logger.LogError(
-                    exception,
-                    "Yahoo weekly sync failed for game {GameKey}, season {Season}, week {Week}, sync run {SyncRunId}.",
-                    gameKey,
-                    season,
-                    week,
-                    syncRun.SyncRunId);
-
+                await MarkFailedAsync(syncRun.SyncRunId, "The Yahoo snapshot import was canceled.");
+                throw;
+            }
+            catch (Exception exception) when (exception is RequestFailedException or JsonException or InvalidDataException or DbUpdateException or InvalidOperationException or ArgumentException)
+            {
+                await MarkFailedAsync(syncRun.SyncRunId, exception.Message);
                 throw;
             }
         }
@@ -251,69 +247,101 @@ public sealed class YahooPlayerSyncService(
         }
     }
 
-    public async Task<YahooSyncRun?> GetLatestSyncRunAsync(
-        string? gameKey,
-        int? season,
-        int? week,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Gets the latest Yahoo snapshot import, optionally filtered by game, season, and week.
+    /// </summary>
+    public async Task<YahooSyncRun?> GetLatestSyncRunAsync(string? gameKey, int? season, int? week, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         EnsureDatabaseConfigured(dbContext);
         return await GetLatestRunAsync(dbContext, gameKey, season, week, cancellationToken);
     }
 
-    private async Task<(List<YahooParsedPlayer> players, int pageCount)> FetchAllPlayersAsync(
-        string gameKey,
-        int week,
-        CancellationToken cancellationToken)
+    private static YahooSnapshotImportRequest ValidateRequest(YahooSnapshotImportRequest request)
     {
-        var pageSize = _yahooSyncOptions.PageSize is > 0 and <= 25 ? _yahooSyncOptions.PageSize : 25;
-        var parsedPlayersById = new Dictionary<int, YahooParsedPlayer>();
-        var start = 0;
-        var pageCount = 0;
+        ArgumentNullException.ThrowIfNull(request);
 
-        while (true)
+        var containerName = request.ContainerName?.Trim();
+        if (string.IsNullOrWhiteSpace(containerName)
+            || containerName.Length is < 3 or > 63
+            || containerName[0] == '-'
+            || containerName[^1] == '-'
+            || containerName.Contains("--", StringComparison.Ordinal)
+            || containerName.Any(character => character is not (>= 'a' and <= 'z') and not (>= '0' and <= '9') and not '-'))
         {
-            var payload = await _yahooFantasyApiClient.GetWeeklyPlayerStatsJsonAsync(
-                gameKey,
-                week,
-                start,
-                pageSize,
-                cancellationToken);
-
-            var pagePlayers = ParsePlayers(payload);
-            if (pagePlayers.Count == 0)
-            {
-                break;
-            }
-
-            pageCount++;
-
-            foreach (var player in pagePlayers)
-            {
-                parsedPlayersById[player.YahooPlayerId] = player;
-            }
-
-            if (pagePlayers.Count < pageSize)
-            {
-                break;
-            }
-
-            start += pageSize;
+            throw new ArgumentException("ContainerName must be a valid lowercase Azure Blob container name.", nameof(request));
         }
 
-        return (parsedPlayersById.Values.ToList(), pageCount);
+        var blobName = request.BlobName?.Trim();
+        if (string.IsNullOrWhiteSpace(blobName) || blobName.Length > 1024 || blobName.Any(char.IsControl))
+        {
+            throw new ArgumentException("BlobName is required, must be at most 1024 characters, and cannot contain control characters.", nameof(request));
+        }
+
+        var gameKey = request.GameKey?.Trim();
+        if (string.IsNullOrWhiteSpace(gameKey) || gameKey.Length > 20)
+        {
+            throw new ArgumentException("GameKey is required and must be at most 20 characters.", nameof(request));
+        }
+
+        if (request.Season is < 2000 or > 2100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Season must be between 2000 and 2100.");
+        }
+
+        if (request.Week is < 1 or > 17)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Week must be between 1 and 17.");
+        }
+
+        if (request.RetrievedAtUtc == default || request.RetrievedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new ArgumentException("RetrievedAtUtc is required and must use the UTC offset.", nameof(request));
+        }
+
+        return request with { ContainerName = containerName, BlobName = blobName, GameKey = gameKey };
     }
 
-    private static async Task<List<WeeklyPlayerStat>> UpsertWeeklyStatsAsync(
-        LeagueApiDbContext dbContext,
-        Guid syncRunId,
-        string gameKey,
-        int season,
-        int week,
-        IReadOnlyCollection<YahooParsedPlayer> players,
-        DateTimeOffset updatedAtUtc,
-        CancellationToken cancellationToken)
+    private static void ValidateSnapshot(YahooPlayersSnapshot snapshot, YahooSnapshotImportRequest request)
+    {
+        if (!string.Equals(snapshot.GameKey, request.GameKey, StringComparison.Ordinal)
+            || snapshot.Season != request.Season
+            || snapshot.Week != request.Week
+            || snapshot.RetrievedAtUtc != request.RetrievedAtUtc)
+        {
+            throw new InvalidDataException("Yahoo snapshot metadata does not match the import request.");
+        }
+
+        if (snapshot.RetrievedAtUtc.Offset != TimeSpan.Zero)
+        {
+            throw new InvalidDataException("Yahoo snapshot RetrievedAtUtc must use the UTC offset.");
+        }
+
+        if (snapshot.Pages is null || snapshot.Pages.Count == 0 || snapshot.Pages.Any(page => page.ValueKind != JsonValueKind.Object))
+        {
+            throw new InvalidDataException("The Yahoo snapshot must contain at least one JSON object page.");
+        }
+    }
+
+    private static Guid CreateSyncRunId(YahooSnapshotImportRequest request)
+    {
+        var idempotencyKey = $"{request.ContainerName}\n{request.BlobName}\n{request.GameKey}\n{request.Season}\n{request.Week}\n{request.RetrievedAtUtc:O}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(idempotencyKey));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
+    private async Task MarkFailedAsync(Guid syncRunId, string errorMessage)
+    {
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(CancellationToken.None);
+        var syncRun = await dbContext.YahooSyncRuns.SingleAsync(run => run.SyncRunId == syncRunId, CancellationToken.None);
+        syncRun.CompletedAtUtc = DateTimeOffset.UtcNow;
+        syncRun.Status = FailedStatus;
+        syncRun.ErrorMessage = errorMessage;
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        _logger.LogError("Yahoo snapshot import {SyncRunId} failed: {ErrorMessage}", syncRunId, errorMessage);
+    }
+
+    private static async Task<List<WeeklyPlayerStat>> UpsertWeeklyStatsAsync(LeagueApiDbContext dbContext, Guid syncRunId, string gameKey, int season, int week, IReadOnlyCollection<YahooParsedPlayer> players, DateTimeOffset updatedAtUtc, CancellationToken cancellationToken)
     {
         var yahooPlayerIds = players.Select(player => player.YahooPlayerId).ToArray();
 
@@ -629,9 +657,7 @@ public sealed class YahooPlayerSyncService(
         return null;
     }
 
-    private static IEnumerable<JsonObject> EnumerateMatchingObjects(
-        JsonNode? node,
-        Func<JsonObject, bool> predicate)
+    private static IEnumerable<JsonObject> EnumerateMatchingObjects(JsonNode? node, Func<JsonObject, bool> predicate)
     {
         switch (node)
         {
@@ -750,12 +776,7 @@ public sealed class YahooPlayerSyncService(
         }
     }
 
-    private static Task<YahooSyncRun?> GetLatestRunAsync(
-        LeagueApiDbContext dbContext,
-        string? gameKey,
-        int? season,
-        int? week,
-        CancellationToken cancellationToken)
+    private static Task<YahooSyncRun?> GetLatestRunAsync(LeagueApiDbContext dbContext, string? gameKey, int? season, int? week, CancellationToken cancellationToken)
     {
         var query = dbContext.YahooSyncRuns.AsNoTracking();
 
@@ -779,14 +800,7 @@ public sealed class YahooPlayerSyncService(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    private sealed record YahooParsedPlayer(
-        int YahooPlayerId,
-        string? FullName,
-        string? Team,
-        string? Position,
-        string? EditorialTeamAbbr,
-        string RawJson,
-        List<YahooParsedStatValue> StatValues);
+    private sealed record YahooParsedPlayer(int YahooPlayerId, string? FullName, string? Team, string? Position, string? EditorialTeamAbbr, string RawJson, List<YahooParsedStatValue> StatValues);
 
     private sealed record YahooParsedStatValue(int StatId, string? StatName, decimal Value);
 }

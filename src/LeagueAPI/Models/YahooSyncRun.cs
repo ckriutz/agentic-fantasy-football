@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace LeagueAPI.Models;
 
@@ -27,6 +28,9 @@ public sealed class YahooSyncRun
     public int? UnmatchedPlayerCount { get; set; }
 
     public string? ErrorMessage { get; set; }
+
+    [NotMapped]
+    public bool AlreadyProcessed { get; set; }
 
     [JsonIgnore]
     public List<WeeklyPlayerStat> WeeklyPlayerStats { get; set; } = [];

@@ -245,7 +245,7 @@ function HomePage() {
         setIsLoadingAgents(true)
         setAgentsError(null)
         const [agentsResponse, standingsResponse] = await Promise.all([
-          fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=false`, { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=true`, { signal: controller.signal }),
           fetch(`${apiBaseUrl}/api/league/standings`, { signal: controller.signal }),
         ])
         if (!agentsResponse.ok || !standingsResponse.ok) {
