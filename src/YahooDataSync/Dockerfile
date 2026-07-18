@@ -14,5 +14,6 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
-EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8003
+EXPOSE 8003
 ENTRYPOINT ["dotnet", "YahooDataSync.dll"]

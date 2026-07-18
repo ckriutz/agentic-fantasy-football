@@ -8,7 +8,7 @@ services:
     ports:
       - "${LEAGUEFRONTEND_PORT:-3000}:80"
     environment:
-      - API_BASE_URL=${FRONTEND_API_BASE_URL:-http://localhost:8080}
+      - API_BASE_URL=${FRONTEND_API_BASE_URL:-http://localhost:8082}
     depends_on:
       leagueapi:
         condition: service_healthy
@@ -27,7 +27,7 @@ services:
       context: ./src/LeagueAPI
       dockerfile: Dockerfile
     ports:
-      - "${LEAGUEAPI_PORT:-8080}:8080"
+      - "${LEAGUEAPI_PORT:-8082}:8082"
     environment:
       # Database connection
       - DBConnectionString=${DBConnectionString:?DBConnectionString required}
@@ -40,15 +40,11 @@ services:
       - Logging__LogLevel__Default=Information
       - Logging__LogLevel__Microsoft.AspNetCore=Warning
     
-    depends_on:
-      postgres:
-        condition: service_healthy
-    
     networks:
       - leagueapi-net
     
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8082/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -61,7 +57,7 @@ services:
       - FANTASY_PROS_API_KEY=${FANTASY_PROS_API_KEY:?FantasyPros API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - FANTASYPROS_STORAGE_CONTAINER_NAME=${FANTASYPROS_STORAGE_CONTAINER_NAME:-fantasyprosdata}
-      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+      - LEAGUE_API_BASE_URL=http://leagueapi:8082
     depends_on:
       leagueapi:
         condition: service_healthy
@@ -75,7 +71,7 @@ services:
       - SPORTSDATA_API_KEY=${SPORTSDATA_API_KEY:?SportsData API key required}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - SPORTSDATA_STORAGE_CONTAINER_NAME=${SPORTSDATA_STORAGE_CONTAINER_NAME:-playerdata}
-      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+      - LEAGUE_API_BASE_URL=http://leagueapi:8082
     depends_on:
       leagueapi:
         condition: service_healthy
@@ -88,7 +84,7 @@ services:
     environment:
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - SLEEPER_STORAGE_CONTAINER_NAME=${SLEEPER_STORAGE_CONTAINER_NAME:-playerdata}
-      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+      - LEAGUE_API_BASE_URL=http://leagueapi:8082
     depends_on:
       leagueapi:
         condition: service_healthy
@@ -100,18 +96,18 @@ services:
     image: ghcr.io/ckriutz/yahoodatasync:latest
     pull_policy: always
     ports:
-      - "${YAHOODATASYNC_PORT:-8081}:8080"
+      - "${YAHOODATASYNC_PORT:-8003}:8003"
     environment:
-      - ASPNETCORE_URLS=http://+:8080
+      - ASPNETCORE_URLS=http://+:8003
       - YAHOO_CLIENT_ID=${YAHOO_CLIENT_ID:-}
       - YAHOO_CLIENT_SECRET=${YAHOO_CLIENT_SECRET:-}
       - YahooClientId=${YahooClientId:-}
       - YahooClientSecret=${YahooClientSecret:-}
-      - YAHOO_REDIRECT_URI=${YAHOO_REDIRECT_URI:-http://localhost:8081/api/yahoo/auth/callback}
+      - YAHOO_REDIRECT_URI=${YAHOO_REDIRECT_URI:-http://localhost:8003/api/yahoo/auth/callback}
       - AZURE_STORAGE_CONNECTION_STRING=${AZURE_STORAGE_CONNECTION_STRING:?Azure Storage connection string required}
       - YAHOO_STORAGE_CONTAINER_NAME=${YAHOO_STORAGE_CONTAINER_NAME:-yahoodata}
       - YAHOO_OAUTH_STATE_BLOB_NAME=${YAHOO_OAUTH_STATE_BLOB_NAME:-yahoo/private/oauth-state.json}
-      - LEAGUE_API_BASE_URL=http://leagueapi:8080
+      - LEAGUE_API_BASE_URL=http://leagueapi:8082
       - YahooSync__Enabled=${YAHOO_SYNC_ENABLED:-true}
       - YahooSync__RunOnStartup=${YAHOO_SYNC_RUN_ON_STARTUP:-false}
       - YahooSync__PageSize=${YAHOO_SYNC_PAGE_SIZE:-25}
@@ -123,33 +119,6 @@ services:
         condition: service_healthy
     networks:
       - leagueapi-net
-
-  # PostgreSQL database (optional but recommended)
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-leagueapi}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Postgres password required}
-      - POSTGRES_HOST_AUTH_METHOD=md5
-    
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    
-    networks:
-      - leagueapi-net
-    
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  postgres-data:
 
 networks:
   leagueapi-net:
