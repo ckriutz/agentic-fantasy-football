@@ -18,7 +18,7 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         return roster.Select(RosterToolPlayerResult.FromRosterPlayerResult).ToList();
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Add a player to an agent roster. Check ok in the response; when false, use error details and follow error.nextStep.")]
+    [McpServerTool(UseStructuredContent = true), Description("Add a player to an agent roster. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>> AddPlayerToRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId, [Description("How the player was acquired, such as manual, draft, waiver, or trade.")] string acquisitionSource = "manual")
     {
         try
@@ -84,7 +84,7 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         }
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Remove a player from an agent roster. Check ok in the response; when false, use error details and follow error.nextStep.")]
+    [McpServerTool(UseStructuredContent = true), Description("Remove a player from an agent roster. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<RosterToolPlayerResult, RosterOperationErrorDetails>> RemovePlayerFromRoster([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId)
     {
         try
@@ -118,7 +118,7 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         }
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Move a rostered player into a lineup slot. Valid starter slots are QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1. Use BN for bench. Check ok in the response; when false, use error details and follow error.nextStep.")]
+    [McpServerTool(UseStructuredContent = true), Description("Move a rostered player into a lineup slot. Valid starter slots are QB1, RB1, RB2, WR1, WR2, TE1, FLEX1, K1, DEF1. Use BN for bench. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<RosterToolPlayerResult, RosterMoveErrorDetails>> SetPlayerSlot([Description("The agent ID, such as player-01.")] string agentId, [Description("The Sleeper player ID.")] string sleeperPlayerId, [Description("The slot type, such as QB1, RB1, FLEX1, K1, DEF1, or BN.")] string slotType)
     {
         try
@@ -160,7 +160,7 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         }
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN. Check ok in the response; when false, follow error.nextStep.")]
+    [McpServerTool(UseStructuredContent = true), Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>> AutoSetLineup([Description("The agent ID, such as player-01.")] string agentId)
     {
         try

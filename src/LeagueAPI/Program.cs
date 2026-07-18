@@ -249,6 +249,11 @@ static IResult CreateDomainErrorResult(Exception exception)
         RosterMoveValidationException ex when ex.FailureType == RosterMoveFailureType.PlayerNotOnRoster
             => Results.NotFound(new { error = ex.Message }),
         RosterMoveValidationException ex => Results.Conflict(new { error = ex.Message }),
+        FreeAgentOperationException ex when ex.FailureType is FreeAgentFailureType.AddPlayerNotFound or FreeAgentFailureType.DropPlayerNotOnRoster
+            => Results.NotFound(new { error = ex.Message }),
+        FreeAgentOperationException ex when ex.FailureType is FreeAgentFailureType.AddPlayerIneligible
+            => Results.BadRequest(new { error = ex.Message }),
+        FreeAgentOperationException ex => Results.Conflict(new { error = ex.Message }),
         ArgumentException ex => Results.BadRequest(new { error = ex.Message }),
         RosterPlayerNotFoundException ex => Results.NotFound(new { error = ex.Message }),
         RosterConflictException ex => Results.Conflict(new { error = ex.Message }),

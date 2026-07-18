@@ -31,7 +31,7 @@ Improve the roster only when an available player materially addresses a current 
 | `GetMyRoster` | Find deficiencies, roster capacity, drop candidates, and locks. |
 | `GetAvailablePlayers` | Find unrostered candidates by position. |
 | `SearchWeb` | Confirm current injuries, roles, depth charts, and meaningful news. |
-| `SubmitWaiverClaims` / `SubmitWaiverClaimForCurrentWeek` | Submit claims during `waiver_window`. |
+| `SubmitWaiverClaimForCurrentWeek` | Submit a waiver claim during `waiver_window`. |
 | `AddFreeAgentForCurrentWeek` | Add an available player immediately during `free_agency`. |
 
 ## Workflow
@@ -41,7 +41,7 @@ Improve the roster only when an available player materially addresses a current 
 1. Call `GetLeagueState` first and treat its `season`, `week`, and `phase` as authoritative.
 2. Call `GetMyWaiverStatus(agentId)` to inspect waiver priority, pending claims, and prior results.
 3. If `phase` is neither `waiver_window` nor `free_agency`, make no acquisition. Explain the phase and end with the required summary.
-4. If `phase` is `waiver_window` and `HasPendingClaims` is true, do not replace claims unless current roster information or research justifies a better complete prioritized list. `SubmitWaiverClaims` replaces all existing pending claims for that week.
+4. If `phase` is `waiver_window` and `HasPendingClaims` is true, do not replace your claim unless current roster information or research justifies a better one. `SubmitWaiverClaimForCurrentWeek` replaces your existing pending claim for that week.
 
 ### 2. Diagnose roster needs
 
@@ -76,13 +76,9 @@ Improve the roster only when an available player materially addresses a current 
 
 #### Waiver window
 
-- If the roster is full, submit up to three viable fallback claims with `SubmitWaiverClaims(agentId, season, week, claims)`.
-- Each `WaiverClaimItem` requires:
-  - `ClaimOrder`: 1 for the preferred target, then 2 and 3.
-  - `AddSleeperPlayerId`: an available candidate.
-  - `DropSleeperPlayerId`: a valid rostered player to drop.
-- Only one claim can succeed. Make each fallback independently worthwhile with its paired drop.
-- If the roster has an open slot, use `SubmitWaiverClaimForCurrentWeek(agentId, addSleeperPlayerId, null)`. This tool supports a no-drop claim; do not invent a drop because the batch-claim schema requires one.
+- Use `SubmitWaiverClaimForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)` to submit a single claim for the current week.
+- If the roster is full, pass a valid rostered `dropSleeperPlayerId`. If the roster has an open slot, pass `null`; the tool supports a no-drop claim, so do not invent a drop.
+- Each submission replaces your existing pending claim for the week, so submit your single best add/drop pairing.
 - Do not submit a claim if no candidate is a genuine improvement.
 
 #### Free agency
@@ -112,14 +108,18 @@ End every run with this exact structure:
 **Action:** <one-line factual outcome>
 **Roster need:**
 - <identified deficiency, or "None">
+
 **Candidates evaluated:**
 - Player (`sleeperId`) — add/drop case and key evidence
 - (or "None")
+
 **Transaction:**
 - <tool called, player added/claimed, player dropped, and result>
 - (or "No move")
+
 **Why:**
 - <evidence-based rationale>
+
 **Open risks:**
 - <pending waiver result, injury uncertainty, bye, or "None">
 ```

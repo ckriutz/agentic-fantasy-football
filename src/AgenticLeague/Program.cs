@@ -9,7 +9,7 @@ var builder = Host.CreateApplicationBuilder(args);
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
-HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5000/") };
+HttpClient _http = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("API_BASE_URL")) };
 
 logger.LogInformation("Booting up Agentic Fantasy Football League...");
 // I want to print out a few things before we start the league, just to make sure everything is working correctly.
@@ -57,7 +57,7 @@ foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
 {
     // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
     // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
-    var fantasyAgent = new FantasyAgent(agentConfig, fantasyAgentLogger);
+    var fantasyAgent = new FantasyAgent(agentConfig, fantasyAgentLogger, _http);
     await fantasyAgent.InitializeAsync();
     await fantasyAgent.EnsureBootstrappedAsync();
     agents.Add(fantasyAgent);
@@ -70,13 +70,13 @@ await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
 // Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
 //logger.LogInformation("testing.");
-//var testAgents = agents.Where(a => a.GetAgentName() == "player-03" || a.GetAgentName() == "player-09").ToList();
+var testAgents = agents.Where(a => a.GetAgentName() == "player-08" || a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
 //var prompt = """test""";
 //var testAgent = agents.First(agent => agent.GetAgentName() == "player-03");
 //var testResponse = await testAgent.RunAsync(prompt);
 //Console.WriteLine($"Response from Player 3: {testResponse}");
 
-await RunSeasonAsync(agents, leagueState.Phase, host, _http, leagueState);
+await RunSeasonAsync(testAgents, leagueState.Phase, host, _http, leagueState);
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {
@@ -84,7 +84,7 @@ static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpCli
     if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
     {
         draftLogger.LogInformation("League state is drafting. Starting the draft runner...");
-        DraftRunner draftRunner = new DraftRunner(agents, draftLogger);
+        DraftRunner draftRunner = new DraftRunner(agents, draftLogger, _http);
         await draftRunner.RunDraftAsync();
         draftLogger.LogInformation("🎉 Draft runner completed.");
 

@@ -5,7 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AgentAvatar from '@/components/AgentAvatar'
-import { getAgentBootstrapUrl } from '@/lib/config'
+import { apiBaseUrl, getAgentBootstrapUrl } from '@/lib/config'
 
 type AgentProfile = {
   agentId: string
@@ -244,7 +244,7 @@ function AgentPage() {
       try {
         setIsLoadingProfile(true)
         setProfileError(null)
-        const response = await fetch('http://localhost:5000/api/agent-profiles/', {
+        const response = await fetch(`${apiBaseUrl}/api/agent-profiles/`, {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -272,7 +272,7 @@ function AgentPage() {
       try {
         setIsLoadingRoster(true)
         setRosterError(null)
-        const response = await fetch(`http://localhost:5000/api/rosters/${agentId}`, {
+        const response = await fetch(`${apiBaseUrl}/api/rosters/${agentId}`, {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -331,7 +331,7 @@ function AgentPage() {
       try {
         setIsLoadingDecisions(true)
         setDecisionsError(null)
-        const response = await fetch(`http://localhost:5000/api/decisions/${agentId}`, {
+        const response = await fetch(`${apiBaseUrl}/api/decisions/${agentId}`, {
           signal: controller.signal,
         })
         if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -353,7 +353,7 @@ function AgentPage() {
     const controller = new AbortController()
     async function fetchLeagueState() {
       try {
-        const response = await fetch('http://localhost:5000/api/league/state', {
+        const response = await fetch(`${apiBaseUrl}/api/league/state`, {
           signal: controller.signal,
         })
         if (!response.ok) return

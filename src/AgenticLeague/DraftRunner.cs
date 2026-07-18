@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 public class DraftRunner
 {
-    private static readonly HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5000/") };
+    private HttpClient _http;
     private static readonly System.Text.Json.JsonSerializerOptions _jsonIndented = new() { WriteIndented = true };
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
@@ -22,11 +22,12 @@ public class DraftRunner
     // and orchestrate the drafting process. It will keep track of the draft state,
     // including which round and pick we're on, and the order of agents in the draft.
     // It will also handle saving and loading this state to a file so that we can resume if needed.
-    public DraftRunner(List<FantasyAgent> agents, ILogger logger)
+    public DraftRunner(List<FantasyAgent> agents, ILogger logger, HttpClient httpClient)
     {
         _agents = agents.ToList();
         _logger = logger;
         _blobStorageTools = new BlobStorageTools();
+        _http = httpClient;
     }
 
     public async Task RunDraftAsync()
@@ -212,7 +213,7 @@ public class DraftRunner
             try
             {
                 // Provided there are no transient errors, this is the main call to the agent to make a draft pick.
-                response = await agent.RunAsync(draftPrompt);
+                response = (await agent.RunAsync(draftPrompt)).Response;
                 return response;
             }
             catch (Exception ex) when (IsDraftPickFailure(ex) && attempt < maxAttempts)
@@ -258,7 +259,7 @@ public class DraftRunner
         var prompt = await _blobStorageTools.GetPromptFromBlobStorageAsync("FantasyAgent.post-draft.md");
         foreach(var agent in fantasyAgents)
         {
-            var response = await agent.RunAsync(prompt);
+            var response = (await agent.RunAsync(prompt)).Response;
             _logger.LogInformation($"Post-draft response from {agent.GetAgentName()}: {response}");
             await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, 0, "Post-Draft Review", response, "Post-Draft", _logger);
         }

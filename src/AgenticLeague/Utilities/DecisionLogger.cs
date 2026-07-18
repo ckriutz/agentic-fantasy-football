@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 internal static class DecisionLogger
 {
-    private static readonly HttpClient _http = new() { BaseAddress = new Uri("http://localhost:5000/") };
+    private static readonly HttpClient _http = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("API_BASE_URL")) };
 
     internal static Task LogDecisionAsync(string agentId, int week, string type, AgentResponse response, string action, ILogger logger)
     {
