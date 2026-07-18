@@ -7,11 +7,10 @@ using YahooDataSync.Workers;
 
 var builder = WebApplication.CreateBuilder(args);
 
-const string defaultLeagueApiBaseUrl = "http://localhost:5000";
 const int requestTimeoutSeconds = 120;
 
 var azureStorageConnectionString = GetRequiredEnvironmentVariable("AZURE_STORAGE_CONNECTION_STRING");
-var leagueApiBaseUrl = GetEnvironmentUri("LEAGUE_API_BASE_URL", defaultLeagueApiBaseUrl);
+var leagueApiBaseUrl = GetEnvironmentUri("LEAGUE_API_BASE_URL", "http://192.168.40.159:8082");
 var storageOptions = new YahooStorageOptions
 {
     ContainerName = builder.Configuration["YAHOO_STORAGE_CONTAINER_NAME"] ?? "yahoodata",
@@ -60,7 +59,18 @@ builder.Services.AddSingleton<LeagueApiClient>();
 builder.Services.AddSingleton<YahooSyncOrchestrator>();
 builder.Services.AddHostedService<YahooSyncWorker>();
 
+var allowedCorsOrigins = (builder.Configuration["CORS_ALLOWED_ORIGINS"]
+    ?? "http://localhost:5173")
+    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy.WithOrigins(allowedCorsOrigins).AllowAnyHeader().AllowAnyMethod());
+});
+
 var app = builder.Build();
+
+app.UseCors();
 
 app.MapGet("/", () => Results.Ok(new
 {

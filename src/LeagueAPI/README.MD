@@ -45,16 +45,6 @@ The service respects these environment variables (prefer these over editing conf
 **Snapshot storage:**
 - `AZURE_STORAGE_CONNECTION_STRING` - **Required.** Azure Storage connection string for provider snapshot blobs.
 
-**Yahoo OAuth:**
-- `YahooClientId` - OAuth client ID from your Yahoo developer app (required for Yahoo features)
-- `YahooClientSecret` - OAuth client secret (required for Yahoo features)
-- `YAHOO_REDIRECT_URI` - redirect URI for OAuth callback; defaults to `https://localhost:5001/api/yahoo/auth/callback` if not set
-
-**Yahoo Sync:**
-- `YahooSync__DefaultGameKey` - default game key for syncs; defaults to `461` (2025 NFL) if not set
-- `YahooSync__DefaultSeason` - default season for syncs; defaults to `2025` if not set
-- `YahooSync__PageSize` - players per page when syncing; defaults to `25` if not set
-
 **ASP.NET Core:**
 - `ASPNETCORE_URLS` - listening URL; e.g., `http://127.0.0.1:5181`
 - `ASPNETCORE_ENVIRONMENT` - `Development` or `Production`
@@ -64,8 +54,6 @@ The service respects these environment variables (prefer these over editing conf
 ```bash
 export DBConnectionString="postgresql://user:pass@localhost/leaguedb"
 export AZURE_STORAGE_CONNECTION_STRING="your-storage-connection-string"
-export YahooClientId="your-client-id"
-export YahooClientSecret="your-client-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
 dotnet run
 ```
@@ -82,46 +70,9 @@ Sleeper, SportsData, and FantasyPros imports are triggered through their HTTP en
 
 Required. The service fails fast on startup if this is missing. Prefer setting it via the `DBConnectionString` environment variable so it can point at any Postgres host (local docker, managed Postgres, etc.).
 
-### Yahoo OAuth settings
+### Yahoo data
 
-```json
-"YahooOAuth": {
-  "ClientId": "",
-  "ClientSecret": "",
-  "RedirectUri": "https://localhost:5001/api/yahoo/auth/callback",
-  "AuthorizationUrl": "https://api.login.yahoo.com/oauth2/request_auth",
-  "TokenUrl": "https://api.login.yahoo.com/oauth2/get_token",
-  "FantasyApiBaseUrl": "https://fantasysports.yahooapis.com/fantasy/v2"
-}
-```
-
-Yahoo OAuth tokens are persisted to the `yahoo_oauth_state` Postgres table, so the database must be reachable before running the Yahoo authorization flow.
-
-Set Yahoo client credentials with environment variables:
-
-- `YahooClientId`
-- `YahooClientSecret`
-- `YAHOO_REDIRECT_URI` (optional override)
-
-### Yahoo sync settings
-
-```json
-"YahooSync": {
-  "Enabled": true,
-  "DefaultGameKey": "461",
-  "DefaultSeason": 2025,
-  "DefaultWeek": 1,
-  "PageSize": 25,
-  "DailySyncHourUtc": 6,
-  "RunOnStartup": false
-}
-```
-
-This sync path writes to the database-backed Yahoo tables, so it requires:
-
-1. `DBConnectionString` to be configured
-2. the Yahoo migrations to be applied
-3. Yahoo OAuth tokens to already be bootstrapped
+YahooDataSync owns Yahoo OAuth and provider synchronization. LeagueAPI imports the produced snapshots and exposes the persisted Yahoo data through its HTTP and MCP operations.
 
 ## Running the project
 
@@ -140,15 +91,6 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 
 ## Environment variables
 
-### Required for Yahoo sync/reads
-
-- `YahooClientId` - Your Yahoo app's OAuth client ID. Required for Yahoo OAuth flow.
-- `YahooClientSecret` - Your Yahoo app's OAuth client secret. Required for Yahoo OAuth flow.
-
-### Optional Yahoo overrides
-
-- `YAHOO_REDIRECT_URI` - Override the configured redirect URI for Yahoo OAuth. Defaults to `https://localhost:5001/api/yahoo/auth/callback` in config. Yahoo requires HTTPS, so the API must be listening on an HTTPS URL (see the bootstrap steps).
-
 ### Required runtime configuration
 
 - `DBConnectionString` - PostgreSQL connection string. The service fails fast without it.
@@ -163,8 +105,6 @@ ASPNETCORE_URLS=http://127.0.0.1:5181 dotnet run
 ```bash
 export DBConnectionString="Host=localhost;Database=leaguedb;Username=postgres;Password=your-password"
 export AZURE_STORAGE_CONNECTION_STRING="your-storage-connection-string"
-export YahooClientId="your-app-id"
-export YahooClientSecret="your-app-secret"
 export ASPNETCORE_URLS="http://127.0.0.1:5181"
 
 dotnet run
@@ -175,9 +115,7 @@ dotnet run
 When the service starts:
 
 1. It validates `DBConnectionString` and `AZURE_STORAGE_CONNECTION_STRING` and fails fast if either is missing.
-2. If `YahooSync:Enabled` is `true`, the Yahoo hosted sync service starts.
-3. If `YahooSync:RunOnStartup` is `true`, it attempts an immediate Yahoo weekly sync.
-4. The hosted service waits until `YahooSync:DailySyncHourUtc` and repeats the Yahoo sync daily.
+2. It serves its HTTP API and MCP endpoint.
 
 ## HTTP API
 
@@ -266,20 +204,18 @@ Example:
 curl "http://127.0.0.1:5181/api/sync/yahoo/latest?gameKey=449&season=2024&week=1"
 ```
 
-### Trigger a Yahoo weekly sync manually
+### Import a Yahoo weekly snapshot
 
-`POST /api/sync/yahoo/weekly?week=&season=&gameKey=&force=`
+`POST /api/sync/yahoo`
 
-- `week` is required
-- `season` defaults to `YahooSync:DefaultSeason`
-- `gameKey` defaults to `YahooSync:DefaultGameKey`
-- `force=false` skips if the same week already synced successfully today
-- `force=true` bypasses that guard
+The JSON request body supplies `containerName`, `blobName`, `gameKey`, `season`, `week`, and `retrievedAtUtc`. YahooDataSync creates the snapshot and calls this endpoint after uploading it to Azure Blob Storage.
 
 Example:
 
 ```bash
-curl -X POST "http://127.0.0.1:5181/api/sync/yahoo/weekly?gameKey=449&season=2024&week=1&force=true"
+curl -X POST http://127.0.0.1:5181/api/sync/yahoo \
+   -H "Content-Type: application/json" \
+   -d '{"containerName":"yahoodata","blobName":"snapshots/2024/week-1.json","gameKey":"449","season":2024,"week":1,"retrievedAtUtc":"2024-09-10T00:00:00Z"}'
 ```
 
 ### Get Yahoo weekly stat rows
@@ -356,63 +292,18 @@ You can also query by Yahoo player ID:
 
 Returns the configured scoring templates and their stat modifiers.
 
-### Yahoo OAuth status
-
-`GET /api/yahoo/auth/status`
-
-Returns whether Yahoo OAuth is configured, whether tokens are present, and whether an authorization flow is pending.
-
-### Create a Yahoo authorization URL
-
-`POST /api/yahoo/auth/authorize-url`
-
-Returns a Yahoo authorization URL plus the generated OAuth `state` and the configured redirect URI.
-
-Example:
-
-```bash
-curl -X POST http://127.0.0.1:5181/api/yahoo/auth/authorize-url
-```
-
-### Exchange an authorization code or redirect URL
-
-`POST /api/yahoo/auth/exchange`
-
-Accepts either a direct `code` or the full `redirectUrl` copied from the browser after approval.
-
-Example using the redirect URL:
-
-```bash
-curl -X POST http://127.0.0.1:5181/api/yahoo/auth/exchange \
-  -H "Content-Type: application/json" \
-  -d '{"redirectUrl":"https://localhost:3000?code=...&state=..."}'
-```
-
-### Refresh Yahoo tokens manually
-
-`POST /api/yahoo/auth/refresh`
-
-Refreshes the stored Yahoo access token using the saved refresh token.
-
-### Test the Yahoo connection
-
-`GET /api/yahoo/auth/test-connection`
-
-Makes an authenticated Yahoo request to `game/nfl` using the stored OAuth tokens.
-
 ## Yahoo end-to-end validation
 
-To fully test the Yahoo pipeline, you need all of these in place:
+To validate imported Yahoo data, you need all of these in place:
 
 1. a real PostgreSQL connection string in `DBConnectionString`
 2. the EF migrations applied
-3. Yahoo OAuth credentials configured
-4. a bootstrapped Yahoo token set
-5. at least one active scoring template in the database
+3. a Yahoo snapshot uploaded by YahooDataSync
+4. at least one active scoring template in the database
 
 ### 1. Configure the database connection
 
-Set `DBConnectionString` to a real Postgres database before running Yahoo syncs or Yahoo reads.
+Set `DBConnectionString` to a real Postgres database before importing or reading Yahoo data.
 
 ### 2. Apply the database migrations
 
@@ -422,55 +313,11 @@ From `src/LeagueAPI`:
 dotnet ef database update
 ```
 
-### 3. Configure Yahoo OAuth
+### 3. Import a Yahoo snapshot
 
-Prefer environment variables:
+Use YahooDataSync to retrieve and upload the provider snapshot, then call `POST /api/sync/yahoo` with its Azure Blob Storage location.
 
-```bash
-export YahooClientId="your-client-id"
-export YahooClientSecret="your-client-secret"
-export YAHOO_REDIRECT_URI="https://localhost:5001/api/yahoo/auth/callback"
-```
-
-### 4. Start the API
-
-Yahoo requires the OAuth redirect to use HTTPS, so trust the local dev certificate once
-and start the API listening on both HTTP (for the AgenticLeague clients) and HTTPS (for
-the Yahoo callback):
-
-```bash
-dotnet dev-certs https --trust
-ASPNETCORE_URLS="http://localhost:5000;https://localhost:5001" dotnet run
-```
-
-### 5. Bootstrap Yahoo auth
-
-In the Yahoo Developer Console, register this exact redirect URI:
-
-```
-https://localhost:5001/api/yahoo/auth/callback
-```
-
-1. Create an authorization URL:
-
-   ```bash
-   curl -X POST http://127.0.0.1:5000/api/yahoo/auth/authorize-url
-   ```
-
-2. Open the returned `authorizationUrl` in a browser and approve access. Yahoo redirects
-   back to `/api/yahoo/auth/callback`, which automatically exchanges the code and saves
-   the tokens — no copy-paste required. The page shows a confirmation message when done.
-
-   > Manual fallback: if you need to exchange a code yourself, POST the full redirect URL
-   > to `/api/yahoo/auth/exchange` with body `{"redirectUrl":"...?code=...&state=..."}`.
-
-3. Verify the token works:
-
-   ```bash
-   curl http://127.0.0.1:5000/api/yahoo/auth/test-connection
-   ```
-
-### 6. Seed an active scoring template
+### 4. Seed an active scoring template
 
 The Yahoo stat sync does not seed scoring templates yet. Without at least one active template, stat syncs will still work, but point endpoints will return no scored rows.
 
@@ -500,15 +347,7 @@ SET "StatName" = EXCLUDED."StatName",
     "Modifier" = EXCLUDED."Modifier";
 ```
 
-### 7. Run a Yahoo weekly sync
-
-Use a completed week so Yahoo has final stats. Example for 2024 week 1:
-
-```bash
-curl -X POST "http://127.0.0.1:5181/api/sync/yahoo/weekly?gameKey=449&season=2024&week=1&force=true"
-```
-
-### 8. Validate sync status
+### 5. Validate import status
 
 ```bash
 curl "http://127.0.0.1:5181/api/sync/yahoo/latest?gameKey=449&season=2024&week=1"
@@ -520,7 +359,7 @@ You want to see:
 - `RecordCount > 0`
 - `MatchedPlayerCount > 0`
 
-### 9. Validate raw stat reads
+### 6. Validate raw stat reads
 
 ```bash
 curl "http://127.0.0.1:5181/api/yahoo/stats/2024/1?position=QB&limit=5"
@@ -529,7 +368,7 @@ curl "http://127.0.0.1:5181/api/yahoo/stats/player/4046/2024/week/1"
 
 You want to see normalized stat rows like stat `4`, `5`, `6`, `9`, `10`, `11`, `12`, and `13` when Yahoo reported them for that player/week.
 
-### 10. Validate scored point reads
+### 7. Validate scored point reads
 
 ```bash
 curl "http://127.0.0.1:5181/api/yahoo/points/2024/1?templateKey=half-ppr&position=QB&limit=5"

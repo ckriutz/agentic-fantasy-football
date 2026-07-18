@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
-import { apiBaseUrl } from '@/lib/config'
+import { apiBaseUrl, yahooApiBaseUrl } from '@/lib/config'
 
 type FetchState = 'loading' | 'success' | 'error'
 
@@ -538,8 +538,8 @@ function YahooStatusCard() {
     setConnectionOk(null)
     try {
       const [statusResponse, connectionResponse, syncResponse, leagueResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/yahoo/auth/status`),
-        fetch(`${apiBaseUrl}/api/yahoo/auth/test-connection`),
+        fetch(`${yahooApiBaseUrl}/api/yahoo/auth/status`),
+        fetch(`${yahooApiBaseUrl}/api/yahoo/auth/test-connection`),
         fetch(`${apiBaseUrl}/api/sync/yahoo/latest`),
         fetch(`${apiBaseUrl}/api/league/state`),
       ])
