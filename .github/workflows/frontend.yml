@@ -1,4 +1,4 @@
-name: Build FantasyPros Data Sync
+name: Build Frontend Docker Image
 
 on:
   push:

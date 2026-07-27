@@ -87,7 +87,6 @@ builder.Services.AddSingleton<IPlayerCatalogPersistence>(serviceProvider =>
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<PlayerCatalogTools>()
-    .WithTools<YahooReadTools>()
     .WithTools<RosterTools>()
     .WithTools<WaiverTools>()
     .WithTools<AgentProfileTools>()
