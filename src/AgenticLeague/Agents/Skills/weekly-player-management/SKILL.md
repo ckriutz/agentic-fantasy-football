@@ -15,13 +15,19 @@ Improve the roster only when an available player materially addresses a current 
 
 - Acquisition is optional. A well-supported no-move outcome is correct.
 - Never acquire a player before confirming the league phase.
-- Use waiver tools for all weekly acquisitions. Do **not** use `AddPlayerToRoster` or `RemovePlayerFromRoster`; they bypass the waiver/free-agent lifecycle.
+- Use only the phase-aware acquisition tools: `SubmitWaiverClaimForCurrentWeek` during `waiver_window`, and `AddFreeAgentForCurrentWeek` during `free_agency`.
+- Do **not** use `add_free_agent`, `AddPlayerToRoster`, `RemovePlayerFromRoster`, or any explicit-week add variant. They either do not exist for weekly play or bypass the waiver/free-agent lifecycle, and calling them just returns errors.
+- Make **at most one successful acquisition per run**. Once an add or claim succeeds, stop acquiring and write the summary. Never chain a second add in the same run.
+- Attempt an acquisition **once**. Check the result `ok` field: if `false`, read `error.code`, `error.message`, and `error.nextStep`, apply `nextStep` only if it is a single safe correction, and otherwise stop. Do **not** retry the same call or cycle through other players hoping one succeeds.
 - Do not drop a healthy, needed starter merely to make a speculative addition.
 - Do not drop a lineup-locked player or a player whose add/drop lock status prevents the transaction.
 - Do not make player moves during phases other than `waiver_window` or `free_agency`.
 - Use the exact `agentId` supplied by the task for every roster and waiver tool.
+- The run is complete only when you output the decision summary as visible text. Never end on a tool call.
 
 ## Required tools
+
+Tool names below are shown in PascalCase; the runtime exposes the league (MCP) tools in snake_case (e.g. `AddFreeAgentForCurrentWeek` is `add_free_agent_for_current_week`, `GetMyRoster` is `get_my_roster`). They are the same tools — match on either form.
 
 | Tool | Purpose |
 |------|---------|
@@ -83,9 +89,9 @@ Improve the roster only when an available player materially addresses a current 
 
 #### Free agency
 
-- Use `AddFreeAgentForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)`.
+- Use `AddFreeAgentForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)`. This is the **only** free-agency add tool — do not call `add_free_agent` or an explicit-week variant.
 - Pass `dropSleeperPlayerId` only when the roster is full.
-- Add only one player per run unless the task explicitly directs multiple moves.
+- Make at most one successful add per run. Check the result `ok` field: if `true`, you are done acquiring; if `false`, read `error.nextStep` and either apply that single correction or stop — do not loop through alternate players.
 
 ### 5. Follow through and preserve memory
 
@@ -135,4 +141,7 @@ End every run with this exact structure:
 | Treating a submitted claim as an acquired player | It is pending until waiver processing reports success. |
 | Using direct roster add/remove tools | Use the phase-aware waiver tools for acquisitions. |
 | Dropping an asset for a one-week speculative add | Require a meaningful need and material upgrade. |
+| Retrying a failed add with different players | Attempt once; on `ok: false` follow `error.nextStep` or stop and report. |
+| Calling `add_free_agent` or `AddPlayerToRoster` | Use `AddFreeAgentForCurrentWeek` only. |
+| Making a second add after one already succeeded | One successful acquisition per run, then summarize. |
 | Leaving a newly added starter candidate on the bench | Run `roster-management` after a confirmed successful add when lineup changes are needed. |

@@ -147,19 +147,35 @@ app.MapPost("/api/yahoo/auth/refresh", async (YahooOAuthService yahooOAuthServic
     return Results.Ok(await yahooOAuthService.RefreshAccessTokenAsync(cancellationToken));
 });
 
-app.MapGet("/api/yahoo/auth/test-connection", async (YahooFantasyApiClient yahooFantasyApiClient, CancellationToken cancellationToken) =>
+app.MapGet("/api/yahoo/auth/test-connection", async (YahooFantasyApiClient yahooFantasyApiClient, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
-    var payload = await yahooFantasyApiClient.GetGameInfoAsync(cancellationToken);
-    return Results.Json(payload);
+    try
+    {
+        var payload = await yahooFantasyApiClient.GetGameInfoAsync(cancellationToken);
+        return Results.Json(payload);
+    }
+    catch (HttpRequestException exception)
+    {
+        logger.LogError(exception, "Yahoo connection test failed.");
+        return Results.Problem("Yahoo rejected the API request. Inspect YahooDataSync logs for the Yahoo response.", statusCode: StatusCodes.Status502BadGateway);
+    }
 });
 
-app.MapGet("/api/yahoo/league/{leagueKey}/settings/raw", async (string leagueKey, YahooFantasyApiClient yahooFantasyApiClient, CancellationToken cancellationToken) =>
+app.MapGet("/api/yahoo/league/{leagueKey}/settings/raw", async (string leagueKey, YahooFantasyApiClient yahooFantasyApiClient, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
-    var payload = await yahooFantasyApiClient.GetLeagueSettingsAsync(leagueKey, cancellationToken);
-    return Results.Json(payload);
+    try
+    {
+        var payload = await yahooFantasyApiClient.GetLeagueSettingsAsync(leagueKey, cancellationToken);
+        return Results.Json(payload);
+    }
+    catch (HttpRequestException exception)
+    {
+        logger.LogError(exception, "Yahoo league settings request failed for {LeagueKey}.", leagueKey);
+        return Results.Problem("Yahoo rejected the API request. Inspect YahooDataSync logs for the Yahoo response.", statusCode: StatusCodes.Status502BadGateway);
+    }
 });
 
-app.MapPost("/api/sync/yahoo", async (YahooSyncOrchestrator yahooSyncOrchestrator, CancellationToken cancellationToken) =>
+app.MapPost("/api/sync/yahoo", async (YahooSyncOrchestrator yahooSyncOrchestrator, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
     try
     {
@@ -168,6 +184,11 @@ app.MapPost("/api/sync/yahoo", async (YahooSyncOrchestrator yahooSyncOrchestrato
     catch (InvalidOperationException exception)
     {
         return Results.Conflict(new { error = exception.Message });
+    }
+    catch (HttpRequestException exception)
+    {
+        logger.LogError(exception, "Manual Yahoo sync failed.");
+        return Results.Problem("Yahoo request failed. Inspect YahooDataSync logs for the Yahoo response.", statusCode: StatusCodes.Status502BadGateway);
     }
 });
 

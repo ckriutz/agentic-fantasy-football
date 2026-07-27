@@ -10,6 +10,7 @@ var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
 HttpClient _http = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("API_BASE_URL")) };
+HttpClient _yahooHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("YAHOO_API_BASE_URL")) };
 
 logger.LogInformation("Booting up Agentic Fantasy Football League...");
 // I want to print out a few things before we start the league, just to make sure everything is working correctly.
@@ -70,13 +71,13 @@ await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
 // Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
 //logger.LogInformation("testing.");
-var testAgents = agents.Where(a => a.GetAgentName() == "player-08" || a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
+//var testAgents = agents.Where(a => a.GetAgentName() == "player-08" || a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
 //var prompt = """test""";
 //var testAgent = agents.First(agent => agent.GetAgentName() == "player-03");
-//var testResponse = await testAgent.RunAsync(prompt);
-//Console.WriteLine($"Response from Player 3: {testResponse}");
+//var testResponse = await testAgent.RunAsync("Look at your roster, and tell me if your starting roster is full or not. If it is, respond with 'Starting roster is full.'. If it is not, respond with what position is missing a starting player and which bench player you would fill it with. Don't make any moves, just evaluate. You MUST provide a response.");
+//Console.WriteLine($"Response from Player 1: {testResponse.Response}");
 
-await RunSeasonAsync(testAgents, leagueState.Phase, host, _http, leagueState);
+await RunSeasonAsync(agents, leagueState.Phase, host, _http, _yahooHttp, leagueState);
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {
@@ -103,7 +104,7 @@ static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpCli
     }
 }
 
-static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost host, HttpClient http, LeagueState leagueState)
+static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost host, HttpClient http, HttpClient yahooHttp, LeagueState leagueState)
 {
     ILogger seasonLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeasonRunner");
     // We don't want to run the season runner if we are in the drafting phase, because the draft runner will handle moving the league into the free-agency phase once the draft is complete.
@@ -113,7 +114,7 @@ static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost 
         return;
     }
     seasonLogger.LogInformation("League state is {Phase}. Starting the season runner...", phase);
-    SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, leagueState);
+    SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, yahooHttp, leagueState);
     await seasonRunner.RunAsync();
     seasonLogger.LogInformation("🎉 Season runner completed.");
 

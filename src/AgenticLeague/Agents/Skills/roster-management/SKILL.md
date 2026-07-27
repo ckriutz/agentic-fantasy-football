@@ -15,6 +15,15 @@ Set the best **starting lineup from players already on the roster**. Goal: maxim
 
 This skill is lineups only. Do **not** add, drop, claim, or trade players here.
 
+## Efficiency budget (avoid loops)
+
+Gather context **once**, then act. A repeated read of the same data is a failure signal, not progress.
+
+- Load this skill **once**. Do not call `load_skill` for `roster-management` again in the same run.
+- Read each reference file at most once. Re-reading `references/*` repeatedly means you already have what you need — proceed to `SetPlayerSlot`.
+- Read the roster with `GetMyRoster` once up front, then again only to verify after you have applied moves.
+- Once you have the league state and roster, you have enough to act. Move players; do not re-fetch the same data hoping for a different answer.
+
 ## When to use
 
 - Complete roster management / “set my lineup”
@@ -49,7 +58,7 @@ Rules:
 
 ## Tools
 
-Use league tools (MCP) plus research tools already available to you:
+Use league tools (MCP) plus research tools already available to you. Tool names below are PascalCase; the runtime exposes the league tools in snake_case (e.g. `SetPlayerSlot` is `set_player_slot`, `GetMyRoster` is `get_my_roster`). They are the same tools — match on either form.
 
 | Tool | Purpose |
 |------|---------|
@@ -167,6 +176,7 @@ Compare target lineup vs current `slotType`.
 - Otherwise call `SetPlayerSlot(agentId, sleeperPlayerId, slotType)` for each player that must move.
 - Minimize useless churn of equal players (e.g. only swap WR1/WR2 if needed).
 - If a call fails because a player is locked, leave them, fill other slots, and note it.
+- If a `SetPlayerSlot` result has `ok: false`, read `error.code`, `error.message`, and `error.nextStep`. Apply `nextStep` only if it is a single safe correction; otherwise skip that player and note it. Do not retry the same failing call repeatedly.
 - After applying moves, optionally call `GetMyRoster` again and verify all nine starter slots are filled when players allow.
 
 ### 7. No-change is a valid outcome
@@ -232,6 +242,7 @@ Optional: after meaningful lineup changes, update `bootstrap.md` with one concis
 - Do not use `AutoSetLineup` on normal runs.
 - Complete fill of starter slots is mandatory when eligible players exist.
 - Respond with the full decision summary every time.
+- The run is complete only when the decision summary is emitted as visible text. Never end on a tool call.
 
 ## Quick checklist
 

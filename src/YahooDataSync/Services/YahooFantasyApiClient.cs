@@ -84,7 +84,17 @@ internal sealed class YahooFantasyApiClient(IHttpClientFactory httpClientFactory
     {
         if (!response.IsSuccessStatusCode)
         {
-            throw new HttpRequestException($"Yahoo API request failed with status {(int)response.StatusCode}.", null, response.StatusCode);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var diagnostic = string.Join(' ', responseBody.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            if (diagnostic.Length > 1_024)
+            {
+                diagnostic = diagnostic[..1_024];
+            }
+
+            throw new HttpRequestException(
+                $"Yahoo API request failed with status {(int)response.StatusCode} ({response.ReasonPhrase}). Response: {diagnostic}",
+                null,
+                response.StatusCode);
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

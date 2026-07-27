@@ -9,22 +9,25 @@ public class SeasonRunner
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     private readonly HttpClient _http;
+    private readonly HttpClient _yahooHttp;
     private LeagueState _leagueState;
 
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient yahooHttp)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
+        _yahooHttp = yahooHttp;
         _leagueState = LeagueStateHelper.GetLeagueStateAsync(_http, _logger).Result;
     }
 
     // In case for testing I wanted to pass in a custom league state, I can use this constructor instead of the one above.
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, LeagueState leagueState)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient yahooHttp, LeagueState leagueState)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
+        _yahooHttp = yahooHttp;
         _leagueState = leagueState;
     }
 
@@ -299,17 +302,19 @@ public class SeasonRunner
             // Lets set the league state to games_locked, since the games start on Sunday, and we want to make sure the agents have set their lineups before the games start.
             _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState?.Season, _leagueState?.Week, "games_locked", "season-runner", _http, _logger);
 
-            var prompt =
-            $"""
-            Today is Sunday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-            There are games starting today, so this is your last chance to set your lineups for the Sunday games.
-            Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
-            This is a lineup-only run. Do not add, drop, claim, or trade players.
-            Use the `roster-management` skill to update your lineup.
-            Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-            """;
+
             foreach(var agent in _agents)
             {
+                var prompt =
+                $"""
+                Today is Sunday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                There are games starting today, so this is your last chance to set your lineups for the Sunday games.
+                Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
+                This is a lineup-only run. Do not add, drop, or claim players.
+                Use the `roster-management` skill to update your lineup.
+                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                """;
                 var response = (await agent.RunAsync(prompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
             }

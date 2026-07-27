@@ -18,7 +18,7 @@ public class FantasyAgent
     private readonly ILogger<FantasyAgent> _logger;
 
     // Result summaries can be huge (e.g. get_available_players), so cap what we log/keep.
-    private const int MaxResultLength = 2000;
+    private const int MaxResultLength = 1000;
 
     // Holds the trace for the RunAsync call currently executing on this async flow.
     // AsyncLocal keeps it scoped to the in-flight run so the tool middleware can record calls
