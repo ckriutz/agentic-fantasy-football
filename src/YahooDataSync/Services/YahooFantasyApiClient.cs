@@ -15,7 +15,11 @@ internal sealed class YahooFantasyApiClient(IHttpClientFactory httpClientFactory
 
     internal Task<JsonElement> GetGameInfoAsync(CancellationToken cancellationToken)
     {
-        return GetAsync("game/nfl", cancellationToken);
+        // Yahoo expects a numeric game key for game/{key}. Use the verified games filter instead.
+        // NFL season rolls in the spring; before March, prefer the previous calendar year.
+        var utcNow = DateTime.UtcNow;
+        var season = utcNow.Month >= 3 ? utcNow.Year : utcNow.Year - 1;
+        return GetAsync($"games;game_codes=nfl;seasons={season}", cancellationToken);
     }
 
     internal Task<JsonElement> GetLeagueSettingsAsync(string leagueKey, CancellationToken cancellationToken)
