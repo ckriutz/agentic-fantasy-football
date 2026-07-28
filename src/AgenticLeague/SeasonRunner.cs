@@ -394,7 +394,7 @@ public class SeasonRunner
             return false;
         }
 
-        var yahooResponse = await _http.PostAsync($"api/sync/yahoo/weekly?week={week}&season={season}&force=false", null);
+        var yahooResponse = await _yahooHttp.PostAsync("api/sync/yahoo", null);
         if (!yahooResponse.IsSuccessStatusCode)
         {
             var error = await yahooResponse.Content.ReadAsStringAsync();

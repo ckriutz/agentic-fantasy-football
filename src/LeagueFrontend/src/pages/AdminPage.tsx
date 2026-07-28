@@ -46,6 +46,13 @@ type YahooAuthStatus = {
   hasPendingAuthorizationState: boolean
 }
 
+type YahooConnectionResult = {
+  connected: boolean
+  season?: number
+  statusCode?: number | null
+  detail?: string | null
+}
+
 type SleeperSyncState = {
   syncRunId: string | null
   status: string
@@ -528,6 +535,7 @@ function YahooStatusCard() {
   const [state, setState] = useState<FetchState>('loading')
   const [status, setStatus] = useState<YahooAuthStatus | null>(null)
   const [connectionOk, setConnectionOk] = useState<boolean | null>(null)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
   const [syncRun, setSyncRun] = useState<YahooSyncRun | null>(null)
   const [leagueState, setLeagueState] = useState<{ season: number; week: number } | null>(null)
   const [manualSyncing, setManualSyncing] = useState(false)
@@ -536,10 +544,10 @@ function YahooStatusCard() {
   const checkStatus = useCallback(async () => {
     setState('loading')
     setConnectionOk(null)
+    setConnectionError(null)
     try {
-      const [statusResponse, connectionResponse, syncResponse, leagueResponse] = await Promise.all([
+      const [statusResponse, syncResponse, leagueResponse] = await Promise.all([
         fetch(`${yahooApiBaseUrl}/api/yahoo/auth/status`),
-        fetch(`${yahooApiBaseUrl}/api/yahoo/auth/test-connection`),
         fetch(`${apiBaseUrl}/api/sync/yahoo/latest`),
         fetch(`${apiBaseUrl}/api/league/state`),
       ])
@@ -550,7 +558,6 @@ function YahooStatusCard() {
       }
 
       setStatus((await statusResponse.json()) as YahooAuthStatus)
-      setConnectionOk(connectionResponse.ok)
       setSyncRun(syncResponse.ok ? (await syncResponse.json()) as YahooSyncRun : null)
       if (leagueResponse.ok) {
         const data = (await leagueResponse.json()) as { season: number; week: number }
@@ -559,6 +566,18 @@ function YahooStatusCard() {
       setState('success')
     } catch {
       setState('error')
+      return
+    }
+
+    // The connection test is diagnostic, so a failure here must not hide the rest of the card.
+    try {
+      const connectionResponse = await fetch(`${yahooApiBaseUrl}/api/yahoo/auth/test-connection`)
+      const connection = connectionResponse.ok ? (await connectionResponse.json()) as YahooConnectionResult : null
+      setConnectionOk(connection?.connected ?? false)
+      setConnectionError(connection?.connected === false ? connection.detail ?? null : null)
+    } catch (error) {
+      setConnectionOk(false)
+      setConnectionError(error instanceof Error ? error.message : 'Unknown error')
     }
   }, [])
 
@@ -567,17 +586,11 @@ function YahooStatusCard() {
   }, [checkStatus])
 
   const runManualSync = useCallback(async () => {
-    if (!leagueState || !syncRun?.gameKey) return
+    if (!leagueState) return
     setManualSyncing(true)
     setManualSyncError(null)
     try {
-      const params = new URLSearchParams({
-        week: String(leagueState.week),
-        season: String(leagueState.season),
-        gameKey: syncRun.gameKey,
-        force: 'true',
-      })
-      const response = await fetch(`${apiBaseUrl}/api/sync/yahoo/weekly?${params.toString()}`, {
+      const response = await fetch(`${yahooApiBaseUrl}/api/sync/yahoo`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -589,9 +602,9 @@ function YahooStatusCard() {
     } finally {
       setManualSyncing(false)
     }
-  }, [checkStatus, leagueState, syncRun?.gameKey])
+  }, [checkStatus, leagueState])
 
-  const canManualSync = !!leagueState && !!syncRun?.gameKey && !manualSyncing
+  const canManualSync = !!leagueState && !manualSyncing
 
   return (
     <Card className="border-white/10 bg-slate-900 text-slate-50">
@@ -645,10 +658,18 @@ function YahooStatusCard() {
                 <CheckCircle2 className="size-5" />
                 <span className="text-sm font-medium">Yahoo API connection successful.</span>
               </div>
+            ) : connectionOk === false ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-red-400">
+                  <AlertCircle className="size-5" />
+                  <span className="text-sm font-medium">Yahoo API connection failed.</span>
+                </div>
+                {connectionError && <p className="text-xs text-red-400">{connectionError}</p>}
+              </div>
             ) : (
-              <div className="flex items-center gap-2 text-red-400">
-                <AlertCircle className="size-5" />
-                <span className="text-sm font-medium">Yahoo API connection failed.</span>
+              <div className="flex items-center gap-2 text-slate-300">
+                <Loader2 className="size-5 animate-spin" />
+                <span className="text-sm">Testing Yahoo API connection…</span>
               </div>
             )}
             <SyncRow
@@ -666,9 +687,7 @@ function YahooStatusCard() {
                   title={
                     !leagueState
                       ? 'Waiting for league state'
-                      : !syncRun?.gameKey
-                        ? 'Need a prior sync to know the gameKey'
-                        : 'Manually trigger a Yahoo weekly sync'
+                      : 'Manually trigger a Yahoo weekly sync'
                   }
                 >
                   {manualSyncing ? (

@@ -6,7 +6,7 @@ internal sealed record YahooAuthorizationExchangeRequest(string? Code, string? S
 
 internal sealed record YahooAuthorizationUrlResponse(string AuthorizationUrl, string RedirectUri, string State);
 
-internal sealed record YahooAuthStatus(bool IsConfigured, bool HasAccessToken, bool HasRefreshToken, DateTimeOffset? AccessTokenExpiresAtUtc, DateTimeOffset? LastRefreshedAtUtc, bool HasPendingAuthorizationState);
+internal sealed record YahooAuthStatus(bool IsConfigured, bool HasAccessToken, bool HasRefreshToken, DateTimeOffset? AccessTokenExpiresAtUtc, DateTimeOffset? LastRefreshedAtUtc, bool HasPendingAuthorizationState, string? Scope = null);
 
 internal sealed record YahooOAuthState(string? RefreshToken = null, string? TokenType = null, string? Scope = null, DateTimeOffset? IssuedAtUtc = null, DateTimeOffset? LastRefreshedAtUtc = null, string? AuthorizationState = null, DateTimeOffset? AuthorizationStateExpiresAtUtc = null);
 

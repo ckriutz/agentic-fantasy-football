@@ -287,7 +287,8 @@ internal sealed class YahooOAuthService(IHttpClientFactory httpClientFactory, Ya
             !string.IsNullOrWhiteSpace(state.RefreshToken),
             _accessTokenExpiresAtUtc,
             state.LastRefreshedAtUtc,
-            !string.IsNullOrWhiteSpace(state.AuthorizationState) && state.AuthorizationStateExpiresAtUtc > DateTimeOffset.UtcNow);
+            !string.IsNullOrWhiteSpace(state.AuthorizationState) && state.AuthorizationStateExpiresAtUtc > DateTimeOffset.UtcNow,
+            state.Scope);
     }
 
     private void SetAccessToken(YahooTokenResponse tokenResponse, DateTimeOffset nowUtc)

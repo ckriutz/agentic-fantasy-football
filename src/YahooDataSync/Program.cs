@@ -147,17 +147,21 @@ app.MapPost("/api/yahoo/auth/refresh", async (YahooOAuthService yahooOAuthServic
     return Results.Ok(await yahooOAuthService.RefreshAccessTokenAsync(cancellationToken));
 });
 
-app.MapGet("/api/yahoo/auth/test-connection", async (YahooFantasyApiClient yahooFantasyApiClient, ILogger<Program> logger, CancellationToken cancellationToken) =>
+app.MapGet("/api/yahoo/auth/test-connection", async (YahooFantasyApiClient yahooFantasyApiClient, LeagueApiClient leagueApiClient, ILogger<Program> logger, CancellationToken cancellationToken) =>
 {
     try
     {
-        var payload = await yahooFantasyApiClient.GetGameInfoAsync(cancellationToken);
-        return Results.Json(payload);
+        var leagueState = await leagueApiClient.GetLeagueStateAsync(cancellationToken);
+        var payload = await yahooFantasyApiClient.GetGameInfoAsync(leagueState.Season, cancellationToken);
+        return Results.Json(new { connected = true, season = leagueState.Season, games = payload });
     }
-    catch (HttpRequestException exception)
+    catch (Exception exception) when (exception is HttpRequestException or InvalidDataException)
     {
+        // Cloudflare replaces origin 5xx responses with its own error page, which drops the CORS headers
+        // and surfaces in the browser as a misleading CORS failure. Report the outcome with a 200 instead.
         logger.LogError(exception, "Yahoo connection test failed.");
-        return Results.Problem("Yahoo rejected the API request. Inspect YahooDataSync logs for the Yahoo response.", statusCode: StatusCodes.Status502BadGateway);
+        var yahooStatusCode = (exception as HttpRequestException)?.StatusCode;
+        return Results.Json(new { connected = false, statusCode = (int?)yahooStatusCode, detail = exception.Message });
     }
 });
 
