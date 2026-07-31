@@ -54,6 +54,7 @@ builder.Services.AddSingleton<SleeperSnapshotImportService>();
 builder.Services.AddSingleton<ScoringService>();
 builder.Services.AddSingleton<YahooSnapshotImportService>();
 builder.Services.AddSingleton<YahooReadService>();
+builder.Services.AddSingleton<PlayerPointsReadService>();
 
 builder.Services.AddSingleton<RosterStore>();
 builder.Services.AddSingleton<IRosterReader>(serviceProvider =>
@@ -134,6 +135,9 @@ app.MapGet("/", () => Results.Ok(new
         "/api/yahoo/points/by-yahoo/{yahooId}/{season}/week/{week}?templateKey=",
         "/api/yahoo/points/by-yahoo/{yahooId}/{season}?templateKey=",
         "/api/yahoo/scoring-templates?activeOnly=",
+        "/api/points/{season}/{week}?position=&limit=",
+        "/api/points/player/{sleeperPlayerId}/{season}/week/{week}",
+        "/api/points/player/{sleeperPlayerId}/{season}",
         "/api/agent-profiles?enabledOnly=",
         "/api/agent-profiles/{agentId}",
         "/api/agent-profiles/{agentId}/team-name",
@@ -936,6 +940,56 @@ app.MapGet("/api/yahoo/scoring-templates", async (
         cancellationToken);
 
     return Results.Ok(templates);
+});
+
+// --- FantasyPros points (read surface) ---
+
+app.MapGet("/api/points/{season:int}/{week:int}", async (
+    int season,
+    int week,
+    string? position,
+    int? limit,
+    PlayerPointsReadService playerPointsReadService,
+    CancellationToken cancellationToken) =>
+{
+    var points = await playerPointsReadService.GetWeeklyPointsAsync(
+        season,
+        week,
+        position,
+        limit ?? 25,
+        cancellationToken);
+
+    return Results.Ok(points);
+});
+
+app.MapGet("/api/points/player/{sleeperPlayerId}/{season:int}/week/{week:int}", async (
+    string sleeperPlayerId,
+    int season,
+    int week,
+    PlayerPointsReadService playerPointsReadService,
+    CancellationToken cancellationToken) =>
+{
+    var point = await playerPointsReadService.GetPlayerWeeklyPointsAsync(
+        sleeperPlayerId,
+        season,
+        week,
+        cancellationToken);
+
+    return point is null ? Results.NotFound() : Results.Ok(point);
+});
+
+app.MapGet("/api/points/player/{sleeperPlayerId}/{season:int}", async (
+    string sleeperPlayerId,
+    int season,
+    PlayerPointsReadService playerPointsReadService,
+    CancellationToken cancellationToken) =>
+{
+    var seasonPoints = await playerPointsReadService.GetPlayerSeasonPointsAsync(
+        sleeperPlayerId,
+        season,
+        cancellationToken);
+
+    return seasonPoints is null ? Results.NotFound() : Results.Ok(seasonPoints);
 });
 
 // --- Waivers ---

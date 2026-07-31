@@ -135,46 +135,36 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
         return await LoadScoresByAgentIdAsync(dbContext, season, week, starters, cancellationToken);
     }
 
-    private static async Task<Dictionary<string, decimal>> LoadScoresByAgentIdAsync(
-        LeagueApiDbContext dbContext,
-        int season,
-        int week,
-        IReadOnlyCollection<RosterScoreEntry> starters,
-        CancellationToken cancellationToken)
+    private static async Task<Dictionary<string, decimal>> LoadScoresByAgentIdAsync(LeagueApiDbContext dbContext, int season, int week, IReadOnlyCollection<RosterScoreEntry> starters, CancellationToken cancellationToken)
     {
         if (starters.Count == 0)
         {
             return new Dictionary<string, decimal>(StringComparer.Ordinal);
         }
 
-        var activeTemplateKey = await dbContext.ScoringTemplates
-            .AsNoTracking()
-            .Where(template => template.IsActive)
-            .OrderBy(template => template.TemplateKey)
-            .Select(template => template.TemplateKey)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException("No active scoring template is configured.");
-
         var playerIds = starters
             .Select(starter => starter.SleeperPlayerId)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var pointsByPlayerId = await (
-            from point in dbContext.WeeklyPlayerPoints.AsNoTracking()
-            join stat in dbContext.WeeklyPlayerStats.AsNoTracking()
-                on point.WeeklyPlayerStatId equals stat.WeeklyPlayerStatId
-            where point.TemplateKey == activeTemplateKey
-                && stat.Season == season
-                && stat.Week == week
-                && stat.SleeperPlayerId != null
-                && playerIds.Contains(stat.SleeperPlayerId)
-            select new { SleeperPlayerId = stat.SleeperPlayerId!, point.FantasyPoints })
+        var scoreRows = await dbContext.WeeklyPlayerScores
+            .AsNoTracking()
+            .Where(score =>
+                score.Season == season
+                && score.Week == week
+                && score.SleeperPlayerId != null
+                && playerIds.Contains(score.SleeperPlayerId))
+            .Select(score => new { SleeperPlayerId = score.SleeperPlayerId!, score.FantasyProsPlayerId, score.Points })
             .ToListAsync(cancellationToken);
 
-        var pointsBySleeperPlayerId = pointsByPlayerId
-            .GroupBy(point => point.SleeperPlayerId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.Sum(point => point.FantasyPoints), StringComparer.Ordinal);
+        // One score per SleeperPlayerId: if multiple FantasyPros rows map to the same Sleeper id,
+        // keep the lowest FantasyProsPlayerId so a player is never double-counted.
+        var pointsBySleeperPlayerId = scoreRows
+            .GroupBy(score => score.SleeperPlayerId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(score => score.FantasyProsPlayerId).First().Points,
+                StringComparer.Ordinal);
 
         return starters
             .GroupBy(starter => starter.AgentId, StringComparer.Ordinal)
