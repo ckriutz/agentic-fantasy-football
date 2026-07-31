@@ -26,7 +26,7 @@ services:
 
   # LeagueAPI - Player data aggregation service
   leagueapi:
-    image: ghcr.io/ckriutz/leagueapi:3
+    image: ghcr.io/ckriutz/leagueapi:6
     pull_policy: always
     restart: unless-stopped
     ports:
@@ -48,14 +48,20 @@ services:
       start_period: 10s
 
   fantasyprosdatasync:
-    image: ghcr.io/ckriutz/fantasyprosdatasync:1
+    image: ghcr.io/ckriutz/fantasyprosdatasync:2
     pull_policy: always
     restart: unless-stopped
+    ports:
+      - "${FANTASYPROSDATASYNC_PORT:-8004}:8004"
     environment:
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://192.168.40.159:3080
+      - ASPNETCORE_URLS=http://+:8004
       - FANTASY_PROS_API_KEY=
       - AZURE_STORAGE_CONNECTION_STRING=
       - FANTASYPROS_STORAGE_CONTAINER_NAME=playerdata
       - LEAGUE_API_BASE_URL=http://leagueapi:8082
+      - FANTASYPROS_POINTS_SYNC_ENABLED=${FANTASYPROS_POINTS_SYNC_ENABLED:-true}
+      - FANTASYPROS_POINTS_SYNC_INTERVAL_MINUTES=${FANTASYPROS_POINTS_SYNC_INTERVAL_MINUTES:-240}
     depends_on:
       leagueapi:
         condition: service_healthy
