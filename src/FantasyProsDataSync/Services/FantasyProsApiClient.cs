@@ -42,7 +42,28 @@ public sealed class FantasyProsApiClient(HttpClient httpClient, IHttpClientFacto
         return new FantasyProsPlayersSnapshot(leagueState.Season, leagueState.Week, DateTimeOffset.UtcNow, uniquePlayers);
     }
 
+    public async Task<FantasyProsPointsSnapshot> GetPlayerPointsSnapshotAsync(int season, int? endWeek, CancellationToken cancellationToken)
+    {
+        var requestUri = $"nfl/{season}/player-points?scoring=PPR";
+        if (endWeek is int week)
+        {
+            requestUri += $"&end={week}";
+        }
+
+        _logger.LogInformation("Requesting FantasyPros player points for season {Season} at {RequestUri}.", season, requestUri);
+        var response = await GetJsonWithRetryAsync<FantasyProsPointsResponse>(requestUri, $"player-points season {season}", cancellationToken);
+        var servedSeason = response.Season ?? throw new InvalidOperationException("FantasyPros returned player points without a season.");
+        var servedScoring = response.Scoring ?? throw new InvalidOperationException("FantasyPros returned player points without a scoring format.");
+
+        return new FantasyProsPointsSnapshot(servedSeason, servedScoring, DateTimeOffset.UtcNow, response.Players);
+    }
+
     private async Task<FantasyProsRankingsResponse> GetRankingsAsync(string requestUri, string position, CancellationToken cancellationToken)
+    {
+        return await GetJsonWithRetryAsync<FantasyProsRankingsResponse>(requestUri, $"position '{position}'", cancellationToken);
+    }
+
+    private async Task<T> GetJsonWithRetryAsync<T>(string requestUri, string requestDescription, CancellationToken cancellationToken)
     {
         var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
         for (var attempt = 0; attempt <= retryDelays.Length; attempt++)
@@ -52,22 +73,22 @@ public sealed class FantasyProsApiClient(HttpClient httpClient, IHttpClientFacto
                 using var response = await _httpClient.GetAsync(requestUri, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                return await response.Content.ReadFromJsonAsync<FantasyProsRankingsResponse>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException($"FantasyPros returned an empty rankings response for position '{position}'.");
+                return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException($"FantasyPros returned an empty response for {requestDescription}.");
             }
             catch (HttpRequestException exception) when (exception.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 if (attempt == retryDelays.Length)
                 {
-                    _logger.LogError(exception, "FantasyPros returned HTTP 429 for position {Position} after {AttemptCount} attempts.", position, attempt + 1);
+                    _logger.LogError(exception, "FantasyPros returned HTTP 429 for {RequestDescription} after {AttemptCount} attempts.", requestDescription, attempt + 1);
                     throw;
                 }
 
                 var retryDelay = retryDelays[attempt];
-                _logger.LogWarning(exception, "FantasyPros returned HTTP 429 for position {Position} on attempt {Attempt}. Retrying in {RetryDelaySeconds} seconds.", position, attempt + 1, retryDelay.TotalSeconds);
+                _logger.LogWarning(exception, "FantasyPros returned HTTP 429 for {RequestDescription} on attempt {Attempt}. Retrying in {RetryDelaySeconds} seconds.", requestDescription, attempt + 1, retryDelay.TotalSeconds);
                 await Task.Delay(retryDelay, cancellationToken);
             }
         }
 
-        throw new InvalidOperationException($"FantasyPros rankings request failed for position '{position}'.");
+        throw new InvalidOperationException($"FantasyPros request failed for {requestDescription}.");
     }
 }

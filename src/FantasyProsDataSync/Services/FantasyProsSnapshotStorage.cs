@@ -20,10 +20,21 @@ public sealed class FantasyProsSnapshotStorage(BlobServiceClient blobServiceClie
 
     public async Task<string> SaveAsync(FantasyProsPlayersSnapshot snapshot, CancellationToken cancellationToken)
     {
+        var blobName = $"fantasypros/{snapshot.Season}/week-{snapshot.Week:D2}/players.json";
+        return await UploadAsync(blobName, snapshot, cancellationToken);
+    }
+
+    public async Task<string> SavePointsAsync(FantasyProsPointsSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        var blobName = $"fantasypros/{snapshot.Season}/points.json";
+        return await UploadAsync(blobName, snapshot, cancellationToken);
+    }
+
+    private async Task<string> UploadAsync<T>(string blobName, T snapshot, CancellationToken cancellationToken)
+    {
         var containerClient = _blobServiceClient.GetBlobContainerClient(_blobContainerName);
         await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
 
-        var blobName = $"fantasypros/{snapshot.Season}/week-{snapshot.Week:D2}/players.json";
         var blobClient = containerClient.GetBlobClient(blobName);
         var contents = JsonSerializer.Serialize(snapshot, SerializerOptions);
 
