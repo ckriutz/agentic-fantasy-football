@@ -6,8 +6,6 @@ namespace LeagueAPI.Services;
 
 public sealed class PlayerGameLockService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, LeagueStateService leagueStateService)
 {
-    private const int GamesPlayedStatId = 0;
-
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly LeagueStateService _leagueStateService = leagueStateService;
 
@@ -27,16 +25,16 @@ public sealed class PlayerGameLockService(IDbContextFactory<LeagueApiDbContext> 
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        var playedSleeperPlayerIds = await dbContext.WeeklyPlayerStatValues
+        // Row existence on weekly_player_scores is the has-played signal. Players whose FantasyPros
+        // rows never resolved a SleeperPlayerId cannot lock via this path (null ids are excluded).
+        var playedSleeperPlayerIds = await dbContext.WeeklyPlayerScores
             .AsNoTracking()
-            .Where(statValue =>
-                statValue.StatId == GamesPlayedStatId
-                && statValue.Value > 0
-                && statValue.WeeklyPlayerStat.Season == leagueState.Season
-                && statValue.WeeklyPlayerStat.Week == leagueState.Week
-                && statValue.WeeklyPlayerStat.SleeperPlayerId != null
-                && normalizedSleeperPlayerIds.Contains(statValue.WeeklyPlayerStat.SleeperPlayerId))
-            .Select(statValue => statValue.WeeklyPlayerStat.SleeperPlayerId!)
+            .Where(score =>
+                score.Season == leagueState.Season
+                && score.Week == leagueState.Week
+                && score.SleeperPlayerId != null
+                && normalizedSleeperPlayerIds.Contains(score.SleeperPlayerId))
+            .Select(score => score.SleeperPlayerId!)
             .Distinct()
             .ToListAsync(cancellationToken);
 

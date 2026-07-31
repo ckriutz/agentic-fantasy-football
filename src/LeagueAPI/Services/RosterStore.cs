@@ -74,12 +74,14 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .Take(normalizedLimit)
             .ToListAsync(cancellationToken);
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
+        var sleeperPlayerIds = results.Select(result => result.Player.SleeperPlayerId).Distinct().ToArray();
+        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(dbContext, sleeperPlayerIds, cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(sleeperPlayerIds, cancellationToken);
 
         return results
             .Select(result => MapPlayerResult(
                 result,
-                RosterPlayerResult.EmptyWeeklyPoints,
+                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, result.Player.SleeperPlayerId),
                 GetLockStatus(lockStatusBySleeperPlayerId, result.Player.SleeperPlayerId)))
             .ToList();
     }
@@ -102,15 +104,20 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             select player)
             .ToListAsync(cancellationToken);
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(players.Select(player => player.SleeperPlayerId).Distinct().ToArray(), cancellationToken);
-
-        return players
+        var rosterablePlayers = players
             .Where(player => RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
             .Select(PlayerRecordFactory.Map)
             .OrderBy(player => player.SearchRank ?? int.MaxValue)
             .ThenBy(player => player.FullName ?? player.SleeperPlayerId)
             .ThenBy(player => player.SleeperPlayerId)
             .Take(normalizedLimit)
+            .ToList();
+
+        var sleeperPlayerIds = rosterablePlayers.Select(player => player.SleeperPlayerId).Distinct().ToArray();
+        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(dbContext, sleeperPlayerIds, cancellationToken);
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(sleeperPlayerIds, cancellationToken);
+
+        return rosterablePlayers
             .Select(player => CreateRosterPlayerResult(
                 player,
                 ownerAgentId: null,
@@ -119,7 +126,7 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
                 acquisitionSource: null,
                 slotType: null,
                 isStarter: false,
-                RosterPlayerResult.EmptyWeeklyPoints,
+                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, player.SleeperPlayerId),
                 GetLockStatus(lockStatusBySleeperPlayerId, player.SleeperPlayerId)))
             .ToList();
     }
@@ -550,34 +557,34 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         }
 
         var season = await ResolveCurrentSeasonAsync(dbContext, cancellationToken);
-        var templateKey = await ResolveActiveTemplateKeyAsync(dbContext, cancellationToken);
-        if (templateKey is null)
-        {
-            return [];
-        }
 
-        var weeklyPoints = await dbContext.WeeklyPlayerPoints
+        var weeklyPoints = await dbContext.WeeklyPlayerScores
             .AsNoTracking()
-            .Where(point =>
-                point.TemplateKey == templateKey
-                && point.WeeklyPlayerStat.SleeperPlayerId != null
-                && sleeperPlayerIds.Contains(point.WeeklyPlayerStat.SleeperPlayerId)
-                && point.WeeklyPlayerStat.Season == season)
-            .Select(point => new
+            .Where(score =>
+                score.Season == season
+                && score.SleeperPlayerId != null
+                && sleeperPlayerIds.Contains(score.SleeperPlayerId))
+            .Select(score => new
             {
-                SleeperPlayerId = point.WeeklyPlayerStat.SleeperPlayerId!,
-                point.WeeklyPlayerStat.Week,
-                point.FantasyPoints
+                SleeperPlayerId = score.SleeperPlayerId!,
+                score.Week,
+                score.FantasyProsPlayerId,
+                score.Points
             })
             .ToListAsync(cancellationToken);
 
+        // Missing week key = did not play; explicit 0 = played and scored zero.
+        // If multiple FantasyPros rows map to one Sleeper id in a week, keep lowest FantasyProsPlayerId.
         return weeklyPoints
             .GroupBy(point => point.SleeperPlayerId, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
                 group => (IReadOnlyDictionary<int, decimal>)group
-                    .OrderBy(point => point.Week)
-                    .ToDictionary(point => point.Week, point => point.FantasyPoints),
+                    .GroupBy(point => point.Week)
+                    .OrderBy(weekGroup => weekGroup.Key)
+                    .ToDictionary(
+                        weekGroup => weekGroup.Key,
+                        weekGroup => weekGroup.OrderBy(point => point.FantasyProsPlayerId).First().Points),
                 StringComparer.Ordinal);
     }
 
@@ -647,16 +654,6 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
     {
         var leagueState = await LeagueStateService.GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
         return leagueState.Season;
-    }
-
-    private static async Task<string?> ResolveActiveTemplateKeyAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)
-    {
-        return await dbContext.ScoringTemplates
-            .AsNoTracking()
-            .Where(template => template.IsActive)
-            .OrderBy(template => template.TemplateKey)
-            .Select(template => template.TemplateKey)
-            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static RosterPlayerResult MapPlayerResult(PlayerOwnershipRow result, IReadOnlyDictionary<int, decimal> weeklyPoints, PlayerLockStatus? lockStatus = null)
