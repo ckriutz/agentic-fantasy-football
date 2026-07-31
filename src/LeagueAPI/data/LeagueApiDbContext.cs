@@ -63,6 +63,7 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasKey(player => player.SleeperPlayerId);
 
             entity.Property(player => player.SleeperPlayerId).HasMaxLength(50);
+            entity.Property(player => player.SportradarId).HasMaxLength(50);
             entity.Property(player => player.FullName).HasMaxLength(200);
             entity.Property(player => player.FirstName).HasMaxLength(100);
             entity.Property(player => player.LastName).HasMaxLength(100);
@@ -79,6 +80,7 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
             entity.HasIndex(player => player.YahooId);
             entity.HasIndex(player => player.FantasyDataId);
+            entity.HasIndex(player => player.SportradarId);
             entity.HasIndex(player => player.SearchFullNameNormalized);
             entity.HasIndex(player => new { player.TeamAbbr, player.Position });
             entity.HasIndex(player => player.ByeWeek);

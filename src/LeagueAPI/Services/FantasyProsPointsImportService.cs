@@ -295,55 +295,18 @@ public sealed class FantasyProsPointsImportService(BlobServiceClient blobService
             .Select(player => new { player.PlayerId, player.PlayerYahooId, player.SportsDataId })
             .ToListAsync(cancellationToken);
 
-        var rankingByFantasyProsId = rankingPlayers.ToDictionary(
-            player => player.PlayerId,
-            player => new RankingBridge(player.PlayerId, player.PlayerYahooId, player.SportsDataId));
+        var rankingByFantasyProsId = rankingPlayers.ToDictionary(player => player.PlayerId);
 
-        var yahooIds = rankingPlayers
-            .Select(player => int.TryParse(player.PlayerYahooId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var yahooId) ? yahooId : (int?)null)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            .Distinct()
-            .ToArray();
-
-        var sportsDataIds = rankingPlayers
-            .Select(player => int.TryParse(player.SportsDataId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sportsDataId) ? sportsDataId : (int?)null)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            .Distinct()
-            .ToArray();
-
-        Dictionary<int, string> sleeperByYahooId;
-        if (yahooIds.Length == 0)
+        var bridgeIdentities = snapshot.Players.Select(player =>
         {
-            sleeperByYahooId = new Dictionary<int, string>();
-        }
-        else
-        {
-            var yahooMatches = await dbContext.Players.AsNoTracking()
-                .Where(player => player.YahooId != null && yahooIds.Contains(player.YahooId.Value))
-                .Select(player => new { YahooId = player.YahooId!.Value, player.SleeperPlayerId })
-                .ToListAsync(cancellationToken);
-            sleeperByYahooId = yahooMatches
-                .GroupBy(player => player.YahooId)
-                .ToDictionary(group => group.Key, group => group.First().SleeperPlayerId);
-        }
-
-        Dictionary<int, string> sleeperBySportsDataId;
-        if (sportsDataIds.Length == 0)
-        {
-            sleeperBySportsDataId = new Dictionary<int, string>();
-        }
-        else
-        {
-            var sportsDataMatches = await dbContext.Players.AsNoTracking()
-                .Where(player => player.FantasyDataId != null && sportsDataIds.Contains(player.FantasyDataId.Value))
-                .Select(player => new { FantasyDataId = player.FantasyDataId!.Value, player.SleeperPlayerId })
-                .ToListAsync(cancellationToken);
-            sleeperBySportsDataId = sportsDataMatches
-                .GroupBy(player => player.FantasyDataId)
-                .ToDictionary(group => group.Key, group => group.First().SleeperPlayerId);
-        }
+            rankingByFantasyProsId.TryGetValue(player.PlayerId, out var ranking);
+            return new FantasyProsPlayerBridge.Identity(
+                ranking?.PlayerYahooId,
+                ranking?.SportsDataId,
+                player.PositionId,
+                player.TeamId);
+        });
+        var lookupMaps = await FantasyProsPlayerBridge.LoadMapsAsync(dbContext, bridgeIdentities, cancellationToken);
 
         var scoreKeys = new List<(int Week, int FantasyProsPlayerId)>();
         var pendingScores = new List<PendingWeeklyScore>();
@@ -354,25 +317,20 @@ public sealed class FantasyProsPointsImportService(BlobServiceClient blobService
 
         foreach (var player in snapshot.Players)
         {
-            var sleeperPlayerId = ResolveSleeperPlayerId(player.PlayerId, rankingByFantasyProsId, sleeperByYahooId, sleeperBySportsDataId);
-            if (sleeperPlayerId is null)
-            {
-                unmatchedPlayerIds.Add(player.PlayerId);
-                if (IsLikelyDst(player))
-                {
-                    unmatchedDstIds.Add(player.PlayerId);
-                }
-            }
-            else
-            {
-                matchedPlayerIds.Add(player.PlayerId);
-            }
-
             if (player.Weeks is null || player.Weeks.Count == 0)
             {
                 continue;
             }
 
+            rankingByFantasyProsId.TryGetValue(player.PlayerId, out var ranking);
+            var identity = new FantasyProsPlayerBridge.Identity(
+                ranking?.PlayerYahooId,
+                ranking?.SportsDataId,
+                player.PositionId,
+                player.TeamId);
+            var sleeperPlayerId = FantasyProsPlayerBridge.ResolveSleeperPlayerId(identity, lookupMaps);
+
+            var wroteScoreRow = false;
             foreach (var (weekKey, points) in player.Weeks)
             {
                 if (!int.TryParse(weekKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out var week) || week is < 1 or > 18)
@@ -389,6 +347,26 @@ public sealed class FantasyProsPointsImportService(BlobServiceClient blobService
                 var roundedPoints = decimal.Round(points.Value, 1, MidpointRounding.AwayFromZero);
                 scoreKeys.Add((week, player.PlayerId));
                 pendingScores.Add(new PendingWeeklyScore(week, player.PlayerId, sleeperPlayerId, player.PlayerName, player.PositionId, player.TeamId, roundedPoints));
+                wroteScoreRow = true;
+            }
+
+            // Count match quality only for players that actually produce score rows.
+            if (!wroteScoreRow)
+            {
+                continue;
+            }
+
+            if (sleeperPlayerId is null)
+            {
+                unmatchedPlayerIds.Add(player.PlayerId);
+                if (IsLikelyDst(player))
+                {
+                    unmatchedDstIds.Add(player.PlayerId);
+                }
+            }
+            else
+            {
+                matchedPlayerIds.Add(player.PlayerId);
             }
         }
 
@@ -435,32 +413,9 @@ public sealed class FantasyProsPointsImportService(BlobServiceClient blobService
         return new UpsertResult(pendingScores.Count, matchedPlayerIds.Count, unmatchedPlayerIds.Count, unmatchedDstIds.Count);
     }
 
-    private static string? ResolveSleeperPlayerId(int fantasyProsPlayerId, IReadOnlyDictionary<int, RankingBridge> rankingByFantasyProsId, IReadOnlyDictionary<int, string> sleeperByYahooId, IReadOnlyDictionary<int, string> sleeperBySportsDataId)
-    {
-        if (!rankingByFantasyProsId.TryGetValue(fantasyProsPlayerId, out var ranking))
-        {
-            return null;
-        }
-
-        if (int.TryParse(ranking.PlayerYahooId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var yahooId)
-            && sleeperByYahooId.TryGetValue(yahooId, out var sleeperByYahoo))
-        {
-            return sleeperByYahoo;
-        }
-
-        if (int.TryParse(ranking.SportsDataId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sportsDataId)
-            && sleeperBySportsDataId.TryGetValue(sportsDataId, out var sleeperBySportsData))
-        {
-            return sleeperBySportsData;
-        }
-
-        return null;
-    }
-
     private static bool IsLikelyDst(FantasyProsPlayerPoints player)
     {
-        if (string.Equals(player.PositionId, "DST", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(player.PositionId, "DEF", StringComparison.OrdinalIgnoreCase))
+        if (FantasyProsPlayerBridge.IsDstPosition(player.PositionId))
         {
             return true;
         }
@@ -479,8 +434,6 @@ public sealed class FantasyProsPointsImportService(BlobServiceClient blobService
         await dbContext.SaveChangesAsync(CancellationToken.None);
         _logger.LogError("FantasyPros points import {SyncRunId} failed: {ErrorMessage}", syncRunId, errorMessage);
     }
-
-    private sealed record RankingBridge(int PlayerId, string? PlayerYahooId, string? SportsDataId);
 
     private sealed record PendingWeeklyScore(int Week, int FantasyProsPlayerId, string? SleeperPlayerId, string? PlayerName, string? PositionId, string? TeamId, decimal Points);
 

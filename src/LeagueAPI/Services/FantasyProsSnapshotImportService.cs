@@ -275,34 +275,46 @@ public sealed class FantasyProsSnapshotImportService(BlobServiceClient blobServi
 
     private static async Task ApplyFantasyProsEnrichmentAsync(LeagueApiDbContext dbContext, IReadOnlyList<FantasyProsRankingPlayer> fantasyProsPlayers, CancellationToken cancellationToken)
     {
-        var fantasyProsPlayersByYahooId = fantasyProsPlayers
-            .Where(player => int.TryParse(player.PlayerYahooId, out _))
-            .GroupBy(player => int.Parse(player.PlayerYahooId!))
-            .ToDictionary(group => group.Key, group => group.First());
+        // Clear every row that may hold stale enrichment, including players that later lost Yahoo ids.
+        await dbContext.Players.ExecuteUpdateAsync(
+            setters => setters
+                .SetProperty(player => player.PlayerOwnedAverage, (decimal?)null)
+                .SetProperty(player => player.RankAverage, (string?)null)
+                .SetProperty(player => player.PositionRank, (string?)null)
+                .SetProperty(player => player.Tier, (int?)null),
+            cancellationToken);
 
-        await dbContext.Players
-            .Where(player => player.YahooId != null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(player => player.PlayerOwnedAverage, (decimal?)null)
-                    .SetProperty(player => player.RankAverage, (string?)null)
-                    .SetProperty(player => player.PositionRank, (string?)null)
-                    .SetProperty(player => player.Tier, (int?)null),
-                cancellationToken);
+        var identities = fantasyProsPlayers
+            .Select(player => new FantasyProsPlayerBridge.Identity(player.PlayerYahooId, player.SportsDataId, player.PlayerPositionId, player.PlayerTeamId))
+            .ToArray();
+        var lookupMaps = await FantasyProsPlayerBridge.LoadMapsAsync(dbContext, identities, cancellationToken);
 
-        if (fantasyProsPlayersByYahooId.Count == 0)
+        var fantasyProsBySleeperId = new Dictionary<string, FantasyProsRankingPlayer>(StringComparer.Ordinal);
+        for (var index = 0; index < fantasyProsPlayers.Count; index++)
+        {
+            var fantasyProsPlayer = fantasyProsPlayers[index];
+            var sleeperPlayerId = FantasyProsPlayerBridge.ResolveSleeperPlayerId(identities[index], lookupMaps);
+            if (sleeperPlayerId is null || fantasyProsBySleeperId.ContainsKey(sleeperPlayerId))
+            {
+                continue;
+            }
+
+            fantasyProsBySleeperId[sleeperPlayerId] = fantasyProsPlayer;
+        }
+
+        if (fantasyProsBySleeperId.Count == 0)
         {
             return;
         }
 
-        var yahooIds = fantasyProsPlayersByYahooId.Keys.ToArray();
+        var sleeperPlayerIds = fantasyProsBySleeperId.Keys.ToArray();
         var matchedPlayers = await dbContext.Players
-            .Where(player => player.YahooId != null && yahooIds.Contains(player.YahooId.Value))
+            .Where(player => sleeperPlayerIds.Contains(player.SleeperPlayerId))
             .ToListAsync(cancellationToken);
 
         foreach (var player in matchedPlayers)
         {
-            var fantasyProsPlayer = fantasyProsPlayersByYahooId[player.YahooId!.Value];
+            var fantasyProsPlayer = fantasyProsBySleeperId[player.SleeperPlayerId];
             player.PlayerOwnedAverage = fantasyProsPlayer.PlayerOwnedAverage;
             player.RankAverage = fantasyProsPlayer.RankAverage;
             player.PositionRank = fantasyProsPlayer.PositionRank;
