@@ -49,6 +49,7 @@ builder.Services.AddSingleton(new BlobServiceClient(azureStorageConnectionString
 builder.Services.AddSingleton<SportsDataPlayerSyncService>();
 builder.Services.AddSingleton<SportsDataSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
+builder.Services.AddSingleton<FantasyProsPointsImportService>();
 builder.Services.AddSingleton<SleeperSnapshotImportService>();
 builder.Services.AddSingleton<ScoringService>();
 builder.Services.AddSingleton<YahooSnapshotImportService>();
@@ -120,6 +121,8 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/sportsdata (POST: containerName, blobName, retrievedAtUtc)",
         "/api/sync/fantasypros/latest",
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
+        "/api/sync/fantasypros/points/latest?season=",
+        "/api/sync/fantasypros/points (POST: containerName, blobName, requestedSeason, servedSeason, servedScoring, endWeek, retrievedAtUtc)",
         "/api/sync/yahoo/latest",
         "/api/sync/yahoo (POST: containerName, blobName, gameKey, season, week, retrievedAtUtc)",
         "/api/yahoo/stats/{season}/{week}?position=&limit=",
@@ -732,6 +735,29 @@ app.MapPost("/api/sync/fantasypros", async (FantasyProsSnapshotImportRequest req
 app.MapGet("/api/sync/fantasypros/latest", async (FantasyProsSnapshotImportService fantasyProsSnapshotImportService, CancellationToken cancellationToken) =>
 {
     var state = await fantasyProsSnapshotImportService.GetLatestSyncRunAsync(cancellationToken);
+    return state is null ? Results.NotFound() : Results.Ok(state);
+});
+
+app.MapPost("/api/sync/fantasypros/points", async (FantasyProsPointsImportRequest request, FantasyProsPointsImportService fantasyProsPointsImportService, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await fantasyProsPointsImportService.ImportAsync(request, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
+    {
+        return Results.BadRequest(new { error = exception.Message });
+    }
+    catch (RequestFailedException exception) when (exception.Status == StatusCodes.Status404NotFound)
+    {
+        return Results.NotFound(new { error = exception.Message });
+    }
+});
+
+app.MapGet("/api/sync/fantasypros/points/latest", async (int? season, FantasyProsPointsImportService fantasyProsPointsImportService, CancellationToken cancellationToken) =>
+{
+    var state = await fantasyProsPointsImportService.GetLatestSyncRunAsync(season, cancellationToken);
     return state is null ? Results.NotFound() : Results.Ok(state);
 });
 
