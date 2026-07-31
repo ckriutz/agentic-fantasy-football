@@ -48,6 +48,10 @@ public sealed class FantasyProsSyncWorker(FantasyProsApiClient fantasyProsApiCli
         {
             _logger.LogError(exception, "FantasyPros player snapshot storage failed with Azure status {StatusCode} and error code {ErrorCode}.", exception.Status, exception.ErrorCode);
         }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "FantasyPros rankings sync failed.");
+        }
     }
 
     private async Task ImportSnapshotAsync(string blobName, FantasyProsPlayersSnapshot snapshot, CancellationToken cancellationToken)
