@@ -17,6 +17,10 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<FantasyProsSyncRun> FantasyProsSyncRuns => Set<FantasyProsSyncRun>();
 
+    public DbSet<WeeklyPlayerScoreEntity> WeeklyPlayerScores => Set<WeeklyPlayerScoreEntity>();
+
+    public DbSet<FantasyProsScoreSyncRun> FantasyProsScoreSyncRuns => Set<FantasyProsScoreSyncRun>();
+
     public DbSet<YahooSyncRun> YahooSyncRuns => Set<YahooSyncRun>();
 
     public DbSet<WeeklyPlayerStat> WeeklyPlayerStats => Set<WeeklyPlayerStat>();
@@ -176,6 +180,42 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasIndex(syncRun => new { syncRun.ContainerName, syncRun.BlobName, syncRun.Season, syncRun.Week, syncRun.RetrievedAtUtc });
             entity.HasIndex(syncRun => syncRun.StartedAtUtc);
             entity.HasIndex(syncRun => syncRun.ContentHash);
+        });
+
+        modelBuilder.Entity<WeeklyPlayerScoreEntity>(entity =>
+        {
+            entity.ToTable("weekly_player_scores");
+            entity.HasKey(score => new { score.Season, score.Week, score.FantasyProsPlayerId });
+
+            entity.Property(score => score.SleeperPlayerId).HasMaxLength(50);
+            entity.Property(score => score.PlayerName).HasMaxLength(200);
+            entity.Property(score => score.PositionId).HasMaxLength(20);
+            entity.Property(score => score.TeamId).HasMaxLength(20);
+            entity.Property(score => score.Points).HasPrecision(8, 2);
+
+            entity.HasIndex(score => score.SleeperPlayerId);
+            entity.HasIndex(score => new { score.Season, score.Week });
+            entity.HasIndex(score => score.SyncRunId);
+        });
+
+        modelBuilder.Entity<FantasyProsScoreSyncRun>(entity =>
+        {
+            entity.ToTable("fantasypros_score_sync_runs");
+            entity.HasKey(syncRun => syncRun.SyncRunId);
+
+            entity.Property(syncRun => syncRun.ContainerName).HasMaxLength(63);
+            entity.Property(syncRun => syncRun.BlobName).HasMaxLength(1024);
+            entity.Property(syncRun => syncRun.BlobETag).HasMaxLength(128);
+            entity.Property(syncRun => syncRun.ContentHash).HasMaxLength(64);
+            entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
+            entity.Property(syncRun => syncRun.ServedSeason).HasMaxLength(20);
+            entity.Property(syncRun => syncRun.ServedScoring).HasMaxLength(20);
+            entity.Property(syncRun => syncRun.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(syncRun => new { syncRun.ContainerName, syncRun.BlobName, syncRun.Season, syncRun.EndWeek, syncRun.ContentHash });
+            entity.HasIndex(syncRun => syncRun.StartedAtUtc);
+            entity.HasIndex(syncRun => syncRun.ContentHash);
+            entity.HasIndex(syncRun => syncRun.Season);
         });
 
         modelBuilder.Entity<YahooSyncRun>(entity =>
