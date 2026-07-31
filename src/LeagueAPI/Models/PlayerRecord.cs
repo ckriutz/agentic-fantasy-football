@@ -10,6 +10,8 @@ public sealed class PlayerRecord
 
     public int? FantasyDataId { get; init; }
 
+    public string? SportradarId { get; init; }
+
     public string? FullName { get; init; }
 
     public string? FirstName { get; init; }

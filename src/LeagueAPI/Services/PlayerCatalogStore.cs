@@ -121,6 +121,7 @@ public sealed class PlayerCatalogStore(
 
             entity.YahooId = player.YahooId;
             entity.FantasyDataId = player.FantasyDataId;
+            entity.SportradarId = player.SportradarId;
             entity.FullName = player.FullName;
             entity.FirstName = player.FirstName;
             entity.LastName = player.LastName;

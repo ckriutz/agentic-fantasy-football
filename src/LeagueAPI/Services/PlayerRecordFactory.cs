@@ -23,6 +23,8 @@ public static class PlayerRecordFactory
         {
             SleeperPlayerId = sleeperPlayerId,
             YahooId = player.YahooId,
+            FantasyDataId = player.FantasyDataId,
+            SportradarId = player.SportradarId,
             FullName = fullName,
             FirstName = player.FirstName,
             LastName = player.LastName,
@@ -40,8 +42,7 @@ public static class PlayerRecordFactory
                 ?? $"{player.FirstName} {player.LastName}"),
             FantasyPositionsTokenized = BuildFantasyPositionsTokenized(fantasyPositions),
             RawJson = JsonSerializer.Serialize(player, SerializerOptions),
-            Data = player,
-            FantasyDataId = player.FantasyDataId
+            Data = player
         };
     }
 
@@ -57,6 +58,7 @@ public static class PlayerRecordFactory
             SleeperPlayerId = entity.SleeperPlayerId,
             YahooId = entity.YahooId,
             FantasyDataId = entity.FantasyDataId,
+            SportradarId = entity.SportradarId,
             FullName = entity.FullName,
             FirstName = entity.FirstName,
             LastName = entity.LastName,

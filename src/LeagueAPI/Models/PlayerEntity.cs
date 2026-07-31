@@ -8,6 +8,8 @@ public sealed class PlayerEntity
 
     public int? FantasyDataId { get; set; }
 
+    public string? SportradarId { get; set; }
+
     public string? FullName { get; set; }
 
     public string? FirstName { get; set; }
