@@ -67,16 +67,19 @@ type Availability = {
 
 type WeekPoint = {
   week: number
-  fantasyPoints: number
+  points: number
 }
 
 type SeasonPoints = {
-  templateKey: string
   season: number
+  sleeperPlayerId: string
+  playerName: string | null
+  positionId: string | null
+  teamId: string | null
   gamesCount: number
-  totalFantasyPoints: number
-  averageFantasyPoints: number
-  weeklyPoints: WeekPoint[] | null
+  totalPoints: number
+  averagePoints: number
+  weeklyPoints: WeekPoint[]
 }
 
 function positionBadgeClass(position: string | null): string {
@@ -144,14 +147,16 @@ function PlayerDetailPage() {
       const [playerRes, availRes, pointsRes] = await Promise.all([
         fetch(`${apiBaseUrl}/api/players/${sleeperId}`),
         fetch(`${apiBaseUrl}/api/players/${sleeperId}/availability`),
-        fetch(`${apiBaseUrl}/api/yahoo/points/player/${sleeperId}/${CURRENT_SEASON}`),
+        fetch(`${apiBaseUrl}/api/points/player/${sleeperId}/${CURRENT_SEASON}`)
       ])
 
       if (!playerRes.ok) { setState('error'); return }
       setPlayer((await playerRes.json()) as Player)
 
       if (availRes.ok) setAvailability((await availRes.json()) as Availability)
-      if (pointsRes.ok) setSeasonPoints((await pointsRes.json()) as SeasonPoints)
+      if (pointsRes.ok) {
+        setSeasonPoints((await pointsRes.json()) as SeasonPoints)
+      }
 
       setState('success')
     } catch {
@@ -170,7 +175,7 @@ function PlayerDetailPage() {
 
   const weeklyPoints = seasonPoints?.weeklyPoints ?? []
   const maxWeekPoints = weeklyPoints.length > 0
-    ? Math.max(...weeklyPoints.map(w => w.fantasyPoints), 0)
+    ? Math.max(...weeklyPoints.map(w => w.points), 0)
     : 0
 
   return (
@@ -339,29 +344,24 @@ function PlayerDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Yahoo points card */}
+            {/* Weekly points card */}
             <Card className="border-white/10 bg-slate-900 text-slate-50">
               <CardHeader>
-                <CardTitle className="text-lg text-white">
-                  {CURRENT_SEASON} Points
-                  {seasonPoints && (
-                    <span className="ml-2 text-xs font-normal text-slate-400">({seasonPoints.templateKey})</span>
-                  )}
-                </CardTitle>
+                <CardTitle className="text-lg text-white">{CURRENT_SEASON} Weekly Points</CardTitle>
               </CardHeader>
               <CardContent>
                 {seasonPoints ? (
                   <>
                     <div className="mb-4 flex gap-6">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-[#BF9264]">{seasonPoints.totalFantasyPoints.toFixed(1)}</p>
+                        <p className="text-2xl font-bold text-[#BF9264]">{seasonPoints.totalPoints.toFixed(1)}</p>
                         <p className="text-xs text-slate-400 uppercase tracking-widest mt-0.5">Total</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-white">{seasonPoints.averageFantasyPoints.toFixed(1)}</p>
+                        <p className="text-2xl font-bold text-white">{seasonPoints.averagePoints.toFixed(1)}</p>
                         <p className="text-xs text-slate-400 uppercase tracking-widest mt-0.5">Avg/Wk</p>
                       </div>
-                      <div className="text-center">
+                       <div className="text-center">
                         <p className="text-2xl font-bold text-white">{seasonPoints.gamesCount}</p>
                         <p className="text-xs text-slate-400 uppercase tracking-widest mt-0.5">Games</p>
                       </div>
@@ -369,7 +369,7 @@ function PlayerDetailPage() {
                     {weeklyPoints.length > 0 ? (
                       <div className="border-t border-white/5 pt-3">
                         {weeklyPoints.map(w => (
-                          <WeekBar key={w.week} week={w.week} points={w.fantasyPoints} maxPoints={maxWeekPoints} />
+                          <WeekBar key={w.week} week={w.week} points={w.points} maxPoints={maxWeekPoints} />
                         ))}
                       </div>
                     ) : (
@@ -395,7 +395,6 @@ function PlayerDetailPage() {
                 <StatRow label="High School" value={player.data?.high_school} />
                 <StatRow label="Fantasy Positions" value={player.data?.fantasy_positions?.join(', ')} />
                 <StatRow label="Sleeper ID" value={player.sleeperPlayerId} />
-                <StatRow label="Yahoo ID" value={player.yahooId} />
               </CardContent>
             </Card>
 

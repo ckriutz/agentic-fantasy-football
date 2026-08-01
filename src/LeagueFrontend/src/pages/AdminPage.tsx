@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, CalendarDays, CheckCircle2, Database, KeyRound, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react'
+import { AlertCircle, CalendarDays, CheckCircle2, Database, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
-import { apiBaseUrl, yahooApiBaseUrl } from '@/lib/config'
+import { apiBaseUrl } from '@/lib/config'
 
 type FetchState = 'loading' | 'success' | 'error'
 
@@ -37,22 +37,6 @@ const leagueStatePhaseOptions = [
   { value: 'complete', label: 'Complete' },
 ]
 
-type YahooAuthStatus = {
-  isConfigured: boolean
-  hasAccessToken: boolean
-  hasRefreshToken: boolean
-  accessTokenExpiresAtUtc: string | null
-  lastRefreshedAtUtc: string | null
-  hasPendingAuthorizationState: boolean
-}
-
-type YahooConnectionResult = {
-  connected: boolean
-  season?: number
-  statusCode?: number | null
-  detail?: string | null
-}
-
 type SleeperSyncState = {
   syncRunId: string | null
   status: string
@@ -73,6 +57,20 @@ type SportsDataSyncRun = {
 
 type FantasyProsSyncRun = SportsDataSyncRun
 
+type FantasyProsPointsSyncRun = {
+  season: number
+  endWeek: number
+  startedAtUtc: string
+  completedAtUtc: string | null
+  status: string
+  recordCount: number | null
+  matchedPlayerCount: number | null
+  unmatchedPlayerCount: number | null
+  unmatchedDstCount: number | null
+  servedScoring: string | null
+  errorMessage: string | null
+}
+
 function timeAgo(utc: string | null) {
   if (!utc) return null
   const ms = Date.now() - new Date(utc).getTime()
@@ -83,38 +81,6 @@ function timeAgo(utc: string | null) {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
-}
-
-type YahooSyncRun = {
-  syncRunId: string
-  gameKey: string
-  season: number
-  week: number | null
-  startedAtUtc: string
-  completedAtUtc: string | null
-  status: string
-  recordCount: number | null
-  errorMessage: string | null
-}
-
-function hoursUntil(utc: string | null) {
-  if (!utc) {
-    return null
-  }
-
-  const expiresMs = new Date(utc).getTime()
-  if (Number.isNaN(expiresMs)) {
-    return null
-  }
-
-  return (expiresMs - Date.now()) / (1000 * 60 * 60)
-}
-
-function formatHoursUntil(utc: string | null) {
-  const hours = hoursUntil(utc)
-  if (hours === null) return 'No expiration available.'
-  if (hours <= 0) return 'Token is expired or due for refresh.'
-  return `refreshes in ${hours.toFixed(1)}h`
 }
 
 const agentColumns: ColumnDef<AgentProfile, unknown>[] = [
@@ -530,179 +496,115 @@ function DataStatusCard() {
   )
 }
 
-
-function YahooStatusCard() {
+function WeeklyScoresCard() {
   const [state, setState] = useState<FetchState>('loading')
-  const [status, setStatus] = useState<YahooAuthStatus | null>(null)
-  const [connectionOk, setConnectionOk] = useState<boolean | null>(null)
-  const [connectionError, setConnectionError] = useState<string | null>(null)
-  const [syncRun, setSyncRun] = useState<YahooSyncRun | null>(null)
-  const [leagueState, setLeagueState] = useState<{ season: number; week: number } | null>(null)
-  const [manualSyncing, setManualSyncing] = useState(false)
-  const [manualSyncError, setManualSyncError] = useState<string | null>(null)
+  const [season, setSeason] = useState<number | null>(null)
+  const [syncRun, setSyncRun] = useState<FantasyProsPointsSyncRun | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const checkStatus = useCallback(async () => {
+  const checkWeeklyScores = useCallback(async () => {
     setState('loading')
-    setConnectionOk(null)
-    setConnectionError(null)
+    setError(null)
     try {
-      const [statusResponse, syncResponse, leagueResponse] = await Promise.all([
-        fetch(`${yahooApiBaseUrl}/api/yahoo/auth/status`),
-        fetch(`${apiBaseUrl}/api/sync/yahoo/latest`),
-        fetch(`${apiBaseUrl}/api/league/state`),
-      ])
+      const leagueResponse = await fetch(`${apiBaseUrl}/api/league/state`)
+      if (!leagueResponse.ok) {
+        throw new Error(`Could not load league state (${leagueResponse.status})`)
+      }
 
-      if (!statusResponse.ok) {
-        setState('error')
+      const leagueState = (await leagueResponse.json()) as LeagueState
+      setSeason(leagueState.season)
+
+      const syncResponse = await fetch(`${apiBaseUrl}/api/sync/fantasypros/points/latest?season=${leagueState.season}`)
+      if (syncResponse.status === 404) {
+        setSyncRun(null)
+        setState('success')
         return
       }
-
-      setStatus((await statusResponse.json()) as YahooAuthStatus)
-      setSyncRun(syncResponse.ok ? (await syncResponse.json()) as YahooSyncRun : null)
-      if (leagueResponse.ok) {
-        const data = (await leagueResponse.json()) as { season: number; week: number }
-        setLeagueState({ season: data.season, week: data.week })
+      if (!syncResponse.ok) {
+        throw new Error(`Could not load weekly scores status (${syncResponse.status})`)
       }
-      setState('success')
-    } catch {
-      setState('error')
-      return
-    }
 
-    // The connection test is diagnostic, so a failure here must not hide the rest of the card.
-    try {
-      const connectionResponse = await fetch(`${yahooApiBaseUrl}/api/yahoo/auth/test-connection`)
-      const connection = connectionResponse.ok ? (await connectionResponse.json()) as YahooConnectionResult : null
-      setConnectionOk(connection?.connected ?? false)
-      setConnectionError(connection?.connected === false ? connection.detail ?? null : null)
-    } catch (error) {
-      setConnectionOk(false)
-      setConnectionError(error instanceof Error ? error.message : 'Unknown error')
+      setSyncRun((await syncResponse.json()) as FantasyProsPointsSyncRun)
+      setState('success')
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Unknown error')
+      setState('error')
     }
   }, [])
 
   useEffect(() => {
-    void checkStatus()
-  }, [checkStatus])
+    void checkWeeklyScores()
+  }, [checkWeeklyScores])
 
-  const runManualSync = useCallback(async () => {
-    if (!leagueState) return
-    setManualSyncing(true)
-    setManualSyncError(null)
-    try {
-      const response = await fetch(`${yahooApiBaseUrl}/api/sync/yahoo`, {
-        method: 'POST',
-      })
-      if (!response.ok) {
-        throw new Error(`Sync failed (${response.status})`)
-      }
-      await checkStatus()
-    } catch (error) {
-      setManualSyncError(error instanceof Error ? error.message : 'Unknown error')
-    } finally {
-      setManualSyncing(false)
-    }
-  }, [checkStatus, leagueState])
-
-  const canManualSync = !!leagueState && !manualSyncing
+  const status = syncRun?.status ?? null
+  const succeeded = status?.toLowerCase() === 'succeeded'
+  const happenedAt = syncRun?.completedAtUtc ?? syncRun?.startedAtUtc ?? null
 
   return (
     <Card className="border-white/10 bg-slate-900 text-slate-50">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-xl text-white">
-            <KeyRound className="size-5 text-emerald-300" />
-            Yahoo Status
+            <Database className="size-5 text-emerald-300" />
+            Weekly Scores
           </CardTitle>
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => void checkStatus()}
+            onClick={() => void checkWeeklyScores()}
             className="text-slate-300 hover:bg-white/5 hover:text-white"
-            aria-label="Re-check Yahoo status"
+            aria-label="Refresh weekly scores status"
           >
             <RefreshCw className="size-4" />
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent>
         {state === 'loading' && (
           <div className="flex items-center gap-2 text-slate-300">
             <Loader2 className="size-5 animate-spin" />
-            <span className="text-sm">Checking…</span>
+            <span className="text-sm">Checking weekly scores…</span>
           </div>
         )}
         {state === 'error' && (
           <div className="flex items-center gap-2 text-red-400">
             <AlertCircle className="size-5" />
-            <span className="text-sm font-medium">Could not reach the Yahoo auth status endpoint.</span>
+            <span className="text-sm font-medium">{error ?? 'Could not load weekly scores status.'}</span>
           </div>
         )}
-        {state === 'success' && status && (
-          <>
-            {status.hasAccessToken ? (
-              <div className="flex items-center gap-2 text-emerald-300">
-                <CheckCircle2 className="size-5" />
-                <span className="text-sm font-medium">
-                  Access token present — <span className="text-slate-300">{formatHoursUntil(status.accessTokenExpiresAtUtc)}</span>
+        {state === 'success' && !syncRun && (
+          <p className="text-sm text-slate-400">No weekly scores sync has run for season {season ?? '—'}.</p>
+        )}
+        {state === 'success' && syncRun && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-2">
+                {succeeded ? (
+                  <CheckCircle2 className="size-5 text-emerald-300" />
+                ) : (
+                  <AlertCircle className="size-5 text-red-400" />
+                )}
+                <span className={`font-medium ${succeeded ? 'text-emerald-300' : 'text-red-400'}`}>
+                  {syncRun.status}
                 </span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 text-red-400">
-                <AlertCircle className="size-5" />
-                <span className="text-sm font-medium">No access token.</span>
-              </div>
-            )}
-            {connectionOk === true ? (
-              <div className="flex items-center gap-2 text-emerald-300">
-                <CheckCircle2 className="size-5" />
-                <span className="text-sm font-medium">Yahoo API connection successful.</span>
-              </div>
-            ) : connectionOk === false ? (
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-red-400">
-                  <AlertCircle className="size-5" />
-                  <span className="text-sm font-medium">Yahoo API connection failed.</span>
-                </div>
-                {connectionError && <p className="text-xs text-red-400">{connectionError}</p>}
+              <span className="text-sm text-slate-400">
+                Season {syncRun.season}, through Week {syncRun.endWeek}
+                {syncRun.servedScoring ? ` (${syncRun.servedScoring})` : ''}
+              </span>
+              {happenedAt && <span className="text-sm text-slate-400">{timeAgo(happenedAt)}</span>}
+            </div>
+            {succeeded ? (
+              <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                <div><p className="text-slate-400">Records</p><p className="font-semibold text-white">{syncRun.recordCount?.toLocaleString() ?? '—'}</p></div>
+                <div><p className="text-slate-400">Matched</p><p className="font-semibold text-emerald-300">{syncRun.matchedPlayerCount?.toLocaleString() ?? '—'}</p></div>
+                <div><p className="text-slate-400">Unmatched</p><p className="font-semibold text-amber-300">{syncRun.unmatchedPlayerCount?.toLocaleString() ?? '—'}</p></div>
+                <div><p className="text-slate-400">Unmatched DST</p><p className="font-semibold text-amber-300">{syncRun.unmatchedDstCount?.toLocaleString() ?? '—'}</p></div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-slate-300">
-                <Loader2 className="size-5 animate-spin" />
-                <span className="text-sm">Testing Yahoo API connection…</span>
-              </div>
+              <p className="text-sm text-red-400">{syncRun.errorMessage ?? 'Weekly scores sync did not succeed.'}</p>
             )}
-            <SyncRow
-              label={syncRun ? `Yahoo Sync — S${syncRun.season} W${syncRun.week ?? '—'}` : 'Yahoo Sync'}
-              status={syncRun?.status ?? null}
-              completedAt={syncRun?.completedAtUtc ?? null}
-              recordCount={syncRun?.recordCount ?? null}
-              errorMessage={syncRun?.errorMessage ?? null}
-              action={
-                <Button
-                  size="sm"
-                  onClick={() => void runManualSync()}
-                  disabled={!canManualSync}
-                  className="bg-[#BF9264] text-slate-950 hover:bg-[#caa176] disabled:opacity-40"
-                  title={
-                    !leagueState
-                      ? 'Waiting for league state'
-                      : 'Manually trigger a Yahoo weekly sync'
-                  }
-                >
-                  {manualSyncing ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                  Sync now
-                </Button>
-              }
-            />
-            {manualSyncError && (
-              <p className="text-xs text-red-400">Manual sync failed: {manualSyncError}</p>
-            )}
-          </>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -761,7 +663,7 @@ function AdminPage() {
 
       <section className="grid gap-6 md:grid-cols-[1fr_0.85fr]">
         <DataStatusCard />
-        <YahooStatusCard />
+        <WeeklyScoresCard />
       </section>
 
       <AgentsTable />

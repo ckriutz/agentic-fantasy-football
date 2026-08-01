@@ -17,10 +17,6 @@ export const apiBaseUrl = normalizeApiBaseUrl(
   firstNonEmpty(window.__APP_CONFIG__?.apiBaseUrl, import.meta.env.VITE_API_BASE_URL),
 )
 
-export const yahooApiBaseUrl = normalizeApiBaseUrl(
-  firstNonEmpty(window.__APP_CONFIG__?.yahooApiBaseUrl, import.meta.env.VITE_YAHOO_API_BASE_URL, apiBaseUrl),
-)
-
 const blobBaseUrl = firstNonEmpty(
   window.__APP_CONFIG__?.blobBaseUrl,
   import.meta.env.VITE_BLOB_BASE_URL,
