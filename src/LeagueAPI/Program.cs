@@ -51,9 +51,6 @@ builder.Services.AddSingleton<SportsDataSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsSnapshotImportService>();
 builder.Services.AddSingleton<FantasyProsPointsImportService>();
 builder.Services.AddSingleton<SleeperSnapshotImportService>();
-builder.Services.AddSingleton<ScoringService>();
-builder.Services.AddSingleton<YahooSnapshotImportService>();
-builder.Services.AddSingleton<YahooReadService>();
 builder.Services.AddSingleton<PlayerPointsReadService>();
 
 builder.Services.AddSingleton<RosterStore>();
@@ -108,7 +105,6 @@ app.MapGet("/", () => Results.Ok(new
         "/mcp",
         "/api/players/{sleeperPlayerId}",
         "/api/players/{sleeperPlayerId}/availability",
-        "/api/players/by-yahoo/{yahooId}",
         "/api/players?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
         "/api/players/roster-status?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
         "/api/players/available?name=&team=&position=&byeWeek=&limit=",
@@ -124,17 +120,6 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/fantasypros/points/latest?season=",
         "/api/sync/fantasypros/points (POST: containerName, blobName, requestedSeason, servedSeason, servedScoring, endWeek, retrievedAtUtc)",
-        "/api/sync/yahoo/latest",
-        "/api/sync/yahoo (POST: containerName, blobName, gameKey, season, week, retrievedAtUtc)",
-        "/api/yahoo/stats/{season}/{week}?position=&limit=",
-        "/api/yahoo/stats/player/{sleeperPlayerId}/{season}/week/{week}",
-        "/api/yahoo/stats/by-yahoo/{yahooId}/{season}/week/{week}",
-        "/api/yahoo/points/{season}/{week}?templateKey=&position=&limit=",
-        "/api/yahoo/points/player/{sleeperPlayerId}/{season}/week/{week}?templateKey=",
-        "/api/yahoo/points/player/{sleeperPlayerId}/{season}?templateKey=",
-        "/api/yahoo/points/by-yahoo/{yahooId}/{season}/week/{week}?templateKey=",
-        "/api/yahoo/points/by-yahoo/{yahooId}/{season}?templateKey=",
-        "/api/yahoo/scoring-templates?activeOnly=",
         "/api/points/{season}/{week}?position=&limit=",
         "/api/points/player/{sleeperPlayerId}/{season}/week/{week}",
         "/api/points/player/{sleeperPlayerId}/{season}",
@@ -636,15 +621,6 @@ app.MapGet("/api/players/{sleeperPlayerId}", async (
     return player is null ? Results.NotFound() : Results.Ok(player);
 });
 
-app.MapGet("/api/players/by-yahoo/{yahooId:int}", async (
-    int yahooId,
-    IPlayerCatalogReader playerCatalogReader,
-    CancellationToken cancellationToken) =>
-{
-    var player = await playerCatalogReader.GetByYahooIdAsync(yahooId, cancellationToken);
-    return player is null ? Results.NotFound() : Results.Ok(player);
-});
-
 app.MapGet("/api/players", async (
     string? name,
     string? team,
@@ -763,183 +739,6 @@ app.MapGet("/api/sync/fantasypros/points/latest", async (int? season, FantasyPro
 {
     var state = await fantasyProsPointsImportService.GetLatestSyncRunAsync(season, cancellationToken);
     return state is null ? Results.NotFound() : Results.Ok(state);
-});
-
-app.MapGet("/api/sync/yahoo/latest", async (
-    string? gameKey,
-    int? season,
-    int? week,
-    YahooSnapshotImportService yahooSnapshotImportService,
-    CancellationToken cancellationToken) =>
-{
-    var state = await yahooSnapshotImportService.GetLatestSyncRunAsync(gameKey, season, week, cancellationToken);
-    return state is null ? Results.NotFound() : Results.Ok(state);
-});
-
-app.MapPost("/api/sync/yahoo", async (YahooSnapshotImportRequest request, YahooSnapshotImportService yahooSnapshotImportService, CancellationToken cancellationToken) =>
-{
-    try
-    {
-        return Results.Ok(await yahooSnapshotImportService.ImportAsync(request, cancellationToken));
-    }
-    catch (Exception exception) when (exception is ArgumentException or InvalidDataException or JsonException)
-    {
-        return Results.BadRequest(new { error = exception.Message });
-    }
-    catch (RequestFailedException exception) when (exception.Status == StatusCodes.Status404NotFound)
-    {
-        return Results.NotFound(new { error = exception.Message });
-    }
-});
-
-app.MapGet("/api/yahoo/stats/{season:int}/{week:int}", async (
-    int season,
-    int week,
-    string? position,
-    int? limit,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var stats = await yahooReadService.GetWeeklyStatsAsync(
-        season,
-        week,
-        position,
-        limit ?? 25,
-        cancellationToken);
-
-    return Results.Ok(stats);
-});
-
-app.MapGet("/api/yahoo/stats/player/{sleeperPlayerId}/{season:int}/week/{week:int}", async (
-    string sleeperPlayerId,
-    int season,
-    int week,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var stat = await yahooReadService.GetPlayerWeeklyStatsBySleeperIdAsync(
-        sleeperPlayerId,
-        season,
-        week,
-        cancellationToken);
-
-    return stat is null ? Results.NotFound() : Results.Ok(stat);
-});
-
-app.MapGet("/api/yahoo/stats/by-yahoo/{yahooId:int}/{season:int}/week/{week:int}", async (
-    int yahooId,
-    int season,
-    int week,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var stat = await yahooReadService.GetPlayerWeeklyStatsByYahooIdAsync(
-        yahooId,
-        season,
-        week,
-        cancellationToken);
-
-    return stat is null ? Results.NotFound() : Results.Ok(stat);
-});
-
-app.MapGet("/api/yahoo/points/{season:int}/{week:int}", async (
-    int season,
-    int week,
-    string? templateKey,
-    string? position,
-    int? limit,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var points = await yahooReadService.GetWeeklyPointsAsync(
-        season,
-        week,
-        templateKey,
-        position,
-        limit ?? 25,
-        cancellationToken);
-
-    return Results.Ok(points);
-});
-
-app.MapGet("/api/yahoo/points/player/{sleeperPlayerId}/{season:int}/week/{week:int}", async (
-    string sleeperPlayerId,
-    int season,
-    int week,
-    string? templateKey,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var point = await yahooReadService.GetPlayerWeeklyPointsBySleeperIdAsync(
-        sleeperPlayerId,
-        season,
-        week,
-        templateKey,
-        cancellationToken);
-
-    return point is null ? Results.NotFound() : Results.Ok(point);
-});
-
-app.MapGet("/api/yahoo/points/by-yahoo/{yahooId:int}/{season:int}/week/{week:int}", async (
-    int yahooId,
-    int season,
-    int week,
-    string? templateKey,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var point = await yahooReadService.GetPlayerWeeklyPointsByYahooIdAsync(
-        yahooId,
-        season,
-        week,
-        templateKey,
-        cancellationToken);
-
-    return point is null ? Results.NotFound() : Results.Ok(point);
-});
-
-app.MapGet("/api/yahoo/points/player/{sleeperPlayerId}/{season:int}", async (
-    string sleeperPlayerId,
-    int season,
-    string? templateKey,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var seasonPoints = await yahooReadService.GetPlayerSeasonPointsBySleeperIdAsync(
-        sleeperPlayerId,
-        season,
-        templateKey,
-        cancellationToken);
-
-    return seasonPoints is null ? Results.NotFound() : Results.Ok(seasonPoints);
-});
-
-app.MapGet("/api/yahoo/points/by-yahoo/{yahooId:int}/{season:int}", async (
-    int yahooId,
-    int season,
-    string? templateKey,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var seasonPoints = await yahooReadService.GetPlayerSeasonPointsByYahooIdAsync(
-        yahooId,
-        season,
-        templateKey,
-        cancellationToken);
-
-    return seasonPoints is null ? Results.NotFound() : Results.Ok(seasonPoints);
-});
-
-app.MapGet("/api/yahoo/scoring-templates", async (
-    bool? activeOnly,
-    YahooReadService yahooReadService,
-    CancellationToken cancellationToken) =>
-{
-    var templates = await yahooReadService.GetScoringTemplatesAsync(
-        activeOnly ?? true,
-        cancellationToken);
-
-    return Results.Ok(templates);
 });
 
 // --- FantasyPros points (read surface) ---
