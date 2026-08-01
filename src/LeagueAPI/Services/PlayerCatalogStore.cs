@@ -24,19 +24,6 @@ public sealed class PlayerCatalogStore(
         return player is null ? null : PlayerRecordFactory.Map(player);
     }
 
-    public async Task<PlayerRecord?> GetByYahooIdAsync(int yahooId, CancellationToken cancellationToken)
-    {
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var player = await dbContext.Players
-            .AsNoTracking()
-            .FirstOrDefaultAsync(
-                entity => entity.YahooId == yahooId && entity.Active,
-                cancellationToken);
-
-        return player is null ? null : PlayerRecordFactory.Map(player);
-    }
-
     public async Task<IReadOnlyList<PlayerRecord>> QueryAsync(PlayerQuery query, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);

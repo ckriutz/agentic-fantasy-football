@@ -21,18 +21,6 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<FantasyProsScoreSyncRun> FantasyProsScoreSyncRuns => Set<FantasyProsScoreSyncRun>();
 
-    public DbSet<YahooSyncRun> YahooSyncRuns => Set<YahooSyncRun>();
-
-    public DbSet<WeeklyPlayerStat> WeeklyPlayerStats => Set<WeeklyPlayerStat>();
-
-    public DbSet<WeeklyPlayerStatValue> WeeklyPlayerStatValues => Set<WeeklyPlayerStatValue>();
-
-    public DbSet<WeeklyPlayerPoint> WeeklyPlayerPoints => Set<WeeklyPlayerPoint>();
-
-    public DbSet<ScoringTemplate> ScoringTemplates => Set<ScoringTemplate>();
-
-    public DbSet<ScoringTemplateRule> ScoringTemplateRules => Set<ScoringTemplateRule>();
-
     public DbSet<RosterAssignmentEntity> RosterAssignments => Set<RosterAssignmentEntity>();
 
     public DbSet<DecisionEntity> Decisions => Set<DecisionEntity>();
@@ -45,15 +33,11 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<WeeklyRosterSnapshot> WeeklyRosterSnapshots => Set<WeeklyRosterSnapshot>();
 
-    public DbSet<YahooOAuthStateEntity> YahooOAuthStates => Set<YahooOAuthStateEntity>();
-
     public DbSet<WaiverPriorityEntity> WaiverPriorities => Set<WaiverPriorityEntity>();
 
     public DbSet<WaiverClaimEntity> WaiverClaims => Set<WaiverClaimEntity>();
 
     public DbSet<WaiverProcessRunEntity> WaiverProcessRuns => Set<WaiverProcessRunEntity>();
-
-    public DbSet<YahooPlayerIdOverrideEntity> YahooPlayerIdOverrides => Set<YahooPlayerIdOverrideEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -220,93 +204,6 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasIndex(syncRun => syncRun.Season);
         });
 
-        modelBuilder.Entity<YahooSyncRun>(entity =>
-        {
-            entity.ToTable("yahoo_sync_runs");
-            entity.HasKey(syncRun => syncRun.SyncRunId);
-
-            entity.Property(syncRun => syncRun.GameKey).HasMaxLength(20);
-            entity.Property(syncRun => syncRun.Status).HasMaxLength(32);
-
-            entity.HasIndex(syncRun => new { syncRun.GameKey, syncRun.Season, syncRun.Week });
-            entity.HasIndex(syncRun => syncRun.StartedAtUtc);
-        });
-
-        modelBuilder.Entity<WeeklyPlayerStat>(entity =>
-        {
-            entity.ToTable("weekly_player_stats");
-            entity.HasKey(playerStat => playerStat.WeeklyPlayerStatId);
-
-            entity.Property(playerStat => playerStat.GameKey).HasMaxLength(20);
-            entity.Property(playerStat => playerStat.SleeperPlayerId).HasMaxLength(50);
-            entity.Property(playerStat => playerStat.FullName).HasMaxLength(200);
-            entity.Property(playerStat => playerStat.Team).HasMaxLength(50);
-            entity.Property(playerStat => playerStat.Position).HasMaxLength(20);
-            entity.Property(playerStat => playerStat.EditorialTeamAbbr).HasMaxLength(20);
-
-            entity.HasIndex(playerStat => new { playerStat.Season, playerStat.Week, playerStat.YahooPlayerId })
-                .IsUnique();
-            entity.HasIndex(playerStat => new { playerStat.Season, playerStat.Week, playerStat.Position });
-            entity.HasIndex(playerStat => playerStat.SleeperPlayerId);
-            entity.HasIndex(playerStat => playerStat.SyncRunId);
-
-            entity.HasOne(playerStat => playerStat.SyncRun)
-                .WithMany(syncRun => syncRun.WeeklyPlayerStats)
-                .HasForeignKey(playerStat => playerStat.SyncRunId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        modelBuilder.Entity<WeeklyPlayerStatValue>(entity =>
-        {
-            entity.ToTable("weekly_player_stat_values");
-            entity.HasKey(statValue => new { statValue.WeeklyPlayerStatId, statValue.StatId });
-
-            entity.Property(statValue => statValue.StatName).HasMaxLength(100);
-            entity.Property(statValue => statValue.Value).HasPrecision(18, 4);
-
-            entity.HasOne(statValue => statValue.WeeklyPlayerStat)
-                .WithMany(playerStat => playerStat.StatValues)
-                .HasForeignKey(statValue => statValue.WeeklyPlayerStatId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasIndex(statValue => statValue.StatId);
-        });
-
-        modelBuilder.Entity<WeeklyPlayerPoint>(entity =>
-        {
-            entity.ToTable("weekly_player_points");
-            entity.HasKey(playerPoint => playerPoint.WeeklyPlayerPointId);
-
-            entity.Property(playerPoint => playerPoint.TemplateKey).HasMaxLength(100);
-            entity.Property(playerPoint => playerPoint.FantasyPoints).HasPrecision(18, 4);
-
-            entity.HasOne(playerPoint => playerPoint.WeeklyPlayerStat)
-                .WithMany(playerStat => playerStat.Points)
-                .HasForeignKey(playerPoint => playerPoint.WeeklyPlayerStatId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(playerPoint => playerPoint.ScoringTemplate)
-                .WithMany(template => template.WeeklyPlayerPoints)
-                .HasForeignKey(playerPoint => playerPoint.TemplateKey)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasIndex(playerPoint => new { playerPoint.WeeklyPlayerStatId, playerPoint.TemplateKey })
-                .IsUnique();
-            entity.HasIndex(playerPoint => playerPoint.TemplateKey);
-        });
-
-        modelBuilder.Entity<ScoringTemplate>(entity =>
-        {
-            entity.ToTable("scoring_templates");
-            entity.HasKey(template => template.TemplateKey);
-
-            entity.Property(template => template.TemplateKey).HasMaxLength(100);
-            entity.Property(template => template.Name).HasMaxLength(200);
-            entity.Property(template => template.Description).HasMaxLength(1000);
-
-            entity.HasIndex(template => template.IsActive);
-        });
-
         modelBuilder.Entity<RosterAssignmentEntity>(entity =>
         {
             entity.ToTable("roster_assignments");
@@ -407,43 +304,6 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
                 snapshot.SleeperPlayerId
             }).IsUnique();
             entity.HasIndex(snapshot => new { snapshot.Season, snapshot.Week, snapshot.AgentId });
-        });
-
-        modelBuilder.Entity<YahooOAuthStateEntity>(entity =>
-        {
-            entity.ToTable("yahoo_oauth_state");
-            entity.HasKey(row => row.Id);
-            entity.Property(row => row.Id).ValueGeneratedNever();
-            entity.Property(row => row.AccessToken).HasColumnType("text");
-            entity.Property(row => row.RefreshToken).HasColumnType("text");
-            entity.Property(row => row.TokenType).HasMaxLength(50);
-            entity.Property(row => row.Scope).HasMaxLength(500);
-            entity.Property(row => row.AuthorizationState).HasMaxLength(128);
-        });
-
-        modelBuilder.Entity<YahooPlayerIdOverrideEntity>(entity =>
-        {
-            entity.ToTable("yahoo_player_id_overrides");
-            entity.HasKey(row => row.YahooPlayerId);
-            entity.Property(row => row.YahooPlayerId).ValueGeneratedNever();
-            entity.Property(row => row.SleeperPlayerId).HasMaxLength(50);
-            entity.Property(row => row.Note).HasMaxLength(500);
-            entity.HasIndex(row => row.SleeperPlayerId);
-        });
-
-        modelBuilder.Entity<ScoringTemplateRule>(entity =>
-        {
-            entity.ToTable("scoring_template_rules");
-            entity.HasKey(rule => new { rule.TemplateKey, rule.StatId });
-
-            entity.Property(rule => rule.TemplateKey).HasMaxLength(100);
-            entity.Property(rule => rule.StatName).HasMaxLength(100);
-            entity.Property(rule => rule.Modifier).HasPrecision(18, 4);
-
-            entity.HasOne(rule => rule.ScoringTemplate)
-                .WithMany(template => template.Rules)
-                .HasForeignKey(rule => rule.TemplateKey)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WaiverPriorityEntity>(entity =>

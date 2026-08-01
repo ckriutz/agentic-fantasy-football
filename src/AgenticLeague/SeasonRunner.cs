@@ -9,25 +9,25 @@ public class SeasonRunner
     private readonly List<FantasyAgent> _agents;
     private readonly ILogger _logger;
     private readonly HttpClient _http;
-    private readonly HttpClient _yahooHttp;
+    private readonly HttpClient _scoresHttp;
     private LeagueState _leagueState;
 
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient yahooHttp)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
-        _yahooHttp = yahooHttp;
+        _scoresHttp = scoresHttp;
         _leagueState = LeagueStateHelper.GetLeagueStateAsync(_http, _logger).Result;
     }
 
     // In case for testing I wanted to pass in a custom league state, I can use this constructor instead of the one above.
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient yahooHttp, LeagueState leagueState)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp, LeagueState leagueState)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
-        _yahooHttp = yahooHttp;
+        _scoresHttp = scoresHttp;
         _leagueState = leagueState;
     }
 
@@ -68,11 +68,11 @@ public class SeasonRunner
                 return;
             }
 
-            // First, we process the Yahoo data for the current week to update scores and stats.
-            var yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState.Season, _leagueState.Week);
-            if (!yahooDataSuccess)
+            // First, we process weekly scores for the current week to update matchups.
+            var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week, forceRefresh: true);
+            if (!weeklyScoresSuccess)
             {
-                _logger.LogError($"Yahoo data sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
                 return;
             }
 
@@ -184,11 +184,11 @@ public class SeasonRunner
             // Thursday! This is the day when some games start, so we want to make sure the agents have set their lineups correctly for the games that are happening today.
             // Also, later at night, maybe we run this again to get some scores, as well as lock the players who have played.
             
-            // TODO: Turn this back on once we're ready to process Yahoo data for Thursday games.
-            //var yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState.Season, _leagueState.Week);
-            //            if (!yahooDataSuccess)
+            // TODO: Turn this back on once we're ready to process weekly scores for Thursday games.
+            //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+            //            if (!weeklyScoresSuccess)
             //            {
-            //                _logger.LogError($"Yahoo data sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            //                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
             //                return;
             //            }
 
@@ -222,11 +222,11 @@ public class SeasonRunner
             // Friday! This is the day after the Thursday games, so we want to make sure the agents have set their lineups correctly for the games that are happening on Sunday and Monday.
             // Nothing else really happens today.
             
-            // TODO: Turn this back on! Lets process the Yahoo Weekly data for the Thursday games.
-            //var yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState.Season, _leagueState.Week);
-            //if (!yahooDataSuccess)
+            // TODO: Turn this back on! Lets process weekly scores for the Thursday games.
+            //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+            //if (!weeklyScoresSuccess)
             //{
-                //_logger.LogError($"Yahoo data sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+                //_logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
                 //return;
             //}
 
@@ -260,10 +260,10 @@ public class SeasonRunner
             // Players who played on Thursday are stuck where they are.
 
             // TODO: Turn this back on. Why not do a sync.
-            //bool yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            //if (yahooDataSuccess)
+            //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
+            //if (weeklyScoresSuccess)
             //{
-                //_logger.LogInformation("Successfully processed Yahoo data for the week.");
+                //_logger.LogInformation("Successfully processed weekly scores for the week.");
             //}
 
             if (_leagueState?.Phase == "free_agency")
@@ -291,11 +291,11 @@ public class SeasonRunner
             _logger.LogInformation("Running Sunday tasks.");
 
             // It's Sunday! Games are starting today, so lets do one final oppertunity for the agents to set their lineups for the Sunday games before they start.
-            // TODO: Turn this back on once Yahoo data processing is needed.
-            //bool yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            //if (yahooDataSuccess)
+            // TODO: Turn this back on once weekly scores processing is needed.
+            //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
+            //if (weeklyScoresSuccess)
             //{
-                //_logger.LogInformation("Successfully processed Yahoo data for the week.");
+                //_logger.LogInformation("Successfully processed weekly scores for the week.");
             //}
 
             // Only lineup changes are allowed on Sunday, so agents can only set their lineups for the Sunday games, but they can't make any roster moves.
@@ -327,10 +327,10 @@ public class SeasonRunner
             // TODO: Wire in a prompt to remind the agents to set their lineups for the Monday game if they haven't already, since the last game starts on Monday night.
             _logger.LogInformation("Running Monday tasks.");
 
-            bool yahooDataSuccess = await ProcessYahooDataForWeekAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            if (yahooDataSuccess)
+            bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
+            if (weeklyScoresSuccess)
             {
-                _logger.LogInformation("Successfully processed Yahoo data for the week.");
+                _logger.LogInformation("Successfully processed weekly scores for the week.");
             }
 
             var prompt =
@@ -366,43 +366,49 @@ public class SeasonRunner
         return true;
     }
 
-    private async Task<bool> ProcessYahooDataForWeekAsync(int season, int week)
+    private async Task<bool> ProcessWeeklyScoresAsync(int season, int week, bool forceRefresh = false)
     {
-        var latestSyncResponse = await _http.GetAsync($"api/sync/yahoo/latest?season={season}&week={week}");
-        if (latestSyncResponse.IsSuccessStatusCode)
+        if (!forceRefresh)
         {
-            var latestSyncJson = await latestSyncResponse.Content.ReadAsStringAsync();
-            var latestSync = JsonSerializer.Deserialize<YahooSyncRunSummary>(latestSyncJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (latestSync is null)
+            var latestSyncResponse = await _http.GetAsync($"api/sync/fantasypros/points/latest?season={season}");
+            if (latestSyncResponse.IsSuccessStatusCode)
             {
-                _logger.LogError("Yahoo sync status for season {Season}, week {Week} could not be parsed.", season, week);
+                var latestSyncJson = await latestSyncResponse.Content.ReadAsStringAsync();
+                var latestSync = JsonSerializer.Deserialize<FantasyProsPointsSyncStatus>(latestSyncJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (latestSync is null)
+                {
+                    _logger.LogError("FantasyPros points status for season {Season}, week {Week} could not be parsed.", season, week);
+                    return false;
+                }
+
+                if (string.Equals(latestSync.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
+                    && latestSync.RecordCount is > 0
+                    && latestSync.Season == season
+                    && latestSync.EndWeek >= week
+                    && latestSync.CompletedAtUtc.HasValue
+                    && DateTimeOffset.UtcNow - latestSync.CompletedAtUtc.Value < TimeSpan.FromHours(2))
+                {
+                    _logger.LogInformation("Skipping FantasyPros points sync for season {Season}, week {Week}; the last successful weekly scores sync completed at {CompletedAtUtc}.", season, week, latestSync.CompletedAtUtc.Value);
+                    return true;
+                }
+            }
+            else if (latestSyncResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                var error = await latestSyncResponse.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to load FantasyPros points status for season {Season}, week {Week}. Status code: {StatusCode}. Response: {Response}", season, week, latestSyncResponse.StatusCode, error);
                 return false;
             }
-
-            if (string.Equals(latestSync.Status, "Succeeded", StringComparison.OrdinalIgnoreCase)
-                && latestSync.CompletedAtUtc.HasValue
-                && DateTimeOffset.UtcNow - latestSync.CompletedAtUtc.Value < TimeSpan.FromHours(2))
-            {
-                _logger.LogInformation("Skipping Yahoo sync for season {Season}, week {Week}; the last successful sync completed at {CompletedAtUtc}.", season, week, latestSync.CompletedAtUtc.Value);
-                return true;
-            }
         }
-        else if (latestSyncResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+
+        var scoresResponse = await _scoresHttp.PostAsync("api/sync/fantasypros/points", null);
+        if (!scoresResponse.IsSuccessStatusCode)
         {
-            var error = await latestSyncResponse.Content.ReadAsStringAsync();
-            _logger.LogError("Failed to load Yahoo sync status for season {Season}, week {Week}. Status code: {StatusCode}. Response: {Response}", season, week, latestSyncResponse.StatusCode, error);
+            var error = await scoresResponse.Content.ReadAsStringAsync();
+            _logger.LogError("Failed to process FantasyPros points for Season: {Season}, Week: {Week}. Status code: {StatusCode}. Response: {Response}", season, week, scoresResponse.StatusCode, error);
             return false;
         }
 
-        var yahooResponse = await _yahooHttp.PostAsync("api/sync/yahoo", null);
-        if (!yahooResponse.IsSuccessStatusCode)
-        {
-            var error = await yahooResponse.Content.ReadAsStringAsync();
-            _logger.LogError("Failed to process Yahoo data for Season: {Season}, Week: {Week}. Status code: {StatusCode}. Response: {Response}", season, week, yahooResponse.StatusCode, error);
-            return false;
-        }
-
-        _logger.LogInformation("Successfully processed Yahoo data for Season: {Season}, Week: {Week}.", season, week);
+        _logger.LogInformation("Successfully processed FantasyPros points for Season: {Season}, Week: {Week}.", season, week);
         return true;
     }
 
@@ -446,5 +452,5 @@ public class SeasonRunner
 
     private sealed record WaiverPlayerSummary(string SleeperPlayerId, string? FullName, string? Team, string? Position);
 
-    private sealed record YahooSyncRunSummary(string Status, DateTimeOffset? CompletedAtUtc);
+    private sealed record FantasyProsPointsSyncStatus(int Season, int EndWeek, string? Status, int? RecordCount, DateTimeOffset? CompletedAtUtc);
 }

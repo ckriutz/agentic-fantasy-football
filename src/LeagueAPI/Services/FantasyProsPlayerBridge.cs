@@ -10,6 +10,22 @@ namespace LeagueAPI.Services;
 /// </summary>
 public static class FantasyProsPlayerBridge
 {
+    private static readonly IReadOnlyDictionary<string, string> DstTeamCodeAliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["JAC"] = "JAX",
+        ["JAX"] = "JAC",
+        ["LA"] = "LAR",
+        ["LAR"] = "LA",
+        ["WSH"] = "WAS",
+        ["WAS"] = "WSH",
+        ["SD"] = "LAC",
+        ["LAC"] = "SD",
+        ["OAK"] = "LV",
+        ["LV"] = "OAK",
+        ["ARZ"] = "ARI",
+        ["ARI"] = "ARZ"
+    };
+
     public sealed record Identity(string? PlayerYahooId, string? SportsDataId, string? PositionId, string? TeamId);
 
     public sealed class LookupMaps
@@ -107,10 +123,19 @@ public static class FantasyProsPlayerBridge
         if (IsDstPosition(identity.PositionId))
         {
             var teamId = identity.TeamId?.Trim();
-            if (!string.IsNullOrWhiteSpace(teamId)
-                && maps.DstSleeperByTeamId.TryGetValue(teamId.ToUpperInvariant(), out var sleeperByTeam))
+            if (!string.IsNullOrWhiteSpace(teamId))
             {
-                return sleeperByTeam;
+                var teamCode = teamId.ToUpperInvariant();
+                if (maps.DstSleeperByTeamId.TryGetValue(teamCode, out var sleeperByTeam))
+                {
+                    return sleeperByTeam;
+                }
+
+                if (DstTeamCodeAliases.TryGetValue(teamCode, out var alias)
+                    && maps.DstSleeperByTeamId.TryGetValue(alias, out sleeperByTeam))
+                {
+                    return sleeperByTeam;
+                }
             }
         }
 
