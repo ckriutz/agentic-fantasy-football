@@ -1,8 +1,6 @@
 # -----------------------------
 # Security / secrets
 # -----------------------------
-# Yahoo token file - contains sensitive OAuth tokens
-.yahoo_tokens.json
 src/LeagueAPI/appsettings.Development.json
 /src/AgenticLeague/AgentData/**
 /src/AgenticLeague/draft-state.json
@@ -55,4 +53,3 @@ venv/
 # Docker / local volume-style data
 # -----------------------------
 src/LeagueAPI/Data/sleeper/
-src/LeagueAPI/Data/yahoo/
