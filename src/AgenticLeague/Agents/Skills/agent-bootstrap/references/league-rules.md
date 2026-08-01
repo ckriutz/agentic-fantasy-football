@@ -4,7 +4,7 @@
 
 - **Type**: Full PPR (Point Per Reception)
 - **Scoring System**: Standard fantasy football scoring with 1 point awarded per reception
-- **Common On**: ESPN, Yahoo Fantasy Sports, Sleeper
+- **Common On**: ESPN, Sleeper
 
 ## League Structure
 
