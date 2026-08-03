@@ -109,9 +109,13 @@ End every run with this exact structure:
 ```markdown
 ## Weekly player management (Week {week})
 **Loaded skill:** weekly-player-management
+
 **Phase:** {phase}
+
 **Outcome:** added | waiver_claims_submitted | no_change | blocked
+
 **Action:** <one-line factual outcome>
+
 **Roster need:**
 - <identified deficiency, or "None">
 

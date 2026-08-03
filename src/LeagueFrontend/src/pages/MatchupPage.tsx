@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, Loader2, Swords } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Loader2, Lock, Swords } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import AgentAvatar from '@/components/AgentAvatar'
@@ -36,6 +36,9 @@ type RosterEntry = {
   } | null
   slotType: string | null
   weeklyPoints: Record<string, number> | null
+  lockStatus: {
+    hasPlayedThisWeek: boolean
+  }
 }
 
 const STARTER_SLOTS = ['QB1', 'RB1', 'RB2', 'WR1', 'WR2', 'TE1', 'FLEX1', 'K1', 'DEF1']
@@ -87,12 +90,20 @@ function PlayerSlot({ entry, week, opponentPoints, align }: { entry: RosterEntry
             {points.toFixed(2)}
           </span>
         )}
-        <Link
-          to={`/players/${player.sleeperPlayerId}`}
-          className={`min-w-0 truncate text-sm font-semibold text-white hover:text-emerald-300 ${align === 'right' ? 'text-right' : ''}`}
-        >
-          {player.fullName ?? 'Unknown player'}
-        </Link>
+        <div className={`flex min-w-0 items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+          <Link
+            to={`/players/${player.sleeperPlayerId}`}
+            className={`min-w-0 truncate text-sm font-semibold text-white hover:text-emerald-300 ${align === 'right' ? 'text-right' : ''}`}
+          >
+            {player.fullName ?? 'Unknown player'}
+          </Link>
+          {entry.lockStatus.hasPlayedThisWeek && (
+            <Lock
+              aria-label="Locked: player has played this week"
+              className="size-3.5 shrink-0 text-amber-300"
+            />
+          )}
+        </div>
         {align === 'left' && (
           <span className={`shrink-0 font-mono text-sm font-semibold ${scoreColor(points, opponentPoints)}`}>
             {points.toFixed(2)}
@@ -264,7 +275,7 @@ function MatchupPage() {
                         entry={homeEntry}
                         week={matchup.week}
                         opponentPoints={getWeeklyPoints(awayEntry, matchup.week)}
-                        align="right"
+                        align="left"
                       />
                       <span className="text-center text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                         {formatSlot(slot)}
@@ -273,7 +284,7 @@ function MatchupPage() {
                         entry={awayEntry}
                         week={matchup.week}
                         opponentPoints={getWeeklyPoints(homeEntry, matchup.week)}
-                        align="left"
+                        align="right"
                       />
                     </div>
                   )
@@ -317,7 +328,7 @@ function MatchupPage() {
                   <ul className="divide-y divide-white/10">
                     {awayBench.map((entry) => (
                       <li key={entry.player?.sleeperPlayerId ?? entry.slotType} className="py-3 first:pt-0 last:pb-0">
-                        <PlayerSlot entry={entry} week={matchup.week} opponentPoints={null} align="left" />
+                        <PlayerSlot entry={entry} week={matchup.week} opponentPoints={null} align="right" />
                       </li>
                     ))}
                   </ul>

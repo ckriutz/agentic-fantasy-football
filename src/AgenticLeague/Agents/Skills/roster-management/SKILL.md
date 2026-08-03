@@ -115,7 +115,7 @@ Count how many of the nine starter slots are currently occupied: `QB1`, `RB1`, `
 
 If **any** of those slots is empty:
 
-1. You are in **full set** mode, not “bench one player” mode.
+1. You need to fill the lineup completely. You may need to do this for more than one player.
 2. Build a complete target lineup using the rubric.
 3. Apply `SetPlayerSlot` until every fillable starter slot has a player.
 4. Only after the nine slots are filled as well as eligibility allows, apply narrower user requests (e.g. specific bench preferences).

@@ -45,6 +45,7 @@ var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
 logger.LogInformation("✅ All checks passed. API is healthy, and league state is valid. Current league phase: " + leagueState.Phase);
 logger.LogInformation("🏈 Starting Agentic Fantasy Football League!");
 
+
 // Load all the agents, and initialze them.
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
 response.EnsureSuccessStatusCode();
@@ -70,12 +71,13 @@ logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Cou
 await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
 // Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
-//logger.LogInformation("testing.");
+logger.LogInformation("testing.");
 //var testAgents = agents.Where(a => a.GetAgentName() == "player-08" || a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
 //var prompt = """test""";
 //var testAgent = agents.First(agent => agent.GetAgentName() == "player-03");
-//var testResponse = await testAgent.RunAsync("Look at your roster, and tell me if your starting roster is full or not. If it is, respond with 'Starting roster is full.'. If it is not, respond with what position is missing a starting player and which bench player you would fill it with. Don't make any moves, just evaluate. You MUST provide a response.");
+//var testResponse = await agents.RunAsync("Look at your roster, and tell me if your starting roster is full or not. If it is, respond with 'Starting roster is full.'. If it is not, respond with what position is missing a starting player and which bench player you would fill it with. Don't make any moves, just evaluate. You MUST provide a response.");
 //Console.WriteLine($"Response from Player 1: {testResponse.Response}");
+
 
 await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
 
@@ -114,34 +116,8 @@ static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost 
         return;
     }
     seasonLogger.LogInformation("League state is {Phase}. Starting the season runner...", phase);
+
     SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, scoresHttp, leagueState);
     await seasonRunner.RunAsync();
     seasonLogger.LogInformation("🎉 Season runner completed.");
-
 }
-
-
-// Lets test the players ability to move a player onto the bench.
-//var agent = agents.First(agent => agent.GetAgentName() == "player-01");
-//var prompt = "Run the skill smoke test. Don't do anything else.";
-//var testresponse = await agent.RunAsync(prompt);
-//Console.WriteLine($"Response from Player 1: {testresponse}");
-
-// Here, lets test free agency.
-//var prompt = "Use the `weekly-player-management` skill to evaluate your roster and make any necessary moves.";
-//var waverResponse = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(prompt);
-//Console.WriteLine($"Response from Player 5: {waverResponse}");
-//logger.LogInformation("Input tokens used: " + waverResponse.Usage.InputTokenCount);
-//logger.LogInformation("Output tokens used: " + waverResponse.Usage.OutputTokenCount);
-//logger.LogInformation("Total tokens used: " + waverResponse.Usage.TotalTokenCount);
-
-//var prompt = $"Use the `ReadAgentBootstrap` tool to read your bootstrap file, and then respond with a general summary of your current bootstrap status and team information based on the contents of the bootstrap file. If you don't have a bootstrap file, respond with 'No bootstrap file found.'.";
-//var postResponse = await testAgent.RunAsync(prompt);
-//Console.WriteLine($"Post-draft response from Test Agent 01: {postResponse}");
-
-
-//var response4 = await agents.First(agent => agent.GetAgentName() == "player-04").RunAsync(prompt);
-//Console.WriteLine($"Post-draft response from Player 4: {response4}");
-
-//var response10 = await agents.First(agent => agent.GetAgentName() == "player-05").RunAsync(waverPrompt);
-//Console.WriteLine($"Post-draft response from Player 5: {response10}");

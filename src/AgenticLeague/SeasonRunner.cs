@@ -48,7 +48,8 @@ public class SeasonRunner
 
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
         var easternNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, EasternTimeZone);
-        var dayOfWeek = easternNow.DayOfWeek;
+        //var dayOfWeek = easternNow.DayOfWeek;
+        var dayOfWeek = DayOfWeek.Monday; // TESTING. Change back when done testing.
         _logger.LogInformation("Today is {DayOfWeek} in US Eastern Time ({EasternNow}).", dayOfWeek, easternNow);
 
         if(dayOfWeek == DayOfWeek.Tuesday)
@@ -91,31 +92,34 @@ public class SeasonRunner
             int week = completedWeek + 1;
             _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState.Season, week, "waiver_window", "season-runner", _http, _logger);
 
-            var reflectionPrompt =
-            $"""
-            Season {_leagueState.Season} week {completedWeek} has concluded and its matchups have been finalized.
-            Before making any moves for week {week}, use the `weekly-reflection` skill to review your completed-week matchup and roster performance.
-            Read your bootstrap first. Use `GetWeeklyMatchup` for season week {completedWeek} and `GetMyRoster` to compare completed-week production from starters and bench players.
-            Reflect on the quality of your decisions separately from the win/loss outcome, record a concise dated reflection in your bootstrap, and identify specific priorities for week {week}.
-            Do not add, drop, claim, trade, or move players between lineup slots during this reflection.
-            End with the required weekly-reflection decision summary as visible text.
-            """;
             foreach(var agent in _agents)
             {
+                var reflectionPrompt =
+                $"""
+                You are {agent.GetAgentName()}. Season {_leagueState.Season} Week {completedWeek} is finalized.
+                Use `weekly-reflection` and review exactly Week {completedWeek}; the current league week is {week}, but do not query it as the completed matchup.
+
+                Required calls: `ReadAgentBootstrap({agent.GetAgentName()})`,
+                `GetWeeklyMatchup({agent.GetAgentName()}, {completedWeek})`, `GetMyRoster({agent.GetAgentName()})`, then `WriteAgentBootstrap` once.
+
+                `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty. Make no roster or lineup changes.
+                """;
                 var response = (await agent.RunAsync(reflectionPrompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, completedWeek, "Weekly Reflection", response, $"Weekly Reflection for week {completedWeek}", _logger);
             }
 
             // Then we will prompt the agents to evaluate whether they should make waiver claims.
-            var prompt =
-            $"""
-            Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
-            Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
-            Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
-            Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
-            """;
             foreach(var agent in _agents)
             {
+                var prompt =
+                $"""
+                You are {agent.GetAgentName()}. Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
+                Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
+                Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
+                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
+
+                `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty. Make no roster or lineup changes.
+                """;
                 var response = (await agent.RunAsync(prompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, week, "Roster Management", response, "Waiver Claim Attempt", _logger);
             }
@@ -135,10 +139,29 @@ public class SeasonRunner
                 bool success = await ProcessWaiverClaimsAsync(_leagueState.Season, _leagueState.Week);
                 if (success)
                 {
-                    // Then we will set a prompt for the agents to let them know the waiver claims were successful and to update their rosters accordingly.
-                    // This prompt will not ask the agent to make more waiver claims, it is only to update their roster based on the results of the waiver claims.
-                    foreach(var agent in _agents)
+                    // Now, lets ONLY prompt the agents who submitted waiver claims to let them know which claims were successful and which were not, and update their rosters accordingly.
+                    var waiverResults = await GetWaiverClaimResults(_leagueState.Season, _leagueState.Week);
+                    if (waiverResults is null)
                     {
+                        _logger.LogError("Failed to retrieve waiver claim results for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
+                        return;
+                    }
+
+                    foreach (var group in waiverResults.GroupBy(claim => claim.AgentId).ToList())
+                    {
+                        var agent = _agents.FirstOrDefault(a => a.GetAgentName() == group.Key);
+                        if (agent is null) { continue; }
+
+                        var payload = new
+                        {
+                            agentId = group.Key,
+                            season = _leagueState.Season,
+                            week = _leagueState.Week,
+                            phase = "free_agency",
+                            waiversProcessedAtUtc = group.Max(claim => claim.ProcessedAtUtc),
+                            claims = group
+                        };
+
                         var prompt =
                         $"""
                         Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
@@ -146,10 +169,17 @@ public class SeasonRunner
                         Use the `waiver-result-review` skill to review your waiver outcomes.
                         Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
                         Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+
+                        Here are your waiver claim results for season {_leagueState.Season} week {_leagueState.Week}:
+                        {JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true })}
                         """;
+
                         var response = (await agent.RunAsync(prompt)).Response;
+                        
                         await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster post Waiver", _logger);
                     }
+
+                    
                     // Then we will set the league state to free-agency, and the agents can start making roster moves outside of the waiver wire if they want to.
                     _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState.Season, _leagueState.Week, "free_agency", "season-runner", _http, _logger);
                 }
@@ -157,6 +187,7 @@ public class SeasonRunner
                 {
                     _logger.LogWarning("Failed to process waiver claims for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
                 }
+                return;
             }
             if (_leagueState?.Phase == "free_agency")
             {
@@ -170,6 +201,7 @@ public class SeasonRunner
                     Use only the `weekly-player-management` skill to decide whether one meaningful free-agent add/drop would improve your roster.
                     A no-change decision is valid. Do not modify agent profiles or bootstrap status.
                     Return the skill's required decision summary as visible text, even when no change is made.
+                    `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty.
                     """;
                     var response = (await agent.RunAsync(prompt)).Response;
                     await DecisionLogger.LogDecisionAsync(agentId, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
@@ -197,18 +229,19 @@ public class SeasonRunner
             // We will want to do this before games start on Thursday.
             if (_leagueState?.Phase == "free_agency")
             {
-                var prompt =
-                $"""
-                Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                We are still in the free-agency phase, however some players may have games today.
-                This is your chance to make sure these players are set correctly for their games today.
-                Remember, all your starting roster slots must be filled.
-                Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                When you're done, use the `roster-management` skill to update your lineup.
-                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-                """;
                 foreach(var agent in _agents)
                 {
+                    var prompt =
+                    $"""
+                    Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                    We are still in the free-agency phase, however some players may have games today.
+                    This is your chance to make sure these players are set correctly for their games today.
+                    Remember, all your starting roster slots must be filled.
+                    Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
+                    When you're done, use the `roster-management` skill to update your lineup.
+                    Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                    """;
+
                     var response = (await agent.RunAsync(prompt)).Response;
                     await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
                 }
@@ -239,8 +272,7 @@ public class SeasonRunner
                 $"""
                 Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
                 We are still in the free-agency phase, however some players may have games yesterday, and if so, they will be locked in their current roster spots.
-                Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                When you're done, use the `roster-management` skill to update your lineup.
+                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
                 Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
                 """;
                 foreach(var agent in _agents)
@@ -279,7 +311,6 @@ public class SeasonRunner
                     This is one of your last chances to make any roster moves before the games start on Sunday and Monday.
                     Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
                     When you're done, use the `roster-management` skill to update your lineup.
-                    Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
                     """;
                     var response = (await agent.RunAsync(prompt)).Response;
                     await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
@@ -312,8 +343,7 @@ public class SeasonRunner
                 There are games starting today, so this is your last chance to set your lineups for the Sunday games.
                 Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
                 This is a lineup-only run. Do not add, drop, or claim players.
-                Use the `roster-management` skill to update your lineup.
-                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
                 """;
                 var response = (await agent.RunAsync(prompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
@@ -332,19 +362,24 @@ public class SeasonRunner
             {
                 _logger.LogInformation("Successfully processed weekly scores for the week.");
             }
+            else
+            {
+                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+                return;
+            }
 
-            var prompt =
-            $"""
-            Today is Monday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-            Most of the games for the week have already been played, but there are still games on Monday.
-            This is your last chance to set your lineups for the Monday games.
-            Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
-            This is a lineup-only run. Do not add, drop, claim, or trade players.
-            Use the `roster-management` skill to update your lineup.
-            Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-            """;
+            
             foreach(var agent in _agents)
             {
+                var prompt =
+                $"""
+                Today is Monday of season {_leagueState.Season}, Week {_leagueState.Week}.
+                You are {agent.GetAgentName()}; use this exact ID for every tool call.
+                It's likely most, if not all your players have played, but if any of your players have not played yet, you can still set your lineup for the Monday game.
+                Only compare and move players who have not played and are still unlocked.
+                Locked starters will not be able to be moved, and locked bench players will not be able to be moved.
+                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
+                """;
                 var response = (await agent.RunAsync(prompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
             }
@@ -412,6 +447,28 @@ public class SeasonRunner
         return true;
     }
 
+    private async Task<List<WaiverClaimSummary>> GetWaiverClaimResults(int season, int week)
+    {
+        var response = await _http.GetAsync($"api/league/waivers/{season}/{week}");
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            _logger.LogError("Failed to retrieve waiver claim results for Season: {Season}, Week: {Week}. Status code: {StatusCode}. Response: {Response}", season, week, response.StatusCode, error);
+            return null;
+        }
+
+        var resultsJson = await response.Content.ReadAsStringAsync();
+        var waiverResults = JsonSerializer.Deserialize<List<WaiverClaimSummary>>(resultsJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (waiverResults is null)
+        {
+            _logger.LogError("Waiver claim results for Season: {Season}, Week: {Week} could not be parsed.", season, week);
+            return null;
+        }
+
+        _logger.LogInformation("Successfully retrieved waiver claim results for Season: {Season}, Week: {Week}. Total claims processed: {Count}.", season, week, waiverResults.Count);
+        return waiverResults;
+    }
+
     private async Task<bool> FinalizeMatchupsForWeekAsync(int season, int week)
     {
         var response = await _http.PostAsync($"api/league/matchups/{season}/{week}/finalize", null);
@@ -439,6 +496,7 @@ public class SeasonRunner
 
     private sealed record WaiverClaimSummary(
         Guid WaiverClaimId,
+        string AgentId,
         int ClaimOrder,
         WaiverPlayerSummary AddPlayer,
         WaiverPlayerSummary? DropPlayer,

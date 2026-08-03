@@ -31,6 +31,9 @@ public sealed class SearchTool
             throw new ArgumentException("A search query is required.", nameof(query));
         }
 
+        // This is for testing only right now. Remove this when we are ready to go live with the tool.
+        return $"The SearchTool is currently in testing mode and will be fully functional soon. I apologize for the inconvenience. Don't try again. Your query was: '{query}'";
+
         var request = new
         {
             model = modelName,

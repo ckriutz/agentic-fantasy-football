@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Text.Json;
 using ModelContextProtocol.Client;
 using AgenticLeague.Models;
@@ -19,6 +20,10 @@ public class FantasyAgent
 
     // Result summaries can be huge (e.g. get_available_players), so cap what we log/keep.
     private const int MaxResultLength = 1000;
+
+    // Logging only. The default encoder escapes quotes as \u0022, which makes nested tool JSON
+    // unreadable in the console. This is not what gets sent to the model.
+    private static readonly JsonSerializerOptions _logJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     // Holds the trace for the RunAsync call currently executing on this async flow.
     // AsyncLocal keeps it scoped to the in-flight run so the tool middleware can record calls
@@ -61,7 +66,7 @@ public class FantasyAgent
 
         if (_profile.IsBootstrapped)
         {
-            Console.WriteLine($"✅ {_profile.AgentId} is bootstrapped and ready to go!");
+            _logger.LogInformation($"✅ {_profile.AgentId} is bootstrapped and ready to go!");
             return;
         }
 
@@ -70,11 +75,11 @@ public class FantasyAgent
         try
         {
             var response = (await RunAsync(bootstrapPrompt)).Response;
-            Console.WriteLine($"Agent {_profile.AgentId} response: {response.Text}");
+            _logger.LogInformation($"Agent {_profile.AgentId} response: {response.Text}");
         }
         catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
         {
-            Console.WriteLine($"Agent {_profile.AgentId} returned unknown finish reason — skipping");
+            _logger.LogWarning($"Agent {_profile.AgentId} returned unknown finish reason — skipping");
         }
     }
 
@@ -87,12 +92,11 @@ public class FantasyAgent
             {
                 Endpoint = new Uri("https://openrouter.ai/api/v1"),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
+                // OpenRouter can return finish_reason values the OpenAI SDK rejects, so responses are normalized first.
+                Transport = new HttpClientPipelineTransport(new HttpClient(new OpenRouterResponseNormalizingHandler(_logger)) { Timeout = TimeSpan.FromMinutes(5) }),
             };
             OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
-
-            #pragma warning disable OPENAI001
-            var chatClient = openAIClient.GetResponsesClient().AsIChatClient(aProfile.ModelName);
-            #pragma warning restore OPENAI001
+            var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();
 
             return chatClient;
         }
@@ -106,10 +110,7 @@ public class FantasyAgent
                 NetworkTimeout = TimeSpan.FromMinutes(5),
             };
             OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
-
-            #pragma warning disable OPENAI001
-            var chatClient = openAIClient.GetResponsesClient().AsIChatClient(aProfile.ModelName);
-            #pragma warning restore OPENAI001
+            var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();
 
             return chatClient;
         }
@@ -153,7 +154,17 @@ public class FantasyAgent
             // Support local runs that have not copied project content to output yet.
             skillsPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Agents", "Skills"));
         }
-        var skillsProvider = new AgentSkillsProvider(skillsPath);
+        // Skill tools require approval by default. Approval is meaningless for an unattended league run, and when a
+        // model emits several tool calls in one turn the approval middleware returns a pending request to the caller
+        // instead of running them, which surfaces as a run with text but zero tool calls. Disabling approval on the
+        // skill tools keeps parallel tool calls working.
+        var skillsProviderOptions = new AgentSkillsProviderOptions
+        {
+            DisableLoadSkillApproval = true,
+            DisableReadSkillResourceApproval = true,
+            DisableRunSkillScriptApproval = true,
+        };
+        var skillsProvider = new AgentSkillsProvider(skillsPath, options: skillsProviderOptions);
 
         var agentInstructions =
         $"""
@@ -288,6 +299,12 @@ public class FantasyAgent
                     _logger.LogWarning(ex, "Agent {AgentId} received HTTP {Status} on attempt {Attempt}. Retrying in {RetryDelaySeconds} seconds.", _profile.AgentId, ex.Status, attempt + 1, retryDelay.TotalSeconds);
                     await Task.Delay(retryDelay);
                 }
+                catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
+                {
+                    // A malformed upstream payload should never take down the league run, so this agent is skipped.
+                    _logger.LogError(ex, "Agent {AgentId} returned an unsupported finish reason that could not be normalized. Skipping this run.", _profile.AgentId);
+                    return new AgentRunResult { RunId = run.RunId, Response = new AgentResponse(), ToolCalls = run.ToolCalls };
+                }
             }
 
             throw new InvalidOperationException("Agent execution ended without a response.");
@@ -348,7 +365,7 @@ public class FantasyAgent
     // Best-effort JSON serialization, falling back to ToString() if the type can't be serialized.
     private static string SafeSerialize(object result)
     {
-        try { return JsonSerializer.Serialize(result); }
+        try { return JsonSerializer.Serialize(result, _logJson); }
         catch { return result.ToString() ?? string.Empty; }
     }
 

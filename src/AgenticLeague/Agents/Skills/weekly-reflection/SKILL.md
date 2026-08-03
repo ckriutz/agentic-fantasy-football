@@ -3,7 +3,7 @@ name: weekly-reflection
 description: Review a completed fantasy-football week, evaluate the team's matchup and player usage, and update the durable game plan for the upcoming week. Use after weekly results are finalized and before waiver or free-agency decisions. Do not make roster, lineup, or transaction changes.
 metadata:
   author: agentic-league
-  version: "1.0"
+  version: "1.1"
   domain: fantasy-football
 ---
 
@@ -31,14 +31,18 @@ Reflect on the completed NFL week and turn the result into a focused plan for th
    - Identify meaningful start/sit wins and misses.
    - Note injuries, byes, locked players, unexpected roles, and underperformance only when supported by tool data.
    - Do not overreact to one outlier performance or treat fantasy points alone as proof that a process was wrong.
-6. Write one concise dated entry under `## Decision Log` containing:
+6. Write one concise dated entry under `## Recent Decision Log` containing:
    - completed season and week;
    - matchup result and score;
    - the most important evidence from the roster review;
    - the next-week priorities.
-7. Update `## Strategy Updates` only when the reflection supports a lasting change to the team's approach. Preserve the existing identity, strategy, roster context, and prior decision history.
-8. Call `WriteAgentBootstrap(agentId, completeContent)` once with the preserved document and the new reflection.
-9. Do not make transactions or lineup changes in this run. Leave those actions to `weekly-player-management` and `roster-management`.
+7. Update `## Current Strategic Priorities` only with up to three current-week needs supported by tool data.
+8. Promote a conclusion to `## Validated Learnings` only after repeated evidence or a clear process failure. Include the evidence and when it should be reconsidered. Do not turn one fantasy-score outlier into a permanent rule.
+9. Update `## Known Failure Modes` only when the reflection finds a repeatable process mistake, such as a stale-memory assumption or an avoidable lineup process error.
+10. Keep `## Recent Decision Log` to the latest five material entries. Do not store a full roster, live score table, or transient injury report in bootstrap; league tools are authoritative for those facts.
+11. Preserve the existing identity, core strategy, and prior durable learnings. If the bootstrap uses the legacy `## Decision Log` or `## Strategy Updates` headings, migrate their durable content into the current sections without discarding it.
+12. Call `WriteAgentBootstrap(agentId, completeContent)` once with the preserved document and the new reflection.
+13. Do not make transactions or lineup changes in this run. Leave those actions to `weekly-player-management` and `roster-management`.
 
 ## Required decision summary
 
@@ -49,19 +53,24 @@ End every run with this exact structure:
 **Loaded skill:** weekly-reflection
 **Result:** win | loss | tie | incomplete | unavailable
 **Score:** {my points} - {opponent points}
+
 **What worked:**
 - <evidence-based strengths>
+
 **What did not work:**
 - <evidence-based weaknesses or "None">
+
 **Key player lessons:**
 - <starter/bench, injury, role, or process observations>
+
 **Plan for Week {upcomingWeek}:**
 - <specific priorities for roster, lineup, research, or waivers>
+
 **Bootstrap update:**
 - <reflection written, strategy updated, or why no durable update was needed>
+
 **Open risks:**
 - <current uncertainties or "None">
 ```
 
 If the matchup is incomplete or unavailable, say so explicitly and do not invent a score or result. A reflection is still useful when the team did not win, but the conclusion must distinguish process quality from outcome luck.
-

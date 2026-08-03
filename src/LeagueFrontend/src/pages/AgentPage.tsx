@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ArrowLeft, ChevronRight, FileText, Loader2, ScrollText, UserCircle2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ChevronRight, FileText, Loader2, Lock, ScrollText, UserCircle2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -41,6 +41,9 @@ type RosterEntry = {
   slotType: string | null
   isStarter: boolean
   weeklyPoints: Record<string, number> | null
+  lockStatus: {
+    hasPlayedThisWeek: boolean
+  }
 }
 
 type Decision = {
@@ -135,6 +138,12 @@ function RosterRow({ entry, currentWeek }: { entry: RosterEntry; currentWeek: nu
           >
             {player?.fullName ?? 'Unknown player'}
           </Link>
+          {entry.lockStatus.hasPlayedThisWeek && (
+            <Lock
+              aria-label="Locked: player has played this week"
+              className="size-3.5 shrink-0 text-amber-300"
+            />
+          )}
           {player?.position && (
             <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${positionBadgeClass(player.position)}`}>
               {player.position}

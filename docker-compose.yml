@@ -6,10 +6,11 @@ services:
     ports:
       - "${LEAGUEFRONTEND_PORT:-3080}:80"
     environment:
-      - API_BASE_URL=
-      - VITE_API_BASE_URL=
-      - VITE_BLOB_BASE_URL=
-      - VITE_BLOB_CONTAINER_NAME=
+      # Runtime config written into /app-config.js by the container entrypoint.
+      # VITE_* names are accepted as fallbacks, but these are the preferred vars.
+      - API_BASE_URL=${API_BASE_URL:-http://192.168.40.159:8082}
+      - BLOB_BASE_URL=${BLOB_BASE_URL:-https://kcfiles07.blob.core.windows.net}
+      - BLOB_CONTAINER_NAME=${BLOB_CONTAINER_NAME:-agentdata}
     depends_on:
       leagueapi:
         condition: service_healthy
