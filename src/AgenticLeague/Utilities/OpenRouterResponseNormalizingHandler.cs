@@ -16,12 +16,26 @@ internal sealed class OpenRouterResponseNormalizingHandler : DelegatingHandler
 {
     private static readonly HashSet<string> KnownFinishReasons = new(StringComparer.OrdinalIgnoreCase) { "stop", "length", "tool_calls", "content_filter", "function_call" };
 
-    private readonly ILogger _logger;
+    // OpenRouter uses this as the sticky-routing key. Without it, stickiness is inferred by hashing the
+    // opening messages, which is unreliable for multi-turn agent runs whose history grows every turn.
+    private const string SessionIdHeader = "x-session-id";
+    private const int MaxSessionIdLength = 256;
 
-    public OpenRouterResponseNormalizingHandler(ILogger logger) : base(new HttpClientHandler()) { _logger = logger; }
+    private readonly ILogger _logger;
+    private readonly string _sessionId;
+
+    public OpenRouterResponseNormalizingHandler(ILogger logger, string sessionId) : base(new HttpClientHandler())
+    {
+        _logger = logger;
+        _sessionId = sessionId.Length <= MaxSessionIdLength ? sessionId : sessionId.Substring(0, MaxSessionIdLength);
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // Pinning every request for this agent to one provider keeps its cached prompt prefix (system
+        // instructions plus tool definitions) warm across turns and across runs.
+        if (!request.Headers.Contains(SessionIdHeader)) { request.Headers.TryAddWithoutValidation(SessionIdHeader, _sessionId); }
+
         var response = await base.SendAsync(request, cancellationToken);
 
         // Only JSON bodies are rewritten. Streaming (text/event-stream) and anything else passes straight through.

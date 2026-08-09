@@ -49,7 +49,7 @@ public class SeasonRunner
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
         var easternNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, EasternTimeZone);
         //var dayOfWeek = easternNow.DayOfWeek;
-        var dayOfWeek = DayOfWeek.Monday; // TESTING. Change back when done testing.
+        var dayOfWeek = DayOfWeek.Wednesday; // TESTING. Change back when done testing.
         _logger.LogInformation("Today is {DayOfWeek} in US Eastern Time ({EasternNow}).", dayOfWeek, easternNow);
 
         if(dayOfWeek == DayOfWeek.Tuesday)
@@ -97,12 +97,12 @@ public class SeasonRunner
                 var reflectionPrompt =
                 $"""
                 You are {agent.GetAgentName()}. Season {_leagueState.Season} Week {completedWeek} is finalized.
-                Use `weekly-reflection` and review exactly Week {completedWeek}; the current league week is {week}, but do not query it as the completed matchup.
+                Use the `weekly-reflection` tool and review exactly Week {completedWeek}; the current league week is {week}, but do not query it as the completed matchup.
 
                 Required calls: `ReadAgentBootstrap({agent.GetAgentName()})`,
                 `GetWeeklyMatchup({agent.GetAgentName()}, {completedWeek})`, `GetMyRoster({agent.GetAgentName()})`, then `WriteAgentBootstrap` once.
 
-                `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty. Make no roster or lineup changes.
+                Do not use `SearchWeb` for this task. Do not use any other tools. Do not make any roster or lineup changes. Do not make any waiver claims. Do not make any trades. Do not make any draft picks. Do not make any other moves.
                 """;
                 var response = (await agent.RunAsync(reflectionPrompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, completedWeek, "Weekly Reflection", response, $"Weekly Reflection for week {completedWeek}", _logger);
@@ -117,8 +117,6 @@ public class SeasonRunner
                 Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
                 Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
                 Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
-
-                `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty. Make no roster or lineup changes.
                 """;
                 var response = (await agent.RunAsync(prompt)).Response;
                 await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, week, "Roster Management", response, "Waiver Claim Attempt", _logger);

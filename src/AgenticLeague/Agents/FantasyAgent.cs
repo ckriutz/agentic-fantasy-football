@@ -93,7 +93,8 @@ public class FantasyAgent
                 Endpoint = new Uri("https://openrouter.ai/api/v1"),
                 NetworkTimeout = TimeSpan.FromMinutes(5),
                 // OpenRouter can return finish_reason values the OpenAI SDK rejects, so responses are normalized first.
-                Transport = new HttpClientPipelineTransport(new HttpClient(new OpenRouterResponseNormalizingHandler(_logger)) { Timeout = TimeSpan.FromMinutes(5) }),
+                // The handler also stamps x-session-id so this agent's requests stick to one provider and stay cache-warm.
+                Transport = new HttpClientPipelineTransport(new HttpClient(new OpenRouterResponseNormalizingHandler(_logger, aProfile.AgentId)) { Timeout = TimeSpan.FromMinutes(5) }),
             };
             OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
             var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();

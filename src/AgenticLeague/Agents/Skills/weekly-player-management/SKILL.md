@@ -3,7 +3,7 @@ name: weekly-player-management
 description: Evaluate roster deficiencies and improve the team through waiver claims or free agency. Use for waiver wire, free-agent adds, weekly roster improvement, injury replacement, bye-week coverage, roster deficiencies, or add/drop decisions. Do not use for setting a lineup without evaluating acquisitions.
 metadata:
   author: agentic-league
-  version: "1.0"
+  version: "1.1"
   domain: fantasy-football
 ---
 
@@ -11,17 +11,18 @@ metadata:
 
 Improve the roster only when an available player materially addresses a current or near-term need. This skill handles player acquisition decisions; use the `roster-management` skill after a successful acquisition when the lineup needs to change.
 
+First thing to check is the league phase by using the `GetLeagueState` tool. If it is `games_locked` then there is nothing for you to do since players cannot be added or dropped during this phase. If the league phase is `waiver_window` or `free_agency` then you can continue to evaluate your roster.
+
 ## Scope and hard constraints
 
 - Acquisition is optional. A well-supported no-move outcome is correct.
 - Never acquire a player before confirming the league phase.
 - Use only the phase-aware acquisition tools: `SubmitWaiverClaimForCurrentWeek` during `waiver_window`, and `AddFreeAgentForCurrentWeek` during `free_agency`.
-- Do **not** use `add_free_agent`, `AddPlayerToRoster`, `RemovePlayerFromRoster`, or any explicit-week add variant. They either do not exist for weekly play or bypass the waiver/free-agent lifecycle, and calling them just returns errors.
+- Do **not** use `AddPlayerToRoster`, `RemovePlayerFromRoster`, or any explicit-week add variant. They either do not exist for weekly play or bypass the waiver/free-agent lifecycle, and calling them just returns errors.
 - Make **at most one successful acquisition per run**. Once an add or claim succeeds, stop acquiring and write the summary. Never chain a second add in the same run.
-- Attempt an acquisition **once**. Check the result `ok` field: if `false`, read `error.code`, `error.message`, and `error.nextStep`, apply `nextStep` only if it is a single safe correction, and otherwise stop. Do **not** retry the same call or cycle through other players hoping one succeeds.
+- Attempt an acquisition, and then check the result `ok` field: if `false`, read `error.code`, `error.message`, and `error.nextStep`, apply `nextStep` only if it is a single safe correction, and otherwise stop. Do **not** retry the same call or cycle through other players hoping one succeeds.
 - Do not drop a healthy, needed starter merely to make a speculative addition.
-- Do not drop a lineup-locked player or a player whose add/drop lock status prevents the transaction.
-- Do not make player moves during phases other than `waiver_window` or `free_agency`.
+- Do not drop a lineup-locked player or a player whose add/drop lock status prevents the transaction as calling them just returns errors.
 - Use the exact `agentId` supplied by the task for every roster and waiver tool.
 - The run is complete only when you output the decision summary as visible text. Never end on a tool call.
 
@@ -32,8 +33,8 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 | Tool | Purpose |
 |------|---------|
 | `GetLeagueState` | Establish the authoritative season, week, and phase. |
-| `GetMyWaiverStatus` | Check priority, existing claims, and current claim outcomes. |
-| `ReadAgentBootstrap` / `WriteAgentBootstrap` | Use and maintain the durable game plan and decision log. |
+| `GetMyWaiverStatus` | Check priority, existing claims, and current claim outcomes during the `waiver_window` phase. |
+| `ReadAgentBootstrap` / `WriteAgentBootstrap` | Use and maintain the memory and lessons learned. |
 | `GetMyRoster` | Find deficiencies, roster capacity, drop candidates, and locks. |
 | `GetAvailablePlayers` | Find unrostered candidates by position. |
 | `SearchWeb` | Confirm current injuries, roles, depth charts, and meaningful news. |
@@ -63,20 +64,16 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 
 ### 3. Find and assess candidates
 
-1. Call `GetAvailablePlayers` for the position or positions needed most. Search a reasonable candidate pool, not only one player.
-2. Compare candidates with the player they would replace using:
+1. Call `GetAvailablePlayers` for the position or positions needed most. **Always pass `position`** — results are ordered by projected season points, which is only comparable within a position. Search a reasonable candidate pool, not only one player.
+2. Compare candidates with the player they would replace using, in priority order:
    1. Availability for the current and upcoming weeks: not on bye, injury outlook, and expected snaps.
-   2. Role security: depth-chart position and recent role changes.
-   3. `projectedFantasyPoints`.
-   4. `rankAverage` (lower is better; FantasyPros consensus rank when present).
-   5. `positionRank` (lower/better positional label, e.g. `RB1` over `RB3`).
-   6. `tier` (lower is better FantasyPros tier).
-   7. `playerOwnedAverage` (higher is better ownership %).
-   8. `searchRank` (lower is better; treat null or `9999999` as unranked; fallback when FantasyPros ranks are missing).
-   9. Recent `weeklyPoints`, without overweighting one outlier.
-   10. `lastSeasonFantasyPoints` and `auctionValue` as secondary context.
-3. Use `SearchWeb` for the leading candidates when injury news, depth-chart role, target share, or a recent breakout determines whether the move is worthwhile.
-4. Do not add a player merely because they are available. The candidate must fill an identified need or be a material improvement over the proposed drop.
+   2. `projectedFantasyPoints` (higher is better; the most consistently populated signal).
+   3. `rankAverage` (lower is better; consensus rank within the player's own position).
+   4. Role security: `depth_chart_order` (1 ≈ starter) and recent role changes.
+   5. Recent `weeklyPoints`, without overweighting one outlier.
+3. **A missing ranking field means unranked, not bad.** `rankAverage`, `positionRank`, `tier`, and `playerOwnedAverage` come from a rankings source that only covers players with prior-season history, so first-year players are always absent from all four. When they are missing, judge the player on `projectedFantasyPoints`, `depth_chart_order`, and `SearchWeb`. Never treat an absent ranking field as evidence against a player, and never prefer a ranked player over an unranked one on that basis alone.
+4. Use `SearchWeb` for the leading candidates when injury news, depth-chart role, target share, or a recent breakout determines whether the move is worthwhile. This matters most for first-year players, where research is the only role evidence available.
+5. Do not add a player merely because they are available. The candidate must fill an identified need or be a material improvement over the proposed drop.
 
 ### 4. Choose a valid transaction path
 
@@ -89,7 +86,7 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 
 #### Free agency
 
-- Use `AddFreeAgentForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)`. This is the **only** free-agency add tool — do not call `add_free_agent` or an explicit-week variant.
+- Use `AddFreeAgentForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)`.
 - Pass `dropSleeperPlayerId` only when the roster is full.
 - Make at most one successful add per run. Check the result `ok` field: if `true`, you are done acquiring; if `false`, read `error.nextStep` and either apply that single correction or stop — do not loop through alternate players.
 
@@ -145,6 +142,8 @@ End every run with this exact structure:
 | Treating a submitted claim as an acquired player | It is pending until waiver processing reports success. |
 | Using direct roster add/remove tools | Use the phase-aware waiver tools for acquisitions. |
 | Dropping an asset for a one-week speculative add | Require a meaningful need and material upgrade. |
+| Skipping a player because `rankAverage` or `tier` is missing | Missing ranking fields mean unranked, not bad. Judge on projections, depth chart, and research. |
+| Calling `GetAvailablePlayers` with no `position` | Always pass `position`; projected points only compare within a position. |
 | Retrying a failed add with different players | Attempt once; on `ok: false` follow `error.nextStep` or stop and report. |
 | Calling `add_free_agent` or `AddPlayerToRoster` | Use `AddFreeAgentForCurrentWeek` only. |
 | Making a second add after one already succeeded | One successful acquisition per run, then summarize. |

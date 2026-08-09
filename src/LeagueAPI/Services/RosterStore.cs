@@ -104,10 +104,16 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             select player)
             .ToListAsync(cancellationToken);
 
+        // Ordered by projected points rather than Sleeper search rank. Search rank reflects live real-world
+        // player popularity, which is a different vintage than the season being simulated and pushes unranked
+        // first-year players to the top. Projected points is the primary signal the acquisition rubric uses and
+        // is populated for far more players than the FantasyPros fields. Season totals are only comparable
+        // within a position, so callers should filter by position.
         var rosterablePlayers = players
             .Where(player => RosterSlotRules.CanPlayerBeRostered(player.Position, player.FantasyPositionsTokenized))
             .Select(PlayerRecordFactory.Map)
-            .OrderBy(player => player.SearchRank ?? int.MaxValue)
+            .OrderByDescending(player => player.ProjectedFantasyPoints ?? decimal.MinValue)
+            .ThenBy(player => player.SearchRank ?? int.MaxValue)
             .ThenBy(player => player.FullName ?? player.SleeperPlayerId)
             .ThenBy(player => player.SleeperPlayerId)
             .Take(normalizedLimit)
