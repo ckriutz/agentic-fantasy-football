@@ -82,6 +82,30 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
         return new MatchupScoreUpdateResult(season, week, matchups.Count, true, finalizedAtUtc);
     }
 
+    /// <summary>
+    /// Reads the current starter totals for every agent without writing anything to the database.
+    /// Used to show live, in-progress matchup scores before the week is finalized.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, decimal>> GetLiveStarterScoresAsync(int season, int week, CancellationToken cancellationToken)
+    {
+        ValidateSeasonAndWeek(season, week);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var assignments = await dbContext.RosterAssignments
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return await LoadScoresByAgentIdAsync(
+            dbContext,
+            season,
+            week,
+            assignments
+                .Where(assignment => RosterSlotRules.IsStarterSlot(assignment.SlotType))
+                .Select(assignment => new RosterScoreEntry(assignment.AgentId, assignment.SleeperPlayerId))
+                .ToArray(),
+            cancellationToken);
+    }
+
     private static async Task<Dictionary<string, decimal>> LoadCurrentStarterScoresAsync(
         LeagueApiDbContext dbContext,
         int season,

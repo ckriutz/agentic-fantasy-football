@@ -178,8 +178,15 @@ function MatchupsCard({
                       isWinning={homeWinning}
                       isLosing={awayWinning}
                     />
-                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                      vs
+                    <span className="flex shrink-0 flex-col items-center">
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                        vs
+                      </span>
+                      <span
+                        className={`text-[9px] font-semibold uppercase tracking-widest ${m.isComplete ? 'text-slate-500' : 'text-emerald-400'}`}
+                      >
+                        {m.isComplete ? 'Final' : 'Live'}
+                      </span>
                     </span>
                     <MatchupSide
                       agent={awayAgent}

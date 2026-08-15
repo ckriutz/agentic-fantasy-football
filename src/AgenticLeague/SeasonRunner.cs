@@ -49,7 +49,7 @@ public class SeasonRunner
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
         var easternNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, EasternTimeZone);
         //var dayOfWeek = easternNow.DayOfWeek;
-        var dayOfWeek = DayOfWeek.Wednesday; // TESTING. Change back when done testing.
+        var dayOfWeek = DayOfWeek.Monday; // TESTING. Change back when done testing.
         _logger.LogInformation("Today is {DayOfWeek} in US Eastern Time ({EasternNow}).", dayOfWeek, easternNow);
 
         if(dayOfWeek == DayOfWeek.Tuesday)
@@ -199,7 +199,6 @@ public class SeasonRunner
                     Use only the `weekly-player-management` skill to decide whether one meaningful free-agent add/drop would improve your roster.
                     A no-change decision is valid. Do not modify agent profiles or bootstrap status.
                     Return the skill's required decision summary as visible text, even when no change is made.
-                    `SearchWeb` is unavailable during this simulation. Do not call it. Use structured league data and explicitly preserve uncertainty.
                     """;
                     var response = (await agent.RunAsync(prompt)).Response;
                     await DecisionLogger.LogDecisionAsync(agentId, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
@@ -232,12 +231,13 @@ public class SeasonRunner
                     var prompt =
                     $"""
                     Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
                     We are still in the free-agency phase, however some players may have games today.
                     This is your chance to make sure these players are set correctly for their games today.
                     Remember, all your starting roster slots must be filled.
                     Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                    When you're done, use the `roster-management` skill to update your lineup.
-                    Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
+                    When you're done, use the `roster-management` skill to update your lineup, if necessary.
+                    Return the skill's required decision summary as visible text, even when no change is made.
                     """;
 
                     var response = (await agent.RunAsync(prompt)).Response;
@@ -266,15 +266,19 @@ public class SeasonRunner
             // Players who played on Thursday are stuck where they are.
             if (_leagueState?.Phase == "free_agency")
             {
-                var prompt =
-                $"""
-                Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                We are still in the free-agency phase, however some players may have games yesterday, and if so, they will be locked in their current roster spots.
-                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
-                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-                """;
                 foreach(var agent in _agents)
                 {
+                    var prompt =
+                    $"""
+                    Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                    We are still in the free-agency phase, and while there are no games today, this is a quick oppertunity to make sure your roster is set correctly for the upcoming games on Sunday and Monday.
+                    Remember, all your starting roster slots must be filled.
+                    Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
+                    When you're done, use the `roster-management` skill to update your lineup, if necessary.
+                    Return the skill's required decision summary as visible text, even when no change is made.
+                    """;
+
                     var response = (await agent.RunAsync(prompt)).Response;
                     await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
                 }

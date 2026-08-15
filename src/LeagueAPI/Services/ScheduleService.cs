@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
 
-public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IAgentProfileReader agentProfileReader)
+public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, IAgentProfileReader agentProfileReader, LeagueStateService leagueStateService, MatchupScoringService matchupScoringService)
 {
     private const long ScheduleGenerationLockKey = 55001;
     private const int RequiredTeamCount = 10;
@@ -13,6 +13,8 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
 
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly IAgentProfileReader _agentProfileReader = agentProfileReader;
+    private readonly LeagueStateService _leagueStateService = leagueStateService;
+    private readonly MatchupScoringService _matchupScoringService = matchupScoringService;
 
     public async Task<GenerateScheduleResult> GenerateScheduleAsync(bool force, CancellationToken cancellationToken)
     {
@@ -63,7 +65,7 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
             .ThenBy(matchup => matchup.Id)
             .ToListAsync(cancellationToken);
 
-        return matchups.Select(MapToScheduleMatchup).ToList();
+        return await MapWithLiveScoresAsync(matchups, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleForWeekAsync(int week, CancellationToken cancellationToken)
@@ -78,7 +80,30 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
             .OrderBy(matchup => matchup.Id)
             .ToListAsync(cancellationToken);
 
-        return matchups.Select(MapToScheduleMatchup).ToList();
+        return await MapWithLiveScoresAsync(matchups, cancellationToken);
+    }
+
+    /// <summary>
+    /// Maps matchups to results, filling in live starter totals for the current week's unfinished
+    /// matchups. Finalized matchups keep the points stored when the week was finalized.
+    /// </summary>
+    private async Task<IReadOnlyList<ScheduleMatchupResult>> MapWithLiveScoresAsync(IReadOnlyList<MatchupEntity> matchups, CancellationToken cancellationToken)
+    {
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        var needsLiveScores = matchups.Any(matchup => !matchup.IsComplete && matchup.Week == leagueState.Week);
+        if (!needsLiveScores)
+            return matchups.Select(matchup => MapToScheduleMatchup(matchup, null)).ToList();
+
+        var liveScoresByAgentId = await _matchupScoringService.GetLiveStarterScoresAsync(
+            leagueState.Season,
+            leagueState.Week,
+            cancellationToken);
+
+        return matchups
+            .Select(matchup => MapToScheduleMatchup(
+                matchup,
+                !matchup.IsComplete && matchup.Week == leagueState.Week ? liveScoresByAgentId : null))
+            .ToList();
     }
 
     public async Task<IReadOnlyList<AgentStanding>> GetStandingsAsync(CancellationToken cancellationToken)
@@ -217,15 +242,22 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         rotation[1] = lastTeam;
     }
 
-    private static ScheduleMatchupResult MapToScheduleMatchup(MatchupEntity matchup)
+    private static ScheduleMatchupResult MapToScheduleMatchup(MatchupEntity matchup, IReadOnlyDictionary<string, decimal>? liveScoresByAgentId)
     {
+        var homePoints = liveScoresByAgentId is null
+            ? matchup.HomePoints
+            : liveScoresByAgentId.GetValueOrDefault(matchup.HomeAgentId);
+        var awayPoints = liveScoresByAgentId is null
+            ? matchup.AwayPoints
+            : liveScoresByAgentId.GetValueOrDefault(matchup.AwayAgentId);
+
         return new ScheduleMatchupResult(
             matchup.Id,
             matchup.Week,
             matchup.HomeAgentId,
             matchup.AwayAgentId,
-            matchup.HomePoints,
-            matchup.AwayPoints,
+            homePoints,
+            awayPoints,
             matchup.IsComplete,
             matchup.WinnerAgentId,
             matchup.IsTie);
