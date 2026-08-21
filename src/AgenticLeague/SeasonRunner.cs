@@ -49,7 +49,7 @@ public class SeasonRunner
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
         var easternNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, EasternTimeZone);
         //var dayOfWeek = easternNow.DayOfWeek;
-        var dayOfWeek = DayOfWeek.Monday; // TESTING. Change back when done testing.
+        var dayOfWeek = DayOfWeek.Sunday; // TESTING. Change back when done testing.
         _logger.LogInformation("Today is {DayOfWeek} in US Eastern Time ({EasternNow}).", dayOfWeek, easternNow);
 
         if(dayOfWeek == DayOfWeek.Tuesday)

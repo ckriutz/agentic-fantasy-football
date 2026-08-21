@@ -74,6 +74,7 @@ builder.Services.AddSingleton<IAgentProfileWriter>(serviceProvider =>
 builder.Services.AddSingleton<LeagueStateService>();
 builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<MatchupScoringService>();
+builder.Services.AddSingleton<PlayoffService>();
 builder.Services.AddSingleton<PlayerGameLockService>();
 builder.Services.AddSingleton<WaiverService>();
 
@@ -130,6 +131,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/schedule (POST: generate, GET: list all, ?force=true on POST to regenerate)",
         "/api/league/seasons/{season}/schedule/{week} (GET: list one week)",
         "/api/league/seasons/{season}/standings (GET: regular-season standings)",
+        "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket)",
         "/api/league/schedule (POST: generate, GET: list all for current season)",
         "/api/league/schedule/{week} (GET: list one week of current season)",
         "/api/league/state",
@@ -340,6 +342,22 @@ app.MapGet("/api/league/seasons/{season:int}/standings", async (
     CancellationToken cancellationToken) =>
 {
     return await GetStandingsForSeasonAsync(season, scheduleService, cancellationToken);
+});
+
+app.MapGet("/api/league/seasons/{season:int}/playoffs/bracket", async (
+    int season,
+    PlayoffService playoffService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var bracket = await playoffService.GetProjectedBracketAsync(season, cancellationToken);
+        return Results.Ok(bracket);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateDomainErrorResult(ex);
+    }
 });
 
 // Compatibility aliases that resolve the current season from LeagueState.

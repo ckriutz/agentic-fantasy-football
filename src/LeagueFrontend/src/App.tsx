@@ -5,6 +5,7 @@ import AdminPage from '@/pages/AdminPage'
 import AgentPage from '@/pages/AgentPage'
 import HomePage from '@/pages/HomePage'
 import MatchupPage from '@/pages/MatchupPage'
+import PlayoffsPage from '@/pages/PlayoffsPage'
 import PlayerDetailPage from '@/pages/PlayerDetailPage'
 import PlayersPage from '@/pages/PlayersPage'
 import WaiverWirePage from '@/pages/WaiverWirePage'
@@ -15,6 +16,7 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="matchups/:matchupId" element={<MatchupPage />} />
+        <Route path="playoffs" element={<PlayoffsPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="agents" element={<AgentPage />} />
         <Route path="players" element={<PlayersPage />} />
