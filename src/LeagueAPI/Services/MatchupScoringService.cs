@@ -16,7 +16,7 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var matchups = await dbContext.Matchups
-            .Where(matchup => matchup.Week == week && !matchup.IsComplete)
+            .Where(matchup => matchup.Season == season && matchup.Week == week && !matchup.IsComplete)
             .ToListAsync(cancellationToken);
 
         var scoresByAgentId = await LoadCurrentStarterScoresAsync(dbContext, season, week, matchups, cancellationToken);
@@ -37,7 +37,7 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
             cancellationToken);
 
         var matchups = await dbContext.Matchups
-            .Where(matchup => matchup.Week == week)
+            .Where(matchup => matchup.Season == season && matchup.Week == week)
             .ToListAsync(cancellationToken);
 
         if (matchups.Count == 0)

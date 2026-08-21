@@ -1,1 +1,1 @@
-public record LeagueState(int Season, int Week, string Phase, DateTimeOffset UpdatedAtUtc, string UpdatedBy);
+public record LeagueState(int Season, int Week, string Phase, string SeasonStage, DateTimeOffset UpdatedAtUtc, string UpdatedBy);

@@ -1,10 +1,20 @@
 namespace LeagueAPI.Models;
 
+public static class MatchupTypes
+{
+    public const string RegularSeason = "regular_season";
+    public const string Playoff = "playoff";
+}
+
 public sealed class MatchupEntity
 {
     public int Id { get; set; }
 
+    public int Season { get; set; } = LeagueStateDefaults.DefaultSeason;
+
     public int Week { get; set; }
+
+    public string MatchupType { get; set; } = MatchupTypes.RegularSeason;
 
     public required string HomeAgentId { get; set; }
 

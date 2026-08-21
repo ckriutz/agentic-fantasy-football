@@ -355,6 +355,7 @@ app.MapPut("/api/league/state", async (
             request.Week,
             request.Phase,
             request.UpdatedBy,
+            request.SeasonStage,
             cancellationToken);
 
         return Results.Ok(state);

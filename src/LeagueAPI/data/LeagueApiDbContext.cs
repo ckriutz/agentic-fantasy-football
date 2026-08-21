@@ -29,7 +29,15 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<LeagueStateEntity> LeagueState => Set<LeagueStateEntity>();
 
+    public DbSet<PlayoffSettingsEntity> PlayoffSettings => Set<PlayoffSettingsEntity>();
+
     public DbSet<MatchupEntity> Matchups => Set<MatchupEntity>();
+
+    public DbSet<PlayoffBracketEntity> PlayoffBrackets => Set<PlayoffBracketEntity>();
+
+    public DbSet<PlayoffSeedEntity> PlayoffSeeds => Set<PlayoffSeedEntity>();
+
+    public DbSet<PlayoffBracketGameEntity> PlayoffBracketGames => Set<PlayoffBracketGameEntity>();
 
     public DbSet<WeeklyRosterSnapshot> WeeklyRosterSnapshots => Set<WeeklyRosterSnapshot>();
 
@@ -255,11 +263,17 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
         modelBuilder.Entity<LeagueStateEntity>(entity =>
         {
-            entity.ToTable("league_state");
+            entity.ToTable("league_state", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_league_state_season_stage",
+                    "\"SeasonStage\" IN ('draft', 'regular_season', 'playoffs', 'complete')");
+            });
             entity.HasKey(state => state.Id);
 
             entity.Property(state => state.Id).ValueGeneratedNever();
             entity.Property(state => state.Phase).HasMaxLength(32);
+            entity.Property(state => state.SeasonStage).IsRequired().HasMaxLength(32).HasDefaultValue(LeagueStateDefaults.DefaultSeasonStage);
             entity.Property(state => state.UpdatedBy).HasMaxLength(32);
 
             entity.HasData(new LeagueStateEntity
@@ -268,23 +282,143 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
                 Season = LeagueStateDefaults.DefaultSeason,
                 Week = LeagueStateDefaults.PreseasonWeek,
                 Phase = LeagueStateDefaults.DefaultPhase,
+                SeasonStage = LeagueStateDefaults.DefaultSeasonStage,
                 UpdatedAtUtc = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
                 UpdatedBy = LeagueStateDefaults.DefaultUpdatedBy
             });
         });
 
+        modelBuilder.Entity<PlayoffSettingsEntity>(entity =>
+        {
+            entity.ToTable("playoff_settings", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_playoff_settings_tie_resolution",
+                    "\"PlayoffTieResolution\" IN ('higher_seed')");
+            });
+            entity.HasKey(settings => settings.Id);
+
+            entity.Property(settings => settings.Id).ValueGeneratedNever();
+            entity.Property(settings => settings.PlayoffTieResolution).IsRequired().HasMaxLength(32);
+
+            entity.HasData(new PlayoffSettingsEntity
+            {
+                Id = PlayoffSettingsDefaults.SingletonId,
+                RegularSeasonEndWeek = PlayoffSettingsDefaults.RegularSeasonEndWeek,
+                PlayoffStartWeek = PlayoffSettingsDefaults.PlayoffStartWeek,
+                ChampionshipWeek = PlayoffSettingsDefaults.ChampionshipWeek,
+                PlayoffTeamCount = PlayoffSettingsDefaults.PlayoffTeamCount,
+                FirstRoundByeCount = PlayoffSettingsDefaults.FirstRoundByeCount,
+                Reseed = PlayoffSettingsDefaults.Reseed,
+                PlayoffTieResolution = PlayoffSettingsDefaults.PlayoffTieResolution,
+                ThirdPlaceGameEnabled = PlayoffSettingsDefaults.ThirdPlaceGameEnabled
+            });
+        });
+
         modelBuilder.Entity<MatchupEntity>(entity =>
         {
-            entity.ToTable("matchups");
+            entity.ToTable("matchups", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_matchups_matchup_type",
+                    "\"MatchupType\" IN ('regular_season', 'playoff')");
+            });
             entity.HasKey(matchup => matchup.Id);
 
+            entity.Property(matchup => matchup.Season).HasDefaultValue(LeagueStateDefaults.DefaultSeason);
+            entity.Property(matchup => matchup.MatchupType).IsRequired().HasMaxLength(32).HasDefaultValue(MatchupTypes.RegularSeason);
             entity.Property(matchup => matchup.HomeAgentId).HasMaxLength(100);
             entity.Property(matchup => matchup.AwayAgentId).HasMaxLength(100);
             entity.Property(matchup => matchup.WinnerAgentId).HasMaxLength(100);
             entity.Property(matchup => matchup.HomePoints).HasPrecision(18, 4);
             entity.Property(matchup => matchup.AwayPoints).HasPrecision(18, 4);
 
-            entity.HasIndex(matchup => new { matchup.Week, matchup.HomeAgentId });
+            entity.HasIndex(matchup => new { matchup.Season, matchup.Week, matchup.HomeAgentId }).IsUnique();
+            entity.HasIndex(matchup => new { matchup.Season, matchup.Week, matchup.AwayAgentId }).IsUnique();
+            entity.HasIndex(matchup => new { matchup.Season, matchup.Week, matchup.MatchupType });
+        });
+
+        modelBuilder.Entity<PlayoffBracketEntity>(entity =>
+        {
+            entity.ToTable("playoff_brackets", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_playoff_brackets_status",
+                    "\"Status\" IN ('projected', 'locked', 'complete')");
+            });
+            entity.HasKey(bracket => bracket.Id);
+
+            entity.Property(bracket => bracket.Status).IsRequired().HasMaxLength(32);
+
+            entity.HasIndex(bracket => bracket.Season).IsUnique();
+        });
+
+        modelBuilder.Entity<PlayoffSeedEntity>(entity =>
+        {
+            entity.ToTable("playoff_seeds");
+            entity.HasKey(seed => seed.Id);
+
+            entity.Property(seed => seed.AgentId).IsRequired().HasMaxLength(100);
+
+            entity.HasIndex(seed => new { seed.BracketId, seed.Seed }).IsUnique();
+            entity.HasIndex(seed => new { seed.BracketId, seed.AgentId }).IsUnique();
+
+            entity.HasOne<PlayoffBracketEntity>()
+                .WithMany()
+                .HasForeignKey(seed => seed.BracketId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlayoffBracketGameEntity>(entity =>
+        {
+            entity.ToTable("playoff_bracket_games", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_playoff_bracket_games_round",
+                    "\"Round\" IN ('wild_card', 'semifinal', 'championship', 'third_place')");
+                table.HasCheckConstraint(
+                    "CK_playoff_bracket_games_status",
+                    "\"Status\" IN ('pending', 'scheduled', 'complete')");
+                table.HasCheckConstraint(
+                    "CK_playoff_bracket_games_home_source_outcome",
+                    "\"HomeSourceOutcome\" IS NULL OR \"HomeSourceOutcome\" IN ('winner', 'loser')");
+                table.HasCheckConstraint(
+                    "CK_playoff_bracket_games_away_source_outcome",
+                    "\"AwaySourceOutcome\" IS NULL OR \"AwaySourceOutcome\" IN ('winner', 'loser')");
+            });
+            entity.HasKey(game => game.Id);
+
+            entity.Property(game => game.Round).IsRequired().HasMaxLength(32);
+            entity.Property(game => game.HomeAgentId).HasMaxLength(100);
+            entity.Property(game => game.AwayAgentId).HasMaxLength(100);
+            entity.Property(game => game.HomeSourceOutcome).HasMaxLength(16);
+            entity.Property(game => game.AwaySourceOutcome).HasMaxLength(16);
+            entity.Property(game => game.WinnerAgentId).HasMaxLength(100);
+            entity.Property(game => game.LoserAgentId).HasMaxLength(100);
+            entity.Property(game => game.Status).IsRequired().HasMaxLength(32);
+
+            entity.HasIndex(game => new { game.BracketId, game.Round, game.GameSlot }).IsUnique();
+            entity.HasIndex(game => game.MatchupId).IsUnique();
+
+            entity.HasOne<PlayoffBracketEntity>()
+                .WithMany()
+                .HasForeignKey(game => game.BracketId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<MatchupEntity>()
+                .WithMany()
+                .HasForeignKey(game => game.MatchupId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne<PlayoffBracketGameEntity>()
+                .WithMany()
+                .HasForeignKey(game => game.HomeSourceGameId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne<PlayoffBracketGameEntity>()
+                .WithMany()
+                .HasForeignKey(game => game.AwaySourceGameId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<WeeklyRosterSnapshot>(entity =>
