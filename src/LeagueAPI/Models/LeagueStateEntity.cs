@@ -10,6 +10,8 @@ public sealed class LeagueStateEntity
 
     public string Phase { get; set; } = LeagueStateDefaults.DefaultPhase;
 
+    public string SeasonStage { get; set; } = LeagueStateDefaults.DefaultSeasonStage;
+
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
     public string UpdatedBy { get; set; } = LeagueStateDefaults.DefaultUpdatedBy;

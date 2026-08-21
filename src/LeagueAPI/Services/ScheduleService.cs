@@ -42,7 +42,8 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         if (existingMatchups.Count > 0)
             dbContext.Matchups.RemoveRange(existingMatchups);
 
-        var generatedMatchups = BuildSchedule(teamIds);
+        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
+        var generatedMatchups = BuildSchedule(teamIds, leagueState.Season);
         dbContext.Matchups.AddRange(generatedMatchups);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -180,7 +181,7 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         return teamIds;
     }
 
-    private static List<MatchupEntity> BuildSchedule(IReadOnlyList<string> teamIds)
+    private static List<MatchupEntity> BuildSchedule(IReadOnlyList<string> teamIds, int season)
     {
         var rotation = teamIds.ToList();
         var matchups = new List<MatchupEntity>(RegularSeasonWeeks * (RequiredTeamCount / 2));
@@ -201,7 +202,7 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
             }
 
             baseRounds.Add(weeklyPairings);
-            AppendWeek(matchups, round + 1, weeklyPairings);
+            AppendWeek(matchups, season, round + 1, weeklyPairings);
             RotateTeams(rotation);
         }
 
@@ -211,19 +212,21 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
                 .Select(pairing => (pairing.AwayAgentId, pairing.HomeAgentId))
                 .ToList();
 
-            AppendWeek(matchups, SingleRoundRobinWeeks + round + 1, rematchPairings);
+            AppendWeek(matchups, season, SingleRoundRobinWeeks + round + 1, rematchPairings);
         }
 
         return matchups;
     }
 
-    private static void AppendWeek(List<MatchupEntity> matchups, int week, IReadOnlyList<(string HomeAgentId, string AwayAgentId)> pairings)
+    private static void AppendWeek(List<MatchupEntity> matchups, int season, int week, IReadOnlyList<(string HomeAgentId, string AwayAgentId)> pairings)
     {
         foreach (var pairing in pairings)
         {
             matchups.Add(new MatchupEntity
             {
+                Season = season,
                 Week = week,
+                MatchupType = MatchupTypes.RegularSeason,
                 HomeAgentId = pairing.HomeAgentId,
                 AwayAgentId = pairing.AwayAgentId,
                 HomePoints = 0m,

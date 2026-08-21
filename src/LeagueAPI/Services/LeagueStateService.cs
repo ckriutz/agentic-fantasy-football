@@ -15,6 +15,14 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
         LeagueStatePhases.Complete
     ];
 
+    private static readonly HashSet<string> ValidSeasonStages =
+    [
+        SeasonStages.Draft,
+        SeasonStages.RegularSeason,
+        SeasonStages.Playoffs,
+        SeasonStages.Complete
+    ];
+
     private static readonly HashSet<string> ValidUpdatedBy =
     [
         LeagueStateUpdatedBy.Manual,
@@ -31,7 +39,7 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
         return MapToState(entity);
     }
 
-    public async Task<LeagueState> SetLeagueStateAsync(int? season, int? week, string phase, string updatedBy, CancellationToken cancellationToken)
+    public async Task<LeagueState> SetLeagueStateAsync(int? season, int? week, string phase, string updatedBy, string? seasonStage, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var currentState = await GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
@@ -43,11 +51,13 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
         ValidateWeek(effectiveWeek);
 
         var normalizedPhase = NormalizePhase(phase);
+        var normalizedSeasonStage = seasonStage is null ? currentState.SeasonStage : NormalizeSeasonStage(seasonStage);
         var normalizedUpdatedBy = NormalizeUpdatedBy(updatedBy);
 
         currentState.Season = effectiveSeason;
         currentState.Week = effectiveWeek;
         currentState.Phase = normalizedPhase;
+        currentState.SeasonStage = normalizedSeasonStage;
         currentState.UpdatedBy = normalizedUpdatedBy;
         currentState.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
@@ -79,6 +89,7 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
             entity.Season,
             entity.Week,
             entity.Phase,
+            entity.SeasonStage,
             entity.UpdatedAtUtc,
             entity.UpdatedBy);
     }
@@ -107,6 +118,18 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
         return normalizedPhase;
     }
 
+    private static string NormalizeSeasonStage(string seasonStage)
+    {
+        if (string.IsNullOrWhiteSpace(seasonStage))
+            throw new ArgumentException("seasonStage is required.", nameof(seasonStage));
+
+        var normalizedSeasonStage = seasonStage.Trim();
+        if (!ValidSeasonStages.Contains(normalizedSeasonStage))
+            throw new ArgumentException("seasonStage must be one of: draft, regular_season, playoffs, complete.", nameof(seasonStage));
+
+        return normalizedSeasonStage;
+    }
+
     private static string NormalizeUpdatedBy(string updatedBy)
     {
         if (string.IsNullOrWhiteSpace(updatedBy))
@@ -133,6 +156,7 @@ public sealed class LeagueStateService(IDbContextFactory<LeagueApiDbContext> dbC
             Season = LeagueStateDefaults.DefaultSeason,
             Week = LeagueStateDefaults.PreseasonWeek,
             Phase = LeagueStateDefaults.DefaultPhase,
+            SeasonStage = LeagueStateDefaults.DefaultSeasonStage,
             UpdatedBy = LeagueStateDefaults.DefaultUpdatedBy,
             UpdatedAtUtc = DateTimeOffset.UtcNow
         };
