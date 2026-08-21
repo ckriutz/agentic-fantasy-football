@@ -617,7 +617,10 @@ function AdminPage() {
 
   const checkSchedule = useCallback(async () => {
     try {
-      const res = await fetch(`${apiBaseUrl}/api/league/schedule`)
+      const stateRes = await fetch(`${apiBaseUrl}/api/league/state`)
+      if (!stateRes.ok) { setScheduleExists(false); return }
+      const { season } = await stateRes.json() as { season: number }
+      const res = await fetch(`${apiBaseUrl}/api/league/seasons/${season}/schedule`)
       if (!res.ok) { setScheduleExists(false); return }
       const data = await res.json() as unknown[]
       setScheduleExists(Array.isArray(data) && data.length > 0)
@@ -631,7 +634,10 @@ function AdminPage() {
   const generateSchedule = useCallback(async () => {
     setGeneratingSchedule(true)
     try {
-      await fetch(`${apiBaseUrl}/api/league/schedule`, { method: 'POST' })
+      const stateRes = await fetch(`${apiBaseUrl}/api/league/state`)
+      if (!stateRes.ok) { return }
+      const { season } = await stateRes.json() as { season: number }
+      await fetch(`${apiBaseUrl}/api/league/seasons/${season}/schedule`, { method: 'POST' })
       await checkSchedule()
     } finally {
       setGeneratingSchedule(false)

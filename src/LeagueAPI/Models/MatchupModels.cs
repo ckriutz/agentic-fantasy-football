@@ -2,7 +2,9 @@ namespace LeagueAPI.Models;
 
 public sealed record ScheduleMatchupResult(
     int MatchupId,
+    int Season,
     int Week,
+    string MatchupType,
     string HomeAgentId,
     string AwayAgentId,
     decimal HomePoints,
@@ -12,6 +14,7 @@ public sealed record ScheduleMatchupResult(
     bool IsTie);
 
 public sealed record GenerateScheduleResult(
+    int Season,
     bool Generated,
     string Message,
     int MatchupCount);
@@ -20,11 +23,16 @@ public sealed record AgentStanding(
     string AgentId,
     int Wins,
     int Losses,
-    int Ties);
+    int Ties,
+    decimal WinningPercentage,
+    decimal PointsFor,
+    decimal PointsAgainst);
 
 public sealed record WeeklyMatchupResult(
     int MatchupId,
+    int Season,
     int Week,
+    string MatchupType,
     string AgentId,
     string OpponentAgentId,
     bool IsHomeTeam,

@@ -127,8 +127,11 @@ app.MapGet("/", () => Results.Ok(new
         "/api/agent-profiles/{agentId}",
         "/api/agent-profiles/{agentId}/team-name",
         "/api/agent-profiles/{agentId}/bootstrap-status",
-        "/api/league/schedule (POST: generate, GET: list all, ?force=true on POST to regenerate)",
-        "/api/league/schedule/{week} (GET: list one week)",
+        "/api/league/seasons/{season}/schedule (POST: generate, GET: list all, ?force=true on POST to regenerate)",
+        "/api/league/seasons/{season}/schedule/{week} (GET: list one week)",
+        "/api/league/seasons/{season}/standings (GET: regular-season standings)",
+        "/api/league/schedule (POST: generate, GET: list all for current season)",
+        "/api/league/schedule/{week} (GET: list one week of current season)",
         "/api/league/state",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
@@ -253,52 +256,129 @@ static IResult CreateDomainErrorResult(Exception exception)
     };
 }
 
-app.MapPost("/api/league/schedule", async (
-    bool? force,
-    ScheduleService scheduleService,
-    CancellationToken cancellationToken) =>
+static async Task<IResult> GenerateScheduleForSeasonAsync(int season, bool force, ScheduleService scheduleService, CancellationToken cancellationToken)
 {
     try
     {
-        var result = await scheduleService.GenerateScheduleAsync(force ?? false, cancellationToken);
+        var result = await scheduleService.GenerateScheduleAsync(season, force, cancellationToken);
         return Results.Ok(result);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
         return CreateDomainErrorResult(ex);
     }
+}
+
+static async Task<IResult> GetScheduleForSeasonAsync(int season, ScheduleService scheduleService, CancellationToken cancellationToken)
+{
+    try
+    {
+        var schedule = await scheduleService.GetScheduleAsync(season, cancellationToken);
+        return Results.Ok(schedule);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+}
+
+static async Task<IResult> GetScheduleForSeasonWeekAsync(int season, int week, ScheduleService scheduleService, CancellationToken cancellationToken)
+{
+    try
+    {
+        var schedule = await scheduleService.GetScheduleForWeekAsync(season, week, cancellationToken);
+        return Results.Ok(schedule);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+}
+
+static async Task<IResult> GetStandingsForSeasonAsync(int season, ScheduleService scheduleService, CancellationToken cancellationToken)
+{
+    try
+    {
+        var standings = await scheduleService.GetStandingsAsync(season, cancellationToken);
+        return Results.Ok(standings);
+    }
+    catch (ArgumentException ex)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+}
+
+app.MapPost("/api/league/seasons/{season:int}/schedule", async (
+    int season,
+    bool? force,
+    ScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    return await GenerateScheduleForSeasonAsync(season, force ?? false, scheduleService, cancellationToken);
+});
+
+app.MapGet("/api/league/seasons/{season:int}/schedule", async (
+    int season,
+    ScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    return await GetScheduleForSeasonAsync(season, scheduleService, cancellationToken);
+});
+
+app.MapGet("/api/league/seasons/{season:int}/schedule/{week:int}", async (
+    int season,
+    int week,
+    ScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    return await GetScheduleForSeasonWeekAsync(season, week, scheduleService, cancellationToken);
+});
+
+app.MapGet("/api/league/seasons/{season:int}/standings", async (
+    int season,
+    ScheduleService scheduleService,
+    CancellationToken cancellationToken) =>
+{
+    return await GetStandingsForSeasonAsync(season, scheduleService, cancellationToken);
+});
+
+// Compatibility aliases that resolve the current season from LeagueState.
+app.MapPost("/api/league/schedule", async (
+    bool? force,
+    ScheduleService scheduleService,
+    LeagueStateService leagueStateService,
+    CancellationToken cancellationToken) =>
+{
+    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
+    return await GenerateScheduleForSeasonAsync(leagueState.Season, force ?? false, scheduleService, cancellationToken);
 });
 
 app.MapGet("/api/league/schedule", async (
     ScheduleService scheduleService,
+    LeagueStateService leagueStateService,
     CancellationToken cancellationToken) =>
 {
-    var schedule = await scheduleService.GetScheduleAsync(cancellationToken);
-    return Results.Ok(schedule);
+    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
+    return await GetScheduleForSeasonAsync(leagueState.Season, scheduleService, cancellationToken);
 });
 
 app.MapGet("/api/league/schedule/{week:int}", async (
     int week,
     ScheduleService scheduleService,
+    LeagueStateService leagueStateService,
     CancellationToken cancellationToken) =>
 {
-    try
-    {
-        var schedule = await scheduleService.GetScheduleForWeekAsync(week, cancellationToken);
-        return Results.Ok(schedule);
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
+    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
+    return await GetScheduleForSeasonWeekAsync(leagueState.Season, week, scheduleService, cancellationToken);
 });
 
 app.MapGet("/api/league/standings", async (
     ScheduleService scheduleService,
+    LeagueStateService leagueStateService,
     CancellationToken cancellationToken) =>
 {
-    var standings = await scheduleService.GetStandingsAsync(cancellationToken);
-    return Results.Ok(standings);
+    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
+    return await GetStandingsForSeasonAsync(leagueState.Season, scheduleService, cancellationToken);
 });
 
 app.MapPost("/api/league/matchups/{season:int}/{week:int}/scores", async (

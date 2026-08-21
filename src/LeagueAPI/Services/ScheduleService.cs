@@ -1,5 +1,5 @@
-using LeagueAPI.Models;
 using LeagueAPI.Data;
+using LeagueAPI.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace LeagueAPI.Services;
@@ -8,7 +8,6 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
 {
     private const long ScheduleGenerationLockKey = 55001;
     private const int RequiredTeamCount = 10;
-    private const int RegularSeasonWeeks = 14;
     private const int SingleRoundRobinWeeks = RequiredTeamCount - 1;
 
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
@@ -16,9 +15,12 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
     private readonly LeagueStateService _leagueStateService = leagueStateService;
     private readonly MatchupScoringService _matchupScoringService = matchupScoringService;
 
-    public async Task<GenerateScheduleResult> GenerateScheduleAsync(bool force, CancellationToken cancellationToken)
+    public async Task<GenerateScheduleResult> GenerateScheduleAsync(int season, bool force, CancellationToken cancellationToken)
     {
+        ValidateSeason(season);
+
         var teamIds = await GetParticipatingTeamIdsAsync(cancellationToken);
+        var regularSeasonEndWeek = await GetRegularSeasonEndWeekAsync(cancellationToken);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -27,6 +29,7 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({ScheduleGenerationLockKey})", cancellationToken);
 
         var existingMatchups = await dbContext.Matchups
+            .Where(matchup => matchup.Season == season && matchup.MatchupType == MatchupTypes.RegularSeason)
             .OrderBy(matchup => matchup.Id)
             .ToListAsync(cancellationToken);
 
@@ -34,34 +37,42 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         {
             await transaction.CommitAsync(cancellationToken);
             return new GenerateScheduleResult(
+                season,
                 false,
-                "Schedule already generated. Skipping because force=false.",
+                $"Regular-season schedule for season {season} already generated. Skipping because force=false.",
                 existingMatchups.Count);
         }
+
+        if (existingMatchups.Any(matchup => matchup.IsComplete))
+            throw new InvalidOperationException(
+                $"Cannot regenerate the regular-season schedule for season {season} because at least one regular-season matchup is already complete.");
 
         if (existingMatchups.Count > 0)
             dbContext.Matchups.RemoveRange(existingMatchups);
 
-        var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
-        var generatedMatchups = BuildSchedule(teamIds, leagueState.Season);
+        var generatedMatchups = BuildSchedule(teamIds, season, regularSeasonEndWeek);
         dbContext.Matchups.AddRange(generatedMatchups);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return new GenerateScheduleResult(
+            season,
             true,
             force && existingMatchups.Count > 0
-                ? "Schedule regenerated."
-                : "Schedule generated.",
+                ? $"Regular-season schedule for season {season} regenerated."
+                : $"Regular-season schedule for season {season} generated.",
             generatedMatchups.Count);
     }
 
-    public async Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleAsync(int season, CancellationToken cancellationToken)
     {
+        ValidateSeason(season);
+
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var matchups = await dbContext.Matchups
             .AsNoTracking()
+            .Where(matchup => matchup.Season == season)
             .OrderBy(matchup => matchup.Week)
             .ThenBy(matchup => matchup.Id)
             .ToListAsync(cancellationToken);
@@ -69,15 +80,15 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         return await MapWithLiveScoresAsync(matchups, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleForWeekAsync(int week, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ScheduleMatchupResult>> GetScheduleForWeekAsync(int season, int week, CancellationToken cancellationToken)
     {
-        ValidateWeek(week);
+        ValidateSeasonAndWeek(season, week);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var matchups = await dbContext.Matchups
             .AsNoTracking()
-            .Where(matchup => matchup.Week == week)
+            .Where(matchup => matchup.Season == season && matchup.Week == week)
             .OrderBy(matchup => matchup.Id)
             .ToListAsync(cancellationToken);
 
@@ -85,13 +96,16 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
     }
 
     /// <summary>
-    /// Maps matchups to results, filling in live starter totals for the current week's unfinished
-    /// matchups. Finalized matchups keep the points stored when the week was finalized.
+    /// Maps matchups to results, filling in live starter totals only when a matchup belongs to both the
+    /// current league season and week. Finalized or historical matchups keep their stored points.
     /// </summary>
     private async Task<IReadOnlyList<ScheduleMatchupResult>> MapWithLiveScoresAsync(IReadOnlyList<MatchupEntity> matchups, CancellationToken cancellationToken)
     {
+        if (matchups.Count == 0)
+            return [];
+
         var leagueState = await _leagueStateService.GetLeagueStateAsync(cancellationToken);
-        var needsLiveScores = matchups.Any(matchup => !matchup.IsComplete && matchup.Week == leagueState.Week);
+        var needsLiveScores = matchups.Any(matchup => IsCurrentUnfinishedMatchup(matchup, leagueState));
         if (!needsLiveScores)
             return matchups.Select(matchup => MapToScheduleMatchup(matchup, null)).ToList();
 
@@ -103,18 +117,28 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         return matchups
             .Select(matchup => MapToScheduleMatchup(
                 matchup,
-                !matchup.IsComplete && matchup.Week == leagueState.Week ? liveScoresByAgentId : null))
+                IsCurrentUnfinishedMatchup(matchup, leagueState) ? liveScoresByAgentId : null))
             .ToList();
     }
 
-    public async Task<IReadOnlyList<AgentStanding>> GetStandingsAsync(CancellationToken cancellationToken)
+    private static bool IsCurrentUnfinishedMatchup(MatchupEntity matchup, LeagueState leagueState)
     {
+        return !matchup.IsComplete && matchup.Season == leagueState.Season && matchup.Week == leagueState.Week;
+    }
+
+    public async Task<IReadOnlyList<AgentStanding>> GetStandingsAsync(int season, CancellationToken cancellationToken)
+    {
+        ValidateSeason(season);
+
         var profiles = await _agentProfileReader.GetAgentProfilesAsync(true, cancellationToken);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var completedMatchups = await dbContext.Matchups
             .AsNoTracking()
-            .Where(matchup => matchup.IsComplete)
+            .Where(matchup =>
+                matchup.Season == season
+                && matchup.MatchupType == MatchupTypes.RegularSeason
+                && matchup.IsComplete)
             .ToListAsync(cancellationToken);
 
         var standings = profiles
@@ -129,29 +153,38 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
                     !matchup.IsTie
                     && string.Equals(matchup.WinnerAgentId, profile.AgentId, StringComparison.Ordinal));
                 var losses = agentMatchups.Count() - wins - ties;
+                var pointsFor = agentMatchups.Sum(matchup =>
+                    string.Equals(matchup.HomeAgentId, profile.AgentId, StringComparison.Ordinal)
+                        ? matchup.HomePoints
+                        : matchup.AwayPoints);
+                var pointsAgainst = agentMatchups.Sum(matchup =>
+                    string.Equals(matchup.HomeAgentId, profile.AgentId, StringComparison.Ordinal)
+                        ? matchup.AwayPoints
+                        : matchup.HomePoints);
+                var winningPercentage = agentMatchups.Count() == 0 ? 0m : Math.Round((wins + ties * 0.5m) / agentMatchups.Count(), 4);
 
-                return new AgentStanding(profile.AgentId, wins, losses, ties);
+                return new AgentStanding(profile.AgentId, wins, losses, ties, winningPercentage, pointsFor, pointsAgainst);
             })
-            .OrderByDescending(standing => standing.Wins)
-            .ThenBy(standing => standing.Losses)
-            .ThenByDescending(standing => standing.Ties)
+            .OrderByDescending(standing => standing.WinningPercentage)
+            .ThenByDescending(standing => standing.PointsFor)
             .ThenBy(standing => standing.AgentId, StringComparer.Ordinal)
             .ToList();
 
         return standings;
     }
 
-    public async Task<WeeklyMatchupResult?> GetMatchupForAgentAsync(string agentId, int week, CancellationToken cancellationToken)
+    public async Task<WeeklyMatchupResult?> GetMatchupForAgentAsync(string agentId, int season, int week, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeAgentId(agentId);
-        ValidateWeek(week);
+        ValidateSeasonAndWeek(season, week);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var matchups = await dbContext.Matchups
             .AsNoTracking()
             .Where(matchup =>
-                matchup.Week == week
+                matchup.Season == season
+                && matchup.Week == week
                 && (matchup.HomeAgentId == normalizedAgentId || matchup.AwayAgentId == normalizedAgentId))
             .OrderBy(matchup => matchup.Id)
             .Take(2)
@@ -161,9 +194,35 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
             return null;
 
         if (matchups.Count > 1)
-            throw new InvalidOperationException($"Multiple matchups were found for agent '{normalizedAgentId}' in week {week}.");
+            throw new InvalidOperationException($"Multiple matchups were found for agent '{normalizedAgentId}' in season {season}, week {week}.");
 
         return MapToWeeklyMatchup(matchups[0], normalizedAgentId);
+    }
+
+    internal static void ValidateSeasonAndWeek(int season, int week)
+    {
+        ValidateSeason(season);
+        ValidateWeek(week);
+    }
+
+    private static void ValidateSeason(int season)
+    {
+        if (season <= 0)
+            throw new ArgumentException("season must be a positive integer.", nameof(season));
+    }
+
+    private async Task<int> GetRegularSeasonEndWeekAsync(CancellationToken cancellationToken)
+    {
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var settings = await dbContext.PlayoffSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(settings => settings.Id == PlayoffSettingsDefaults.SingletonId, cancellationToken);
+
+        var regularSeasonEndWeek = settings?.RegularSeasonEndWeek ?? PlayoffSettingsDefaults.RegularSeasonEndWeek;
+        if (regularSeasonEndWeek is < SingleRoundRobinWeeks or > 17)
+            throw new InvalidOperationException($"Regular-season end week must be between {SingleRoundRobinWeeks} and 17.");
+
+        return regularSeasonEndWeek;
     }
 
     private async Task<IReadOnlyList<string>> GetParticipatingTeamIdsAsync(CancellationToken cancellationToken)
@@ -181,10 +240,10 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
         return teamIds;
     }
 
-    private static List<MatchupEntity> BuildSchedule(IReadOnlyList<string> teamIds, int season)
+    private static List<MatchupEntity> BuildSchedule(IReadOnlyList<string> teamIds, int season, int regularSeasonEndWeek)
     {
         var rotation = teamIds.ToList();
-        var matchups = new List<MatchupEntity>(RegularSeasonWeeks * (RequiredTeamCount / 2));
+        var matchups = new List<MatchupEntity>(regularSeasonEndWeek * (RequiredTeamCount / 2));
         var baseRounds = new List<List<(string HomeAgentId, string AwayAgentId)>>(SingleRoundRobinWeeks);
 
         for (var round = 0; round < SingleRoundRobinWeeks; round++)
@@ -206,7 +265,7 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
             RotateTeams(rotation);
         }
 
-        for (var round = 0; round < RegularSeasonWeeks - SingleRoundRobinWeeks; round++)
+        for (var round = 0; round < regularSeasonEndWeek - SingleRoundRobinWeeks; round++)
         {
             var rematchPairings = baseRounds[round]
                 .Select(pairing => (pairing.AwayAgentId, pairing.HomeAgentId))
@@ -256,7 +315,9 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
 
         return new ScheduleMatchupResult(
             matchup.Id,
+            matchup.Season,
             matchup.Week,
+            matchup.MatchupType,
             matchup.HomeAgentId,
             matchup.AwayAgentId,
             homePoints,
@@ -274,7 +335,9 @@ public sealed class ScheduleService(IDbContextFactory<LeagueApiDbContext> dbCont
 
         return new WeeklyMatchupResult(
             matchup.Id,
+            matchup.Season,
             matchup.Week,
+            matchup.MatchupType,
             agentId,
             normalizedOpponentAgentId,
             isHomeTeam,

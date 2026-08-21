@@ -42,7 +42,7 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
 
         if (matchups.Count == 0)
         {
-            throw new InvalidOperationException($"No matchups exist for week {week}.");
+            throw new InvalidOperationException($"No matchups exist for season {season}, week {week}.");
         }
 
         var finalizedAtUtc = DateTimeOffset.UtcNow;
@@ -93,6 +93,7 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var assignments = await dbContext.RosterAssignments
             .AsNoTracking()
+            .Where(assignment => RosterSlotRules.IsStarterSlot(assignment.SlotType))
             .ToListAsync(cancellationToken);
 
         return await LoadScoresByAgentIdAsync(
@@ -100,7 +101,6 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
             season,
             week,
             assignments
-                .Where(assignment => RosterSlotRules.IsStarterSlot(assignment.SlotType))
                 .Select(assignment => new RosterScoreEntry(assignment.AgentId, assignment.SleeperPlayerId))
                 .ToArray(),
             cancellationToken);

@@ -8,7 +8,9 @@ import { apiBaseUrl } from '@/lib/config'
 
 type Matchup = {
   matchupId: number
+  season: number
   week: number
+  matchupType: string
   homeAgentId: string
   awayAgentId: string
   homePoints: number
@@ -154,18 +156,19 @@ function MatchupPage() {
       try {
         setIsLoading(true)
         setError(null)
-        const [scheduleResponse, profilesResponse, leagueStateResponse] = await Promise.all([
-          fetch(`${apiBaseUrl}/api/league/schedule`, { signal: controller.signal }),
+        const leagueStateResponse = await fetch(`${apiBaseUrl}/api/league/state`, { signal: controller.signal })
+        if (!leagueStateResponse.ok) {
+          throw new Error(`Request failed with status ${leagueStateResponse.status}`)
+        }
+        const { season } = (await leagueStateResponse.json()) as LeagueState
+
+        const [scheduleResponse, profilesResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/api/league/seasons/${season}/schedule`, { signal: controller.signal }),
           fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=false`, { signal: controller.signal }),
-          fetch(`${apiBaseUrl}/api/league/state`, { signal: controller.signal }),
         ])
 
-        if (!scheduleResponse.ok || !profilesResponse.ok || !leagueStateResponse.ok) {
-          const response = !scheduleResponse.ok
-            ? scheduleResponse
-            : !profilesResponse.ok
-              ? profilesResponse
-              : leagueStateResponse
+        if (!scheduleResponse.ok || !profilesResponse.ok) {
+          const response = !scheduleResponse.ok ? scheduleResponse : profilesResponse
           throw new Error(`Request failed with status ${response.status}`)
         }
 
@@ -184,10 +187,9 @@ function MatchupPage() {
           throw new Error(`Request failed with status ${response.status}`)
         }
 
-        const leagueState = (await leagueStateResponse.json()) as LeagueState
         setMatchup(selectedMatchup)
         setProfiles((await profilesResponse.json()) as AgentProfile[])
-        setSeason(leagueState.season)
+        setSeason(season)
         setHomeRoster((await homeRosterResponse.json()) as RosterEntry[])
         setAwayRoster((await awayRosterResponse.json()) as RosterEntry[])
       } catch (fetchError) {

@@ -30,16 +30,23 @@ type AgentStanding = {
   wins: number
   losses: number
   ties: number
+  winningPercentage: number
+  pointsFor: number
+  pointsAgainst: number
 }
 
 type Matchup = {
   matchupId: number
+  season: number
   week: number
+  matchupType: string
   homeAgentId: string
   awayAgentId: string
   homePoints: number
   awayPoints: number
   isComplete: boolean
+  winnerAgentId: string | null
+  isTie: boolean
 }
 
 function MatchupSide({
@@ -78,9 +85,11 @@ function MatchupSide({
 }
 
 function MatchupsCard({
+  season,
   currentWeek,
   agentsById,
 }: {
+  season: number
   currentWeek: number
   agentsById: Map<string, AgentProfile>
 }) {
@@ -101,7 +110,7 @@ function MatchupsCard({
         setIsLoading(true)
         setError(null)
         const response = await fetch(
-          `${apiBaseUrl}/api/league/schedule/${week}`,
+          `${apiBaseUrl}/api/league/seasons/${season}/schedule/${week}`,
           { signal: controller.signal },
         )
         if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -117,7 +126,7 @@ function MatchupsCard({
 
     fetchSchedule()
     return () => controller.abort()
-  }, [week])
+  }, [season, week])
 
   return (
     <Card className="border-white/10 bg-slate-900 text-slate-50">
@@ -245,6 +254,9 @@ function HomePage() {
   }, [])
 
   useEffect(() => {
+    if (!leagueState) return
+
+    const season = leagueState.season
     const controller = new AbortController()
 
     async function fetchAgents() {
@@ -253,7 +265,9 @@ function HomePage() {
         setAgentsError(null)
         const [agentsResponse, standingsResponse] = await Promise.all([
           fetch(`${apiBaseUrl}/api/agent-profiles?enabledOnly=true`, { signal: controller.signal }),
-          fetch(`${apiBaseUrl}/api/league/standings`, { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/league/seasons/${season}/standings`, {
+            signal: controller.signal,
+          }),
         ])
         if (!agentsResponse.ok || !standingsResponse.ok) {
           throw new Error(
@@ -274,7 +288,7 @@ function HomePage() {
 
     fetchAgents()
     return () => controller.abort()
-  }, [])
+  }, [leagueState])
 
   const agentsById = useMemo(() => {
     const map = new Map<string, AgentProfile>()
@@ -401,7 +415,7 @@ function HomePage() {
           </Card>
 
           {leagueState && (
-            <MatchupsCard currentWeek={leagueState.week} agentsById={agentsById} />
+            <MatchupsCard season={leagueState.season} currentWeek={leagueState.week} agentsById={agentsById} />
           )}
         </div>
       </section>
