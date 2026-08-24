@@ -76,6 +76,7 @@ builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<MatchupScoringService>();
 builder.Services.AddSingleton<PlayoffService>();
 builder.Services.AddSingleton<StageAwareFinalizationService>();
+builder.Services.AddSingleton<PlayoffEliminationService>();
 builder.Services.AddSingleton<PlayerGameLockService>();
 builder.Services.AddSingleton<WaiverService>();
 
@@ -134,6 +135,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/standings (GET: regular-season standings)",
         "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket; returns the locked bracket once playoffs begin)",
         "/api/league/seasons/{season}/playoffs/lock (POST: lock final seeds and create week-15 playoff matchups)",
+        "/api/league/seasons/{season}/playoffs/eligibility (GET: active vs eliminated agents for the season)",
         "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks the bracket after the regular-season end week and advances playoff rounds after playoff weeks)",
         "/api/league/schedule (POST: generate, GET: list all for current season)",
         "/api/league/schedule/{week} (GET: list one week of current season)",
@@ -372,6 +374,22 @@ app.MapPost("/api/league/seasons/{season:int}/playoffs/lock", async (
     {
         var result = await playoffService.LockBracketAsync(season, LeagueStateUpdatedBy.Manual, cancellationToken);
         return Results.Ok(result);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+});
+
+app.MapGet("/api/league/seasons/{season:int}/playoffs/eligibility", async (
+    int season,
+    PlayoffEliminationService eliminationService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var eligibility = await eliminationService.GetEligibilityAsync(season, cancellationToken);
+        return Results.Ok(eligibility);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {

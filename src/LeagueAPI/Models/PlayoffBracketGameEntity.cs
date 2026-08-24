@@ -6,6 +6,8 @@ public static class PlayoffRounds
     public const string Semifinal = "semifinal";
     public const string Championship = "championship";
     public const string ThirdPlace = "third_place";
+
+    public static readonly string[] All = [WildCard, Semifinal, ThirdPlace, Championship];
 }
 
 public static class PlayoffGameStatuses
