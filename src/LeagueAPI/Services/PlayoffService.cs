@@ -187,6 +187,87 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             new[] { wildCard1, wildCard2, semifinal1, semifinal2, championship, thirdPlace }.Select(game => MapToGameResult(game)).ToList());
     }
 
+    public async Task<ResolvePlayoffRoundResult> ResolveRoundAsync(int season, int week, CancellationToken cancellationToken)
+    {
+        ValidateSeason(season);
+        if (week <= 0)
+            throw new ArgumentException("week must be a positive integer.", nameof(week));
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({BracketLockKey})", cancellationToken);
+
+        var bracket = await dbContext.PlayoffBrackets.FirstOrDefaultAsync(row => row.Season == season, cancellationToken);
+        if (bracket is null || bracket.Status == PlayoffBracketStatuses.Projected)
+            throw new InvalidOperationException($"Cannot resolve playoff week {week} for season {season} because the playoff bracket is not locked.");
+
+        var settings = await GetSettingsAsync(dbContext, cancellationToken);
+        ValidateSupportedSettings(settings);
+
+        var games = await dbContext.PlayoffBracketGames.Where(game => game.BracketId == bracket.Id).ToListAsync(cancellationToken);
+        var seeds = await dbContext.PlayoffSeeds.AsNoTracking().Where(seed => seed.BracketId == bracket.Id).ToListAsync(cancellationToken);
+        var seedsByAgentId = seeds.ToDictionary(seed => seed.AgentId, seed => seed.Seed, StringComparer.Ordinal);
+        var gamesById = games.ToDictionary(game => game.Id);
+
+        var weekGames = games.Where(game => game.Week == week).OrderBy(game => game.Round).ThenBy(game => game.GameSlot).ToList();
+        if (weekGames.Count == 0)
+            throw new InvalidOperationException($"Cannot resolve playoff week {week} for season {season}: the locked bracket has no games in that week.");
+
+        var matchupIds = weekGames.Where(game => game.MatchupId.HasValue).Select(game => game.MatchupId!.Value).ToList();
+        if (matchupIds.Count != weekGames.Count)
+            throw new InvalidOperationException($"Cannot resolve playoff week {week} for season {season} because one or more bracket games are not linked to a matchup.");
+
+        var matchups = await dbContext.Matchups.Where(matchup => matchupIds.Contains(matchup.Id)).ToListAsync(cancellationToken);
+        if (matchups.Count != matchupIds.Count)
+            throw new InvalidOperationException($"Cannot resolve playoff week {week} for season {season} because a linked playoff matchup is missing.");
+
+        var matchupsById = matchups.ToDictionary(matchup => matchup.Id);
+        foreach (var game in weekGames)
+            CompleteBracketGame(game, matchupsById[game.MatchupId!.Value], seedsByAgentId);
+
+        var nextWeekGames = new List<PlayoffBracketGameEntity>();
+        var createdMatchups = new List<(PlayoffBracketGameEntity Game, MatchupEntity Matchup)>();
+        var nextWeek = GetNextPlayoffWeek(settings, week);
+        if (nextWeek.HasValue)
+        {
+            nextWeekGames = games.Where(game => game.Week == nextWeek.Value).OrderBy(game => game.Round).ThenBy(game => game.GameSlot).ToList();
+            if (nextWeekGames.Count == 0)
+                throw new InvalidOperationException($"Cannot advance playoffs after week {week} for season {season}: the locked bracket has no games for week {nextWeek.Value}.");
+
+            var existingNextMatchups = await dbContext.Matchups
+                .Where(matchup => matchup.Season == season && matchup.Week == nextWeek.Value && matchup.MatchupType == MatchupTypes.Playoff)
+                .ToListAsync(cancellationToken);
+
+            foreach (var nextGame in nextWeekGames)
+            {
+                PopulateGameParticipants(nextGame, gamesById, seedsByAgentId);
+                var created = EnsurePlayoffMatchup(dbContext, season, nextGame, existingNextMatchups);
+                if (created is not null)
+                    createdMatchups.Add((nextGame, created));
+            }
+        }
+
+        bracket.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var (game, matchup) in createdMatchups)
+            game.MatchupId = matchup.Id;
+
+        if (createdMatchups.Count > 0)
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new ResolvePlayoffRoundResult(
+            season,
+            week,
+            bracket.Id,
+            nextWeekGames.Count > 0,
+            createdMatchups.Count > 0,
+            weekGames.Select(MapToGameResult).ToList(),
+            nextWeekGames.Select(MapToGameResult).ToList());
+    }
+
     private async Task<(IReadOnlyList<AgentStanding> Standings, IReadOnlyList<MatchupEntity> CompletedMatchups)> LoadStandingsContextAsync(LeagueApiDbContext dbContext, int season, CancellationToken cancellationToken)
     {
         var standings = await _scheduleService.GetStandingsAsync(season, cancellationToken);
@@ -291,7 +372,10 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             game.HomeAgentId,
             game.AwayAgentId,
             DescribeSource(game.HomeSourceGameId, game.HomeSourceOutcome),
-            DescribeSource(game.AwaySourceGameId, game.AwaySourceOutcome));
+            DescribeSource(game.AwaySourceGameId, game.AwaySourceOutcome),
+            game.Status,
+            game.WinnerAgentId,
+            game.LoserAgentId);
 
     private static string? DescribeSource(int? sourceGameId, string? outcome)
     {
@@ -300,6 +384,181 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
 
         var participant = outcome == PlayoffParticipantSources.Loser ? "Loser" : "Winner";
         return $"{participant} of game {sourceGameId.Value}";
+    }
+
+    private static int? GetNextPlayoffWeek(PlayoffSettingsEntity settings, int week)
+    {
+        if (week == settings.PlayoffStartWeek)
+            return settings.PlayoffStartWeek + 1;
+
+        if (week == settings.PlayoffStartWeek + 1)
+            return settings.ChampionshipWeek;
+
+        return null;
+    }
+
+    private static void CompleteBracketGame(PlayoffBracketGameEntity game, MatchupEntity matchup, IReadOnlyDictionary<string, int> seedsByAgentId)
+    {
+        if (!matchup.IsComplete)
+            throw new InvalidOperationException($"Cannot resolve {game.Round} game {game.GameSlot} because matchup {matchup.Id} is not complete.");
+
+        if (!ParticipantsMatch(game, matchup))
+            throw new InvalidOperationException($"Cannot resolve {game.Round} game {game.GameSlot} because matchup {matchup.Id} participants do not match the bracket game.");
+
+        var (winnerAgentId, loserAgentId) = ResolvePlayoffOutcome(game, matchup, seedsByAgentId);
+        if (game.Status == PlayoffGameStatuses.Complete)
+        {
+            if (!string.Equals(game.WinnerAgentId, winnerAgentId, StringComparison.Ordinal) || !string.Equals(game.LoserAgentId, loserAgentId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot resolve {game.Round} game {game.GameSlot}: it is already complete with a different winner or loser.");
+
+            return;
+        }
+
+        game.WinnerAgentId = winnerAgentId;
+        game.LoserAgentId = loserAgentId;
+        game.Status = PlayoffGameStatuses.Complete;
+    }
+
+    private static (string WinnerAgentId, string LoserAgentId) ResolvePlayoffOutcome(PlayoffBracketGameEntity game, MatchupEntity matchup, IReadOnlyDictionary<string, int> seedsByAgentId)
+    {
+        if (!matchup.IsTie)
+        {
+            if (string.IsNullOrWhiteSpace(matchup.WinnerAgentId))
+                throw new InvalidOperationException($"Cannot resolve {game.Round} game {game.GameSlot} because matchup {matchup.Id} has no winner.");
+
+            var winnerAgentId = matchup.WinnerAgentId;
+            var loserAgentId = string.Equals(winnerAgentId, matchup.HomeAgentId, StringComparison.Ordinal) ? matchup.AwayAgentId : matchup.HomeAgentId;
+            if (string.IsNullOrWhiteSpace(loserAgentId) || string.Equals(winnerAgentId, loserAgentId, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Cannot resolve {game.Round} game {game.GameSlot} because the winner and loser could not be determined from matchup {matchup.Id}.");
+
+            return (winnerAgentId, loserAgentId);
+        }
+
+        var homeSeed = ResolveParticipantSeed(game, matchup.HomeAgentId, seedsByAgentId);
+        var awaySeed = ResolveParticipantSeed(game, matchup.AwayAgentId, seedsByAgentId);
+        if (homeSeed is null || awaySeed is null || homeSeed == awaySeed)
+            throw new InvalidOperationException($"Cannot resolve the tied {game.Round} game {game.GameSlot}: both participants need distinct persisted playoff seeds.");
+
+        return homeSeed < awaySeed
+            ? (matchup.HomeAgentId, matchup.AwayAgentId)
+            : (matchup.AwayAgentId, matchup.HomeAgentId);
+    }
+
+    private static void PopulateGameParticipants(PlayoffBracketGameEntity game, IReadOnlyDictionary<int, PlayoffBracketGameEntity> gamesById, IReadOnlyDictionary<string, int> seedsByAgentId)
+    {
+        AssignParticipantFromSource(game, home: true, gamesById, seedsByAgentId);
+        AssignParticipantFromSource(game, home: false, gamesById, seedsByAgentId);
+
+        if (string.IsNullOrWhiteSpace(game.HomeAgentId) || string.IsNullOrWhiteSpace(game.AwayAgentId))
+            throw new InvalidOperationException($"Cannot schedule {game.Round} game {game.GameSlot} because both participants are not assigned.");
+
+        if (string.Equals(game.HomeAgentId, game.AwayAgentId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Cannot schedule {game.Round} game {game.GameSlot} because both participants resolved to {game.HomeAgentId}.");
+    }
+
+    private static void AssignParticipantFromSource(PlayoffBracketGameEntity game, bool home, IReadOnlyDictionary<int, PlayoffBracketGameEntity> gamesById, IReadOnlyDictionary<string, int> seedsByAgentId)
+    {
+        var sourceGameId = home ? game.HomeSourceGameId : game.AwaySourceGameId;
+        var sourceOutcome = home ? game.HomeSourceOutcome : game.AwaySourceOutcome;
+        if (!sourceGameId.HasValue)
+            return;
+
+        if (string.IsNullOrWhiteSpace(sourceOutcome))
+            throw new InvalidOperationException($"Cannot populate {game.Round} game {game.GameSlot}: a source game is configured without a source outcome.");
+
+        if (!gamesById.TryGetValue(sourceGameId.Value, out var sourceGame))
+            throw new InvalidOperationException($"Cannot populate {game.Round} game {game.GameSlot}: source game {sourceGameId.Value} was not found.");
+
+        if (sourceGame.Status != PlayoffGameStatuses.Complete || string.IsNullOrWhiteSpace(sourceGame.WinnerAgentId) || string.IsNullOrWhiteSpace(sourceGame.LoserAgentId))
+            throw new InvalidOperationException($"Cannot populate {game.Round} game {game.GameSlot} because source game {sourceGameId.Value} is not complete.");
+
+        var agentId = sourceOutcome == PlayoffParticipantSources.Loser ? sourceGame.LoserAgentId : sourceGame.WinnerAgentId;
+        var seed = ResolveParticipantSeed(sourceGame, agentId, seedsByAgentId);
+        var existingAgentId = home ? game.HomeAgentId : game.AwayAgentId;
+        if (!string.IsNullOrWhiteSpace(existingAgentId) && !string.Equals(existingAgentId, agentId, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Cannot populate {game.Round} game {game.GameSlot}: {(home ? "home" : "away")} is already {existingAgentId} but the source game resolved to {agentId}.");
+
+        if (home)
+        {
+            game.HomeAgentId = agentId;
+            game.HomeSeed = seed ?? game.HomeSeed;
+        }
+        else
+        {
+            game.AwayAgentId = agentId;
+            game.AwaySeed = seed ?? game.AwaySeed;
+        }
+    }
+
+    private static MatchupEntity? EnsurePlayoffMatchup(LeagueApiDbContext dbContext, int season, PlayoffBracketGameEntity game, IReadOnlyList<MatchupEntity> existingPlayoffMatchups)
+    {
+        if (game.Status == PlayoffGameStatuses.Complete)
+        {
+            if (game.MatchupId is not int completedMatchupId)
+                throw new InvalidOperationException($"Cannot reschedule {game.Round} game {game.GameSlot} because it is already complete without a linked matchup.");
+
+            var completedMatchup = existingPlayoffMatchups.FirstOrDefault(matchup => matchup.Id == completedMatchupId);
+            if (completedMatchup is null)
+                throw new InvalidOperationException($"Cannot keep {game.Round} game {game.GameSlot} complete because linked matchup {completedMatchupId} was not found.");
+
+            if (!ParticipantsMatch(game, completedMatchup))
+                throw new InvalidOperationException($"Cannot keep {game.Round} game {game.GameSlot} complete because linked matchup {completedMatchupId} has different participants.");
+
+            return null;
+        }
+
+        if (game.MatchupId is int matchupId)
+        {
+            var linked = existingPlayoffMatchups.FirstOrDefault(matchup => matchup.Id == matchupId);
+            if (linked is null)
+                throw new InvalidOperationException($"Cannot schedule {game.Round} game {game.GameSlot} because linked matchup {matchupId} was not found.");
+
+            if (!ParticipantsMatch(game, linked))
+                throw new InvalidOperationException($"Cannot schedule {game.Round} game {game.GameSlot} because linked matchup {matchupId} has different participants.");
+
+            game.Status = PlayoffGameStatuses.Scheduled;
+            return null;
+        }
+
+        var existing = existingPlayoffMatchups.FirstOrDefault(matchup =>
+            matchup.Season == season
+            && matchup.Week == game.Week
+            && string.Equals(matchup.HomeAgentId, game.HomeAgentId, StringComparison.Ordinal)
+            && string.Equals(matchup.AwayAgentId, game.AwayAgentId, StringComparison.Ordinal));
+
+        if (existing is not null)
+        {
+            game.MatchupId = existing.Id;
+            game.Status = PlayoffGameStatuses.Scheduled;
+            return null;
+        }
+
+        var created = new MatchupEntity
+        {
+            Season = season,
+            Week = game.Week,
+            MatchupType = MatchupTypes.Playoff,
+            HomeAgentId = game.HomeAgentId!,
+            AwayAgentId = game.AwayAgentId!
+        };
+        dbContext.Matchups.Add(created);
+        game.Status = PlayoffGameStatuses.Scheduled;
+        return created;
+    }
+
+    private static bool ParticipantsMatch(PlayoffBracketGameEntity game, MatchupEntity matchup) =>
+        string.Equals(game.HomeAgentId, matchup.HomeAgentId, StringComparison.Ordinal)
+        && string.Equals(game.AwayAgentId, matchup.AwayAgentId, StringComparison.Ordinal);
+
+    private static int? ResolveParticipantSeed(PlayoffBracketGameEntity game, string agentId, IReadOnlyDictionary<string, int> seedsByAgentId)
+    {
+        if (string.Equals(game.HomeAgentId, agentId, StringComparison.Ordinal) && game.HomeSeed.HasValue)
+            return game.HomeSeed;
+
+        if (string.Equals(game.AwayAgentId, agentId, StringComparison.Ordinal) && game.AwaySeed.HasValue)
+            return game.AwaySeed;
+
+        return seedsByAgentId.TryGetValue(agentId, out var seed) ? seed : null;
     }
 
     private static void ValidateSeason(int season)
@@ -407,16 +666,16 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
         [
             CreateSeedGame(PlayoffRounds.WildCard, 1, settings.PlayoffStartWeek, Seed(3), Seed(6)),
             CreateSeedGame(PlayoffRounds.WildCard, 2, settings.PlayoffStartWeek, Seed(4), Seed(5)),
-            new PlayoffGameResult(PlayoffRounds.Semifinal, 1, settings.PlayoffStartWeek + 1, 1, null, Seed(1)?.AgentId, null, null, "Winner of Wild Card 2"),
-            new PlayoffGameResult(PlayoffRounds.Semifinal, 2, settings.PlayoffStartWeek + 1, 2, null, Seed(2)?.AgentId, null, null, "Winner of Wild Card 1"),
-            new PlayoffGameResult(PlayoffRounds.Championship, 1, settings.ChampionshipWeek, null, null, null, null, "Winner of Semifinal 1", "Winner of Semifinal 2"),
-            new PlayoffGameResult(PlayoffRounds.ThirdPlace, 1, settings.ChampionshipWeek, null, null, null, null, "Loser of Semifinal 1", "Loser of Semifinal 2")
+            new PlayoffGameResult(PlayoffRounds.Semifinal, 1, settings.PlayoffStartWeek + 1, 1, null, Seed(1)?.AgentId, null, null, "Winner of Wild Card 2", PlayoffGameStatuses.Pending, null, null),
+            new PlayoffGameResult(PlayoffRounds.Semifinal, 2, settings.PlayoffStartWeek + 1, 2, null, Seed(2)?.AgentId, null, null, "Winner of Wild Card 1", PlayoffGameStatuses.Pending, null, null),
+            new PlayoffGameResult(PlayoffRounds.Championship, 1, settings.ChampionshipWeek, null, null, null, null, "Winner of Semifinal 1", "Winner of Semifinal 2", PlayoffGameStatuses.Pending, null, null),
+            new PlayoffGameResult(PlayoffRounds.ThirdPlace, 1, settings.ChampionshipWeek, null, null, null, null, "Loser of Semifinal 1", "Loser of Semifinal 2", PlayoffGameStatuses.Pending, null, null)
         ];
     }
 
     private static PlayoffGameResult CreateSeedGame(string round, int gameSlot, int week, PlayoffSeedResult? home, PlayoffSeedResult? away)
     {
-        return new PlayoffGameResult(round, gameSlot, week, home?.Seed, away?.Seed, home?.AgentId, away?.AgentId, null, null);
+        return new PlayoffGameResult(round, gameSlot, week, home?.Seed, away?.Seed, home?.AgentId, away?.AgentId, null, null, PlayoffGameStatuses.Pending, null, null);
     }
 
     private static void ValidateSupportedSettings(PlayoffSettingsEntity settings)

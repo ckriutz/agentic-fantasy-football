@@ -31,4 +31,7 @@ public sealed record PlayoffGameResult(
     string? HomeAgentId,
     string? AwayAgentId,
     string? HomeSource,
-    string? AwaySource);
+    string? AwaySource,
+    string Status,
+    string? WinnerAgentId,
+    string? LoserAgentId);

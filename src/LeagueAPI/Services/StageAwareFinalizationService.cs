@@ -20,17 +20,29 @@ public sealed class StageAwareFinalizationService(IDbContextFactory<LeagueApiDbC
             .FirstOrDefaultAsync(row => row.Id == PlayoffSettingsDefaults.SingletonId, cancellationToken)
             ?? new PlayoffSettingsEntity();
 
-        if (week != settings.RegularSeasonEndWeek || season != finalizedWeek.Season)
-            return new StageAwareFinalizeResult(finalizedWeek, false, null);
+        if (week == settings.RegularSeasonEndWeek && season == finalizedWeek.Season)
+        {
+            var leagueStateEntity = await dbContext.LeagueState.AsNoTracking().FirstOrDefaultAsync(row => row.Id == LeagueStateDefaults.SingletonId, cancellationToken);
+            var currentSeasonStage = leagueStateEntity?.SeasonStage ?? LeagueStateDefaults.DefaultSeasonStage;
 
-        var leagueStateEntity = await dbContext.LeagueState.AsNoTracking().FirstOrDefaultAsync(row => row.Id == LeagueStateDefaults.SingletonId, cancellationToken);
-        var currentSeasonStage = leagueStateEntity?.SeasonStage ?? LeagueStateDefaults.DefaultSeasonStage;
+            // Only lock on the regular-season end week; playoff weeks resolve/advance below.
+            if (string.Equals(currentSeasonStage, SeasonStages.RegularSeason, StringComparison.Ordinal))
+            {
+                var lockedBracket = await _playoffService.LockBracketAsync(season, updatedBy, cancellationToken);
+                return new StageAwareFinalizeResult(finalizedWeek, true, lockedBracket, false, null);
+            }
 
-        // Only transition on the regular-season end week; once playoffs begin this endpoint just finalizes weeks.
-        if (!string.Equals(currentSeasonStage, SeasonStages.RegularSeason, StringComparison.Ordinal))
-            return new StageAwareFinalizeResult(finalizedWeek, false, null);
+            return new StageAwareFinalizeResult(finalizedWeek, false, null, false, null);
+        }
 
-        var lockedBracket = await _playoffService.LockBracketAsync(season, updatedBy, cancellationToken);
-        return new StageAwareFinalizeResult(finalizedWeek, true, lockedBracket);
+        if (season == finalizedWeek.Season && IsPlayoffWeek(settings, week))
+        {
+            var resolution = await _playoffService.ResolveRoundAsync(season, week, cancellationToken);
+            return new StageAwareFinalizeResult(finalizedWeek, false, null, resolution.Advanced, resolution);
+        }
+
+        return new StageAwareFinalizeResult(finalizedWeek, false, null, false, null);
     }
+
+    private static bool IsPlayoffWeek(PlayoffSettingsEntity settings, int week) => week == settings.PlayoffStartWeek || week == settings.PlayoffStartWeek + 1 || week == settings.ChampionshipWeek;
 }
