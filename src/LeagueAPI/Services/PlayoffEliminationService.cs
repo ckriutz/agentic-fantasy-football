@@ -22,7 +22,7 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         var bracket = await dbContext.PlayoffBrackets.AsNoTracking().FirstOrDefaultAsync(row => row.Season == season, cancellationToken);
         if (bracket is null || bracket.Status == PlayoffBracketStatuses.Projected)
-            return await BuildPreLockResultAsync(dbContext, cancellationToken);
+            return await BuildPreLockResultAsync(dbContext, season, cancellationToken);
 
         var settings = await GetSettingsAsync(dbContext, cancellationToken);
         var seedEntities = await dbContext.PlayoffSeeds.AsNoTracking().Where(seed => seed.BracketId == bracket.Id).OrderBy(seed => seed.Seed).ToListAsync(cancellationToken);
@@ -60,13 +60,13 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
         return agentIds;
     }
 
-    private async Task<PlayoffEligibilityResult> BuildPreLockResultAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)
+    private async Task<PlayoffEligibilityResult> BuildPreLockResultAsync(LeagueApiDbContext dbContext, int season, CancellationToken cancellationToken)
     {
         var settings = await GetSettingsAsync(dbContext, cancellationToken);
         var profiles = await _agentProfileReader.GetAgentProfilesAsync(enabledOnly: true, cancellationToken);
         var allAgentIds = profiles.Select(profile => profile.AgentId).Distinct(StringComparer.Ordinal).OrderBy(agentId => agentId, StringComparer.Ordinal).ToList();
         var agents = allAgentIds.Select(agentId => new PlayoffAgentStatusResult(agentId, PlayoffParticipantStatuses.Active, PlayoffEliminationReasons.RegularSeason, null, false, null, null)).ToList();
-        return new PlayoffEligibilityResult(0, false, null, settings.RegularSeasonEndWeek, settings.PlayoffStartWeek, settings.ChampionshipWeek, settings.ThirdPlaceGameEnabled, allAgentIds.ToList(), [], agents);
+        return new PlayoffEligibilityResult(season, false, null, settings.RegularSeasonEndWeek, settings.PlayoffStartWeek, settings.ChampionshipWeek, settings.ThirdPlaceGameEnabled, allAgentIds.ToList(), [], agents);
     }
 
     private static PlayoffEligibilityResult BuildResult(int season, string bracketStatus, PlayoffSettingsEntity settings, IReadOnlyList<PlayoffSeedEntity> seedEntities, IReadOnlyList<PlayoffBracketGameEntity> gameEntities, IReadOnlyDictionary<int, MatchupEntity> matchups, IReadOnlyList<string> allAgentIds)
