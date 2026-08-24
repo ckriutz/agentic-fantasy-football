@@ -75,6 +75,7 @@ builder.Services.AddSingleton<LeagueStateService>();
 builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<MatchupScoringService>();
 builder.Services.AddSingleton<PlayoffService>();
+builder.Services.AddSingleton<StageAwareFinalizationService>();
 builder.Services.AddSingleton<PlayerGameLockService>();
 builder.Services.AddSingleton<WaiverService>();
 
@@ -131,7 +132,9 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/schedule (POST: generate, GET: list all, ?force=true on POST to regenerate)",
         "/api/league/seasons/{season}/schedule/{week} (GET: list one week)",
         "/api/league/seasons/{season}/standings (GET: regular-season standings)",
-        "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket)",
+        "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket; returns the locked bracket once playoffs begin)",
+        "/api/league/seasons/{season}/playoffs/lock (POST: lock final seeds and create week-15 playoff matchups)",
+        "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks the bracket when week is the regular-season end)",
         "/api/league/schedule (POST: generate, GET: list all for current season)",
         "/api/league/schedule/{week} (GET: list one week of current season)",
         "/api/league/state",
@@ -351,8 +354,41 @@ app.MapGet("/api/league/seasons/{season:int}/playoffs/bracket", async (
 {
     try
     {
-        var bracket = await playoffService.GetProjectedBracketAsync(season, cancellationToken);
+        var bracket = await playoffService.GetBracketAsync(season, cancellationToken);
         return Results.Ok(bracket);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/league/seasons/{season:int}/playoffs/lock", async (
+    int season,
+    PlayoffService playoffService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await playoffService.LockBracketAsync(season, LeagueStateUpdatedBy.Manual, cancellationToken);
+        return Results.Ok(result);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+});
+
+app.MapPost("/api/league/seasons/{season:int}/weeks/{week:int}/finalize", async (
+    int season,
+    int week,
+    StageAwareFinalizationService finalizationService,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var result = await finalizationService.FinalizeWeekAsync(season, week, LeagueStateUpdatedBy.SeasonRunner, cancellationToken);
+        return Results.Ok(result);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {

@@ -318,7 +318,7 @@ function HomePage() {
   return (
     <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
       <section className="grid flex-1 items-start gap-6 lg:grid-cols-[1.4fr_0.9fr]">
-        <Card className="border-white/10 bg-white/5 text-slate-50 shadow-2xl shadow-slate-950/40">
+        <Card className="min-w-0 border-white/10 bg-white/5 text-slate-50 shadow-2xl shadow-slate-950/40">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl text-white">
               <Trophy className="size-5 text-emerald-300" />
@@ -379,7 +379,7 @@ function HomePage() {
           </CardContent>
         </Card>
 
-        <div className="flex flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-6">
           <Card className="border-white/10 bg-slate-900 text-slate-50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-xl text-white">

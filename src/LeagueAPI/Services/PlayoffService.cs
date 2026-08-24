@@ -6,8 +6,46 @@ namespace LeagueAPI.Services;
 
 public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbContextFactory, ScheduleService scheduleService)
 {
+    private const long BracketLockKey = 55003;
+
     private readonly IDbContextFactory<LeagueApiDbContext> _dbContextFactory = dbContextFactory;
     private readonly ScheduleService _scheduleService = scheduleService;
+
+    public async Task<PlayoffBracketResult> GetBracketAsync(int season, CancellationToken cancellationToken)
+    {
+        var lockedBracket = await TryGetLockedBracketAsync(season, cancellationToken);
+        if (lockedBracket is not null)
+            return lockedBracket;
+
+        return await GetProjectedBracketAsync(season, cancellationToken);
+    }
+
+    public async Task<PlayoffBracketResult?> TryGetLockedBracketAsync(int season, CancellationToken cancellationToken)
+    {
+        ValidateSeason(season);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var bracket = await dbContext.PlayoffBrackets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(row => row.Season == season, cancellationToken);
+
+        if (bracket is null || bracket.Status == PlayoffBracketStatuses.Projected)
+            return null;
+
+        var core = await LoadBracketCoreAsync(dbContext, bracket, cancellationToken);
+        var settings = await GetSettingsAsync(dbContext, cancellationToken);
+
+        return new PlayoffBracketResult(
+            season,
+            core.Status,
+            settings.RegularSeasonEndWeek,
+            settings.PlayoffStartWeek,
+            settings.ChampionshipWeek,
+            settings.PlayoffTeamCount,
+            settings.FirstRoundByeCount,
+            core.Seeds,
+            core.Games);
+    }
 
     public async Task<PlayoffBracketResult> GetProjectedBracketAsync(int season, CancellationToken cancellationToken)
     {
@@ -15,13 +53,142 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             throw new ArgumentException("season must be a positive integer.", nameof(season));
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var settings = await dbContext.PlayoffSettings
-            .AsNoTracking()
-            .FirstOrDefaultAsync(settings => settings.Id == PlayoffSettingsDefaults.SingletonId, cancellationToken)
-            ?? new PlayoffSettingsEntity();
+        var settings = await GetSettingsAsync(dbContext, cancellationToken);
+        var (standings, completedMatchups) = await LoadStandingsContextAsync(dbContext, season, cancellationToken);
+        var (rankedStandings, seeds) = ComputeSeeds(settings, standings, completedMatchups);
 
+        return new PlayoffBracketResult(
+            season,
+            PlayoffBracketStatuses.Projected,
+            settings.RegularSeasonEndWeek,
+            settings.PlayoffStartWeek,
+            settings.ChampionshipWeek,
+            settings.PlayoffTeamCount,
+            settings.FirstRoundByeCount,
+            seeds,
+            BuildProjectedGames(settings, seeds));
+    }
+
+    public async Task<LockPlayoffBracketResult> LockBracketAsync(int season, string updatedBy, CancellationToken cancellationToken)
+    {
+        ValidateSeason(season);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({BracketLockKey})", cancellationToken);
+
+        var existingLocked = await TryLoadLockedBracketCoreAsync(dbContext, season, cancellationToken);
+        if (existingLocked is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new LockPlayoffBracketResult(season, existingLocked.BracketId, existingLocked.Status, false, existingLocked.Seeds, existingLocked.Games);
+        }
+
+        var settings = await GetSettingsAsync(dbContext, cancellationToken);
         ValidateSupportedSettings(settings);
 
+        var endWeekMatchups = await dbContext.Matchups
+            .Where(matchup => matchup.Season == season && matchup.Week == settings.RegularSeasonEndWeek && matchup.MatchupType == MatchupTypes.RegularSeason)
+            .ToListAsync(cancellationToken);
+
+        if (endWeekMatchups.Count == 0)
+            throw new InvalidOperationException($"Cannot lock the playoff bracket for season {season} because no regular-season matchups exist for week {settings.RegularSeasonEndWeek}.");
+
+        if (endWeekMatchups.Any(matchup => !matchup.IsComplete))
+            throw new InvalidOperationException($"Cannot lock the playoff bracket for season {season} until every week {settings.RegularSeasonEndWeek} regular-season matchup is complete.");
+
+        var (standings, completedMatchups) = await LoadStandingsContextAsync(dbContext, season, cancellationToken);
+        var (rankedStandings, _) = ComputeSeeds(settings, standings, completedMatchups);
+        var rankedAgentIds = rankedStandings.Select(standing => standing.AgentId).ToList();
+        if (rankedAgentIds.Count < settings.PlayoffTeamCount)
+            throw new InvalidOperationException($"Cannot lock the playoff bracket for season {season}: only {rankedAgentIds.Count} teams have standings but {settings.PlayoffTeamCount} playoff teams are configured.");
+
+        var bracket = await dbContext.PlayoffBrackets.FirstOrDefaultAsync(row => row.Season == season, cancellationToken);
+        if (bracket is null)
+        {
+            bracket = new PlayoffBracketEntity { Season = season };
+            dbContext.PlayoffBrackets.Add(bracket);
+        }
+        else
+        {
+            RemoveBracketChildren(dbContext, bracket.Id);
+            bracket.Status = PlayoffBracketStatuses.Projected;
+            bracket.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var seedResults = rankedAgentIds
+            .Take(settings.PlayoffTeamCount)
+            .Select((agentId, index) =>
+            {
+                var standing = rankedStandings[index];
+                var result = new PlayoffSeedResult(index + 1, agentId, standing.Wins, standing.Losses, standing.Ties, standing.WinningPercentage, standing.PointsFor, standing.PointsAgainst, index < settings.FirstRoundByeCount);
+                dbContext.PlayoffSeeds.Add(new PlayoffSeedEntity
+                {
+                    BracketId = bracket!.Id,
+                    Seed = result.Seed,
+                    AgentId = result.AgentId,
+                    Wins = result.Wins,
+                    Losses = result.Losses,
+                    Ties = result.Ties,
+                    WinningPercentage = result.WinningPercentage,
+                    PointsFor = result.PointsFor,
+                    PointsAgainst = result.PointsAgainst
+                });
+                return result;
+            })
+            .ToList();
+
+        var wildCard1 = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.WildCard, GameSlot = 1, Week = settings.PlayoffStartWeek, HomeSeed = 3, AwaySeed = 6, HomeAgentId = AgentForSeed(seedResults, 3), AwayAgentId = AgentForSeed(seedResults, 6), Status = PlayoffGameStatuses.Scheduled };
+        var wildCard2 = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.WildCard, GameSlot = 2, Week = settings.PlayoffStartWeek, HomeSeed = 4, AwaySeed = 5, HomeAgentId = AgentForSeed(seedResults, 4), AwayAgentId = AgentForSeed(seedResults, 5), Status = PlayoffGameStatuses.Scheduled };
+        var semifinal1 = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.Semifinal, GameSlot = 1, Week = settings.PlayoffStartWeek + 1, HomeSeed = 1, HomeAgentId = AgentForSeed(seedResults, 1), AwaySourceOutcome = PlayoffParticipantSources.Winner, Status = PlayoffGameStatuses.Pending };
+        var semifinal2 = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.Semifinal, GameSlot = 2, Week = settings.PlayoffStartWeek + 1, HomeSeed = 2, HomeAgentId = AgentForSeed(seedResults, 2), AwaySourceOutcome = PlayoffParticipantSources.Winner, Status = PlayoffGameStatuses.Pending };
+        var championship = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.Championship, GameSlot = 1, Week = settings.ChampionshipWeek, HomeSourceOutcome = PlayoffParticipantSources.Winner, AwaySourceOutcome = PlayoffParticipantSources.Winner, Status = PlayoffGameStatuses.Pending };
+        var thirdPlace = new PlayoffBracketGameEntity { BracketId = bracket.Id, Round = PlayoffRounds.ThirdPlace, GameSlot = 1, Week = settings.ChampionshipWeek, HomeSourceOutcome = PlayoffParticipantSources.Loser, AwaySourceOutcome = PlayoffParticipantSources.Loser, Status = PlayoffGameStatuses.Pending };
+
+        dbContext.PlayoffBracketGames.AddRange(wildCard1, wildCard2, semifinal1, semifinal2, championship, thirdPlace);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Source-game and matchup references require generated ids, so link them after the first save.
+        semifinal1.AwaySourceGameId = wildCard2.Id;
+        semifinal2.AwaySourceGameId = wildCard1.Id;
+        championship.HomeSourceGameId = semifinal1.Id;
+        championship.AwaySourceGameId = semifinal2.Id;
+        thirdPlace.HomeSourceGameId = semifinal1.Id;
+        thirdPlace.AwaySourceGameId = semifinal2.Id;
+
+        var wildCardMatchup1 = new MatchupEntity { Season = season, Week = wildCard1.Week, MatchupType = MatchupTypes.Playoff, HomeAgentId = wildCard1.HomeAgentId!, AwayAgentId = wildCard1.AwayAgentId! };
+        var wildCardMatchup2 = new MatchupEntity { Season = season, Week = wildCard2.Week, MatchupType = MatchupTypes.Playoff, HomeAgentId = wildCard2.HomeAgentId!, AwayAgentId = wildCard2.AwayAgentId! };
+        dbContext.Matchups.AddRange(wildCardMatchup1, wildCardMatchup2);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        wildCard1.MatchupId = wildCardMatchup1.Id;
+        wildCard2.MatchupId = wildCardMatchup2.Id;
+
+        bracket.Status = PlayoffBracketStatuses.Locked;
+        bracket.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var leagueStateEntity = await LeagueStateService.GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
+        leagueStateEntity.SeasonStage = SeasonStages.Playoffs;
+        leagueStateEntity.UpdatedBy = updatedBy;
+        leagueStateEntity.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+
+        return new LockPlayoffBracketResult(
+            season,
+            bracket.Id,
+            bracket.Status,
+            true,
+            seedResults,
+            new[] { wildCard1, wildCard2, semifinal1, semifinal2, championship, thirdPlace }.Select(game => MapToGameResult(game)).ToList());
+    }
+
+    private async Task<(IReadOnlyList<AgentStanding> Standings, IReadOnlyList<MatchupEntity> CompletedMatchups)> LoadStandingsContextAsync(LeagueApiDbContext dbContext, int season, CancellationToken cancellationToken)
+    {
         var standings = await _scheduleService.GetStandingsAsync(season, cancellationToken);
         var completedMatchups = await dbContext.Matchups
             .AsNoTracking()
@@ -30,6 +197,13 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
                 && matchup.MatchupType == MatchupTypes.RegularSeason
                 && matchup.IsComplete)
             .ToListAsync(cancellationToken);
+
+        return (standings, completedMatchups);
+    }
+
+    private (IReadOnlyList<AgentStanding> RankedStandings, IReadOnlyList<PlayoffSeedResult> Seeds) ComputeSeeds(PlayoffSettingsEntity settings, IReadOnlyList<AgentStanding> standings, IReadOnlyList<MatchupEntity> completedMatchups)
+    {
+        ValidateSupportedSettings(settings);
 
         var rankedStandings = RankStandings(standings, completedMatchups);
         var seeds = rankedStandings
@@ -46,16 +220,92 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
                 index < settings.FirstRoundByeCount))
             .ToList();
 
-        return new PlayoffBracketResult(
-            season,
-            PlayoffBracketStatuses.Projected,
-            settings.RegularSeasonEndWeek,
-            settings.PlayoffStartWeek,
-            settings.ChampionshipWeek,
-            settings.PlayoffTeamCount,
-            settings.FirstRoundByeCount,
-            seeds,
-            BuildProjectedGames(settings, seeds));
+        return (rankedStandings, seeds);
+    }
+
+    private static async Task<PlayoffSettingsEntity> GetSettingsAsync(LeagueApiDbContext dbContext, CancellationToken cancellationToken)
+    {
+        return await dbContext.PlayoffSettings
+            .AsNoTracking()
+            .FirstOrDefaultAsync(settings => settings.Id == PlayoffSettingsDefaults.SingletonId, cancellationToken)
+            ?? new PlayoffSettingsEntity();
+    }
+
+    private sealed record LockedBracketCore(int BracketId, string Status, IReadOnlyList<PlayoffSeedResult> Seeds, IReadOnlyList<PlayoffGameResult> Games);
+
+    private async Task<LockedBracketCore?> TryLoadLockedBracketCoreAsync(LeagueApiDbContext dbContext, int season, CancellationToken cancellationToken)
+    {
+        var bracket = await dbContext.PlayoffBrackets
+            .AsNoTracking()
+            .FirstOrDefaultAsync(row => row.Season == season, cancellationToken);
+
+        if (bracket is null || bracket.Status == PlayoffBracketStatuses.Projected)
+            return null;
+
+        return await LoadBracketCoreAsync(dbContext, bracket, cancellationToken);
+    }
+
+    private static async Task<LockedBracketCore> LoadBracketCoreAsync(LeagueApiDbContext dbContext, PlayoffBracketEntity bracket, CancellationToken cancellationToken)
+    {
+        var settings = await GetSettingsAsync(dbContext, cancellationToken);
+        var seedEntities = await dbContext.PlayoffSeeds
+            .AsNoTracking()
+            .Where(seed => seed.BracketId == bracket.Id)
+            .OrderBy(seed => seed.Seed)
+            .ToListAsync(cancellationToken);
+        var gameEntities = await dbContext.PlayoffBracketGames
+            .AsNoTracking()
+            .Where(game => game.BracketId == bracket.Id)
+            .OrderBy(game => game.Round)
+            .ThenBy(game => game.GameSlot)
+            .ToListAsync(cancellationToken);
+        var byeSeedCount = settings.FirstRoundByeCount;
+
+        return new LockedBracketCore(
+            bracket.Id,
+            bracket.Status,
+            seedEntities.Select(seed => MapToSeedResult(seed, seed.Seed <= byeSeedCount)).ToList(),
+            gameEntities.Select(game => MapToGameResult(game)).ToList());
+    }
+
+    private static void RemoveBracketChildren(LeagueApiDbContext dbContext, int bracketId)
+    {
+        var games = dbContext.PlayoffBracketGames.Where(game => game.BracketId == bracketId);
+        dbContext.PlayoffBracketGames.RemoveRange(games);
+        var seeds = dbContext.PlayoffSeeds.Where(seed => seed.BracketId == bracketId);
+        dbContext.PlayoffSeeds.RemoveRange(seeds);
+    }
+
+    private static string? AgentForSeed(IReadOnlyList<PlayoffSeedResult> seeds, int seed) => seeds.FirstOrDefault(candidate => candidate.Seed == seed)?.AgentId;
+
+    private static PlayoffSeedResult MapToSeedResult(PlayoffSeedEntity seed, bool hasFirstRoundBye) =>
+        new(seed.Seed, seed.AgentId, seed.Wins, seed.Losses, seed.Ties, seed.WinningPercentage, seed.PointsFor, seed.PointsAgainst, hasFirstRoundBye);
+
+    private static PlayoffGameResult MapToGameResult(PlayoffBracketGameEntity game) =>
+        new(
+            game.Round,
+            game.GameSlot,
+            game.Week,
+            game.HomeSeed,
+            game.AwaySeed,
+            game.HomeAgentId,
+            game.AwayAgentId,
+            DescribeSource(game.HomeSourceGameId, game.HomeSourceOutcome),
+            DescribeSource(game.AwaySourceGameId, game.AwaySourceOutcome));
+
+    private static string? DescribeSource(int? sourceGameId, string? outcome)
+    {
+        if (!sourceGameId.HasValue)
+            return null;
+
+        var participant = outcome == PlayoffParticipantSources.Loser ? "Loser" : "Winner";
+        return $"{participant} of game {sourceGameId.Value}";
+    }
+
+    private static void ValidateSeason(int season)
+    {
+        if (season <= 0)
+            throw new ArgumentException("season must be a positive integer.", nameof(season));
     }
 
     private static IReadOnlyList<AgentStanding> RankStandings(IReadOnlyList<AgentStanding> standings, IReadOnlyList<MatchupEntity> completedMatchups)

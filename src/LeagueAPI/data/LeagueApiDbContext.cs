@@ -359,6 +359,9 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasKey(seed => seed.Id);
 
             entity.Property(seed => seed.AgentId).IsRequired().HasMaxLength(100);
+            entity.Property(seed => seed.WinningPercentage).HasPrecision(18, 4);
+            entity.Property(seed => seed.PointsFor).HasPrecision(18, 4);
+            entity.Property(seed => seed.PointsAgainst).HasPrecision(18, 4);
 
             entity.HasIndex(seed => new { seed.BracketId, seed.Seed }).IsUnique();
             entity.HasIndex(seed => new { seed.BracketId, seed.AgentId }).IsUnique();

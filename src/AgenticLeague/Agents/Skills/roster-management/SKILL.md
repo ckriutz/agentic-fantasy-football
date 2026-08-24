@@ -201,9 +201,13 @@ End with this exact structure (fill all sections):
 ```markdown
 ## Lineup decision (Week {week})
 **Loaded skill:** roster-management
+
 **Outcome:** changed | no_change
+
 **Action:** <one-line action for the decisions table>
+
 **Starting lineup:**
+
 - QB1: ...
 - RB1: ...
 - RB2: ...
@@ -214,13 +218,17 @@ End with this exact structure (fill all sections):
 - K1: ...
 - DEF1: ...
 **Changes:**
+
 - Player (`sleeperId`): OLD → NEW — reason
 - (or "None")
 **Notable start/sit calls:**
+
 - ...
 **Why:**
+
 - ...
 **Open risks:**
+
 - ...
 ```
 

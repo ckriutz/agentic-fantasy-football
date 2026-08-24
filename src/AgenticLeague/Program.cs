@@ -41,10 +41,19 @@ catch (Exception ex)
 // Now the current leauge state. This is important because we want to make sure the league is in the correct state before we start running the agents.
 var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
 
+var creditCheckTool = new CreditCheckTool();
+var creditsResponse = await creditCheckTool.GetRemainingCreditsAsync(EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY"));
+var remainingCredits = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
+logger.LogInformation("Remaining OpenRouter Credits: " + remainingCredits);
+
+if(remainingCredits < 2)
+{
+    logger.LogError("Not enough OpenRouter credits remaining to run the league. Please add more credits and try again.");
+    return;
+}
 
 logger.LogInformation("✅ All checks passed. API is healthy, and league state is valid. Current league phase: " + leagueState.Phase);
 logger.LogInformation("🏈 Starting Agentic Fantasy Football League!");
-
 
 // Load all the agents, and initialze them.
 var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
@@ -79,7 +88,10 @@ logger.LogInformation("testing.");
 //Console.WriteLine($"Response from Player 1: {testResponse.Response}");
 
 
-await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
+await RunTestWeekAsync(agents, host, _http, _scoresHttp, leagueState);
+var remainingCreditsAfter = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
+logger.LogInformation("Total Credits Used: " + (remainingCredits - remainingCreditsAfter));
+
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {
@@ -120,4 +132,12 @@ static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost 
     SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, scoresHttp, leagueState);
     await seasonRunner.RunAsync();
     seasonLogger.LogInformation("🎉 Season runner completed.");
+}
+
+static async Task RunTestWeekAsync(List<FantasyAgent> agents, IHost host, HttpClient http, HttpClient scoresHttp, LeagueState leagueState)
+{
+    ILogger testWeekLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("TestWeekRunner");
+    SeasonRunner seasonRunner = new SeasonRunner(agents, testWeekLogger, http, scoresHttp, leagueState);
+    await seasonRunner.RunTestWeekAsync();
+    testWeekLogger.LogInformation("🎉 Test week runner completed.");
 }
