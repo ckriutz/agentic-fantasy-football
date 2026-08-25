@@ -44,7 +44,8 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             settings.PlayoffTeamCount,
             settings.FirstRoundByeCount,
             core.Seeds,
-            core.Games);
+            core.Games,
+            MapFinalPlacements(bracket));
     }
 
     public async Task<PlayoffBracketResult> GetProjectedBracketAsync(int season, CancellationToken cancellationToken)
@@ -66,7 +67,8 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             settings.PlayoffTeamCount,
             settings.FirstRoundByeCount,
             seeds,
-            BuildProjectedGames(settings, seeds));
+            BuildProjectedGames(settings, seeds),
+            null);
     }
 
     public async Task<LockPlayoffBracketResult> LockBracketAsync(int season, string updatedBy, CancellationToken cancellationToken)
@@ -187,7 +189,7 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             new[] { wildCard1, wildCard2, semifinal1, semifinal2, championship, thirdPlace }.Select(game => MapToGameResult(game)).ToList());
     }
 
-    public async Task<ResolvePlayoffRoundResult> ResolveRoundAsync(int season, int week, CancellationToken cancellationToken)
+    public async Task<ResolvePlayoffRoundResult> ResolveRoundAsync(int season, int week, string updatedBy, CancellationToken cancellationToken)
     {
         ValidateSeason(season);
         if (week <= 0)
@@ -203,6 +205,8 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
 
         var settings = await GetSettingsAsync(dbContext, cancellationToken);
         ValidateSupportedSettings(settings);
+        if (bracket.Status == PlayoffBracketStatuses.Complete && week != settings.ChampionshipWeek)
+            throw new InvalidOperationException($"Cannot resolve playoff week {week} for season {season} because the season is already complete.");
 
         var games = await dbContext.PlayoffBracketGames.Where(game => game.BracketId == bracket.Id).ToListAsync(cancellationToken);
         var seeds = await dbContext.PlayoffSeeds.AsNoTracking().Where(seed => seed.BracketId == bracket.Id).ToListAsync(cancellationToken);
@@ -227,6 +231,7 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
 
         var nextWeekGames = new List<PlayoffBracketGameEntity>();
         var createdMatchups = new List<(PlayoffBracketGameEntity Game, MatchupEntity Matchup)>();
+        PlayoffFinalPlacementsResult? finalPlacements = null;
         var nextWeek = GetNextPlayoffWeek(settings, week);
         if (nextWeek.HasValue)
         {
@@ -245,6 +250,17 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
                 if (created is not null)
                     createdMatchups.Add((nextGame, created));
             }
+        }
+        else if (week == settings.ChampionshipWeek)
+        {
+            finalPlacements = CompleteSeason(bracket, games, settings);
+            var leagueStateEntity = await LeagueStateService.GetOrCreateLeagueStateAsync(dbContext, cancellationToken);
+            if (leagueStateEntity.Season != season)
+                throw new InvalidOperationException($"Cannot complete season {season} because the current league state is for season {leagueStateEntity.Season}.");
+
+            leagueStateEntity.SeasonStage = SeasonStages.Complete;
+            leagueStateEntity.UpdatedBy = updatedBy;
+            leagueStateEntity.UpdatedAtUtc = DateTimeOffset.UtcNow;
         }
 
         bracket.UpdatedAtUtc = DateTimeOffset.UtcNow;
@@ -265,7 +281,9 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             nextWeekGames.Count > 0,
             createdMatchups.Count > 0,
             weekGames.Select(MapToGameResult).ToList(),
-            nextWeekGames.Select(MapToGameResult).ToList());
+            nextWeekGames.Select(MapToGameResult).ToList(),
+            finalPlacements is not null,
+            finalPlacements);
     }
 
     private async Task<(IReadOnlyList<AgentStanding> Standings, IReadOnlyList<MatchupEntity> CompletedMatchups)> LoadStandingsContextAsync(LeagueApiDbContext dbContext, int season, CancellationToken cancellationToken)
@@ -376,6 +394,42 @@ public sealed class PlayoffService(IDbContextFactory<LeagueApiDbContext> dbConte
             game.Status,
             game.WinnerAgentId,
             game.LoserAgentId);
+
+    private static PlayoffFinalPlacementsResult? MapFinalPlacements(PlayoffBracketEntity bracket)
+    {
+        if (string.IsNullOrWhiteSpace(bracket.ChampionAgentId)
+            || string.IsNullOrWhiteSpace(bracket.RunnerUpAgentId)
+            || string.IsNullOrWhiteSpace(bracket.ThirdPlaceAgentId)
+            || string.IsNullOrWhiteSpace(bracket.FourthPlaceAgentId))
+            return null;
+
+        return new PlayoffFinalPlacementsResult(bracket.ChampionAgentId, bracket.RunnerUpAgentId, bracket.ThirdPlaceAgentId, bracket.FourthPlaceAgentId);
+    }
+
+    private static PlayoffFinalPlacementsResult CompleteSeason(PlayoffBracketEntity bracket, IReadOnlyList<PlayoffBracketGameEntity> games, PlayoffSettingsEntity settings)
+    {
+        var championship = games.SingleOrDefault(game => game.Week == settings.ChampionshipWeek && game.Round == PlayoffRounds.Championship)
+            ?? throw new InvalidOperationException($"Cannot complete season {bracket.Season} because the championship game is missing.");
+        var thirdPlace = games.SingleOrDefault(game => game.Week == settings.ChampionshipWeek && game.Round == PlayoffRounds.ThirdPlace)
+            ?? throw new InvalidOperationException($"Cannot complete season {bracket.Season} because the third-place game is missing.");
+
+        if (championship.Status != PlayoffGameStatuses.Complete || string.IsNullOrWhiteSpace(championship.WinnerAgentId) || string.IsNullOrWhiteSpace(championship.LoserAgentId))
+            throw new InvalidOperationException($"Cannot complete season {bracket.Season} because the championship game is not complete.");
+        if (thirdPlace.Status != PlayoffGameStatuses.Complete || string.IsNullOrWhiteSpace(thirdPlace.WinnerAgentId) || string.IsNullOrWhiteSpace(thirdPlace.LoserAgentId))
+            throw new InvalidOperationException($"Cannot complete season {bracket.Season} because the third-place game is not complete.");
+
+        var placements = new PlayoffFinalPlacementsResult(championship.WinnerAgentId, championship.LoserAgentId, thirdPlace.WinnerAgentId, thirdPlace.LoserAgentId);
+        var existingPlacements = MapFinalPlacements(bracket);
+        if (bracket.Status == PlayoffBracketStatuses.Complete && existingPlacements != placements)
+            throw new InvalidOperationException($"Cannot complete season {bracket.Season} because its persisted final placements differ from the finalized games.");
+
+        bracket.ChampionAgentId = placements.ChampionAgentId;
+        bracket.RunnerUpAgentId = placements.RunnerUpAgentId;
+        bracket.ThirdPlaceAgentId = placements.ThirdPlaceAgentId;
+        bracket.FourthPlaceAgentId = placements.FourthPlaceAgentId;
+        bracket.Status = PlayoffBracketStatuses.Complete;
+        return placements;
+    }
 
     private static string? DescribeSource(int? sourceGameId, string? outcome)
     {

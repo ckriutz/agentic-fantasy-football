@@ -85,6 +85,11 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
         ApplyWildCardResults(statusesByAgentId, FilterGames(resolvedGames, PlayoffRounds.WildCard));
         ApplySemifinalResults(statusesByAgentId, FilterGames(resolvedGames, PlayoffRounds.Semifinal), settings.ThirdPlaceGameEnabled);
         ApplyFinalWeekResults(statusesByAgentId, FilterGames(resolvedGames, PlayoffRounds.Championship), FilterGames(resolvedGames, PlayoffRounds.ThirdPlace), settings.ThirdPlaceGameEnabled);
+        if (bracketStatus == PlayoffBracketStatuses.Complete)
+        {
+            foreach (var status in statusesByAgentId.Values.Where(status => status.Status == PlayoffParticipantStatuses.Active))
+                status.Deactivate();
+        }
 
         var orderedAgents = statusesByAgentId.OrderBy(pair => pair.Value.Seed.HasValue ? 0 : 1).ThenBy(pair => pair.Value.Seed ?? int.MaxValue).ThenBy(pair => pair.Key, StringComparer.Ordinal).ToList();
         var activeAgentIds = orderedAgents.Where(pair => pair.Value.Status == PlayoffParticipantStatuses.Active).Select(pair => pair.Key).ToList();
@@ -175,6 +180,12 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
             Reason = reason;
             EliminatedRound = round;
             EliminatedWeek = week;
+        }
+
+        public void Deactivate()
+        {
+            Status = PlayoffParticipantStatuses.Inactive;
+            Reason = PlayoffEliminationReasons.SeasonComplete;
         }
 
         public PlayoffAgentStatusResult ToResult(string agentId) => new(agentId, Status, Reason, Seed, Seed.HasValue, EliminatedRound, EliminatedWeek);

@@ -46,6 +46,15 @@ public sealed class MatchupScoringService(IDbContextFactory<LeagueApiDbContext> 
         }
 
         var finalizedAtUtc = DateTimeOffset.UtcNow;
+        if (matchups.All(matchup => matchup.IsComplete))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new MatchupScoreUpdateResult(season, week, matchups.Count, true, finalizedAtUtc);
+        }
+
+        if (matchups.Any(matchup => matchup.IsComplete))
+            throw new InvalidOperationException($"Cannot finalize season {season}, week {week} because only some matchups are already complete.");
+
         var hasSnapshots = await dbContext.WeeklyRosterSnapshots
             .AnyAsync(snapshot => snapshot.Season == season && snapshot.Week == week, cancellationToken);
 

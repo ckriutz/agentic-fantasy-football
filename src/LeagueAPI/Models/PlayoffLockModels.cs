@@ -15,11 +15,14 @@ public sealed record ResolvePlayoffRoundResult(
     bool Advanced,
     bool Created,
     IReadOnlyList<PlayoffGameResult> CompletedGames,
-    IReadOnlyList<PlayoffGameResult> ScheduledGames);
+    IReadOnlyList<PlayoffGameResult> ScheduledGames,
+    bool SeasonCompleted,
+    PlayoffFinalPlacementsResult? FinalPlacements);
 
 public sealed record StageAwareFinalizeResult(
     MatchupScoreUpdateResult FinalizedWeek,
     bool LockedBracket,
     LockPlayoffBracketResult? Bracket,
     bool AdvancedRound,
-    ResolvePlayoffRoundResult? Resolution);
+    ResolvePlayoffRoundResult? Resolution,
+    bool SeasonCompleted);

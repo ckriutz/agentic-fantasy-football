@@ -4,6 +4,7 @@ public static class PlayoffParticipantStatuses
 {
     public const string Active = "active";
     public const string Eliminated = "eliminated";
+    public const string Inactive = "inactive";
 }
 
 public static class PlayoffEliminationReasons
@@ -15,6 +16,7 @@ public static class PlayoffEliminationReasons
     public const string SemifinalLoss = "semifinal_loss";
     public const string ThirdPlaceLoss = "third_place_loss";
     public const string ChampionshipLoss = "championship_loss";
+    public const string SeasonComplete = "season_complete";
 }
 
 public sealed record PlayoffEligibilityResult(

@@ -349,6 +349,10 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.HasKey(bracket => bracket.Id);
 
             entity.Property(bracket => bracket.Status).IsRequired().HasMaxLength(32);
+            entity.Property(bracket => bracket.ChampionAgentId).HasMaxLength(100);
+            entity.Property(bracket => bracket.RunnerUpAgentId).HasMaxLength(100);
+            entity.Property(bracket => bracket.ThirdPlaceAgentId).HasMaxLength(100);
+            entity.Property(bracket => bracket.FourthPlaceAgentId).HasMaxLength(100);
 
             entity.HasIndex(bracket => bracket.Season).IsUnique();
         });

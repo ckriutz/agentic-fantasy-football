@@ -136,7 +136,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket; returns the locked bracket once playoffs begin)",
         "/api/league/seasons/{season}/playoffs/lock (POST: lock final seeds and create week-15 playoff matchups)",
         "/api/league/seasons/{season}/playoffs/eligibility (GET: active vs eliminated agents for the season)",
-        "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks the bracket after the regular-season end week and advances playoff rounds after playoff weeks)",
+        "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks/advances playoffs and completes the season after the championship week)",
         "/api/league/schedule (POST: generate, GET: list all for current season)",
         "/api/league/schedule/{week} (GET: list one week of current season)",
         "/api/league/state",

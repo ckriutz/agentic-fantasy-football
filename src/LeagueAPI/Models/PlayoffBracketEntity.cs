@@ -15,6 +15,14 @@ public sealed class PlayoffBracketEntity
 
     public string Status { get; set; } = PlayoffBracketStatuses.Projected;
 
+    public string? ChampionAgentId { get; set; }
+
+    public string? RunnerUpAgentId { get; set; }
+
+    public string? ThirdPlaceAgentId { get; set; }
+
+    public string? FourthPlaceAgentId { get; set; }
+
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;

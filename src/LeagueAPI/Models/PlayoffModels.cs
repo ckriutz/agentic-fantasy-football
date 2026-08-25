@@ -9,7 +9,14 @@ public sealed record PlayoffBracketResult(
     int PlayoffTeamCount,
     int FirstRoundByeCount,
     IReadOnlyList<PlayoffSeedResult> Seeds,
-    IReadOnlyList<PlayoffGameResult> Games);
+    IReadOnlyList<PlayoffGameResult> Games,
+    PlayoffFinalPlacementsResult? FinalPlacements);
+
+public sealed record PlayoffFinalPlacementsResult(
+    string ChampionAgentId,
+    string RunnerUpAgentId,
+    string ThirdPlaceAgentId,
+    string FourthPlaceAgentId);
 
 public sealed record PlayoffSeedResult(
     int Seed,
