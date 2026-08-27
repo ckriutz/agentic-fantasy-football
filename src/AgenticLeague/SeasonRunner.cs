@@ -35,11 +35,13 @@ public class SeasonRunner
     {
         _logger.LogInformation($"Running test week {_leagueState.Week} tasks.", _leagueState.Week);
         await RunTuesdayAsync();
-        await RunWednesdayAsync();
-        await RunWednesdayAsync();
-        await RunSaturdayAsync();
+        //await RunWednesdayAsync();
+        //await RunWednesdayAsync();
+        //await RunThursdayAsync();
+        //await RunFridayAsync();
+        //await RunSaturdayAsync();
         //await RunSundayAsync();
-        await RunMondayAsync();
+        //await RunMondayAsync();
     }
 
     public async Task RunAsync()
@@ -56,346 +58,59 @@ public class SeasonRunner
             _logger.LogWarning("Season runner cannot continue because the league is in preseason or week 0.");
             return;
         }
+        if (string.Equals(_leagueState.SeasonStage, "complete", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Season {Season} is complete. No season tasks will run.", _leagueState.Season);
+            return;
+        }
 
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
         var easternNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, EasternTimeZone);
-        //var dayOfWeek = easternNow.DayOfWeek;
-        var dayOfWeek = DayOfWeek.Tuesday; // TESTING. Change back when done testing.
+        var dayOfWeek = easternNow.DayOfWeek;
         _logger.LogInformation("Today is {DayOfWeek} in US Eastern Time ({EasternNow}).", dayOfWeek, easternNow);
 
         if(dayOfWeek == DayOfWeek.Tuesday)
         {
-            _logger.LogInformation("Running Tuesday tasks.");
-
-            // Tuesday!! This is really the first day of the new week, now that Monday night has passed.
-            // Here is where we will first see how the week went and update wins/losses and any other stats.
-            // Then prompt the agents to reflect on how they did for the previous week and plan for the upcoming week.
-            // Lastly, we will prompt the agents to make any waiver claims they want to for the new week, since the waiver wire opens on Tuesday.
-            // I only plan on running this once this week.
-
-            // This is the check to ensure that we only proceed with the Tuesday rollover if the league is in the correct phase.
-            if (!string.Equals(_leagueState.Phase, "games_locked", StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogInformation("Skipping Tuesday rollover for season {Season} week {Week} because the league phase is {Phase}, not games_locked.", _leagueState.Season, _leagueState.Week, _leagueState.Phase);
-                return;
-            }
-
-            // First, we process weekly scores for the current week to update matchups.
-            var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week, forceRefresh: true);
-            if (!weeklyScoresSuccess)
-            {
-                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-                return;
-            }
-
-            // Then, we finalize the matchups for the current week to ensure all results are recorded.
-            // This "locks in" the results for the week, ensuring that the matchups are finalized and no further changes can be made to the scores or outcomes.
-            var finalized = await FinalizeMatchupsForWeekAsync(_leagueState.Season, _leagueState.Week);
-            if (!finalized)
-            {
-                _logger.LogError($"Matchup finalization failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-                return;
-            }
-            _logger.LogInformation($"✅ Matchups finalized for season {_leagueState.Season}, week {_leagueState.Week}.");
-
-            // Then we will advance the league state to the next week, and set the phase to waiver-wire, so the agents can make any waiver claims they want to for the new week.
-            int completedWeek = _leagueState.Week;
-            int week = completedWeek + 1;
-            _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState.Season, week, "waiver_window", "season-runner", _http, _logger);
-
-            foreach(var agent in _agents)
-            {
-                var reflectionPrompt =
-                $"""
-                You are {agent.GetAgentName()}. Season {_leagueState.Season} Week {completedWeek} is finalized.
-                Use the `weekly-reflection` tool and review exactly Week {completedWeek}; the current league week is {week}, but do not query it as the completed matchup.
-
-                Required calls: `ReadAgentBootstrap({agent.GetAgentName()})`,
-                `GetWeeklyMatchup({agent.GetAgentName()}, {completedWeek})`, `GetMyRoster({agent.GetAgentName()})`, then `WriteAgentBootstrap` once.
-
-                Do not use `SearchWeb` for this task. Do not use any other tools. Do not make any roster or lineup changes. Do not make any waiver claims. Do not make any trades. Do not make any draft picks. Do not make any other moves.
-                """;
-                var response = (await agent.RunAsync(reflectionPrompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, completedWeek, "Weekly Reflection", response, $"Weekly Reflection for week {completedWeek}", _logger);
-            }
-
-            // Then we will prompt the agents to evaluate whether they should make waiver claims.
-            foreach(var agent in _agents)
-            {
-                var prompt =
-                $"""
-                You are {agent.GetAgentName()}. Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
-                Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
-                Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
-                Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
-                """;
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, week, "Roster Management", response, "Waiver Claim Attempt", _logger);
-            }
-
-            // No reason on this day, to prompt the agents to set their lineups, since the games don't start until Thursday, and they might want to make waiver claims before setting their lineups.
+           await RunTuesdayAsync();
         }
+
         if(dayOfWeek == DayOfWeek.Wednesday)
         {
-            _logger.LogInformation("Running Wednesday tasks.");
-
-            // Wednesday! This is the day after the waiver wire opened.
-            // Here we will process the waiver claims, and let the agents know which claims were successful and which were not, and update their rosters accordingly.
-            // First, lets check to see if the status is still on waiver-wire, if it is, then we will process the waiver claims, and then update the league state to free-agency.
-            // Planning on running this twice a day, first in the morning, an then again in the afternoon.
-            if (_leagueState?.Phase == "waiver_window")
+            if (easternNow.Hour < 12)
             {
-                bool success = await ProcessWaiverClaimsAsync(_leagueState.Season, _leagueState.Week);
-                if (success)
-                {
-                    // Now, lets ONLY prompt the agents who submitted waiver claims to let them know which claims were successful and which were not, and update their rosters accordingly.
-                    var waiverResults = await GetWaiverClaimResults(_leagueState.Season, _leagueState.Week);
-                    if (waiverResults is null)
-                    {
-                        _logger.LogError("Failed to retrieve waiver claim results for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
-                        return;
-                    }
-
-                    foreach (var group in waiverResults.GroupBy(claim => claim.AgentId).ToList())
-                    {
-                        var agent = _agents.FirstOrDefault(a => a.GetAgentName() == group.Key);
-                        if (agent is null) { continue; }
-
-                        var payload = new
-                        {
-                            agentId = group.Key,
-                            season = _leagueState.Season,
-                            week = _leagueState.Week,
-                            phase = "free_agency",
-                            waiversProcessedAtUtc = group.Max(claim => claim.ProcessedAtUtc),
-                            claims = group
-                        };
-
-                        var prompt =
-                        $"""
-                        Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
-                        You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
-                        Use the `waiver-result-review` skill to review your waiver outcomes.
-                        Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
-                        Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
-
-                        Here are your waiver claim results for season {_leagueState.Season} week {_leagueState.Week}:
-                        {JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true })}
-                        """;
-
-                        var response = (await agent.RunAsync(prompt)).Response;
-                        
-                        await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster post Waiver", _logger);
-                    }
-
-                    
-                    // Then we will set the league state to free-agency, and the agents can start making roster moves outside of the waiver wire if they want to.
-                    _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState.Season, _leagueState.Week, "free_agency", "season-runner", _http, _logger);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to process waiver claims for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
-                }
-                return;
-            }
-            if (_leagueState?.Phase == "free_agency")
-            {
-                foreach(var agent in _agents)
-                {
-                    var agentId = agent.GetAgentName()!;
-                    var prompt =
-                    $"""
-                    Today is Wednesday of season {_leagueState.Season}, week {_leagueState.Week}, and the league is in free agency.
-                    You are {agentId}. Use this exact agent ID for every tool call.
-                    Use only the `weekly-player-management` skill to decide whether one meaningful free-agent add/drop would improve your roster.
-                    A no-change decision is valid. Do not modify agent profiles or bootstrap status.
-                    Return the skill's required decision summary as visible text, even when no change is made.
-                    """;
-                    var response = (await agent.RunAsync(prompt)).Response;
-                    await DecisionLogger.LogDecisionAsync(agentId, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-                }
-            }
-
-        }
-        if(dayOfWeek == DayOfWeek.Thursday)
-        {
-            _logger.LogInformation("Running Thursday tasks.");
-
-            // Thursday! This is the day when some games start, so we want to make sure the agents have set their lineups correctly for the games that are happening today.
-            // Also, later at night, maybe we run this again to get some scores, as well as lock the players who have played.
-            
-            // TODO: Turn this back on once we're ready to process weekly scores for Thursday games.
-            //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
-            //            if (!weeklyScoresSuccess)
-            //            {
-            //                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-            //                return;
-            //            }
-
-            // Still in free-agency, so agents can still make roster moves if they want to.
-            // Some games start on Thursday, so we will want to make sure the agents have set their lineups before the games start.
-            // We will want to do this before games start on Thursday.
-            if (_leagueState?.Phase == "free_agency")
-            {
-                foreach(var agent in _agents)
-                {
-                    var prompt =
-                    $"""
-                    Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
-                    We are still in the free-agency phase, however some players may have games today.
-                    This is your chance to make sure these players are set correctly for their games today.
-                    Remember, all your starting roster slots must be filled.
-                    Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                    When you're done, use the `roster-management` skill to update your lineup, if necessary.
-                    Return the skill's required decision summary as visible text, even when no change is made.
-                    """;
-
-                    var response = (await agent.RunAsync(prompt)).Response;
-                    await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-                }
-            }
-
-        }
-        if(dayOfWeek == DayOfWeek.Friday)
-        {
-            _logger.LogInformation("Running Friday tasks.");
-
-            // Friday! This is the day after the Thursday games, so we want to make sure the agents have set their lineups correctly for the games that are happening on Sunday and Monday.
-            // Nothing else really happens today.
-            
-            // TODO: Turn this back on! Lets process weekly scores for the Thursday games.
-            //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
-            //if (!weeklyScoresSuccess)
-            //{
-                //_logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-                //return;
-            //}
-
-            // Still in free-agency, so agents can make any last minute roster moves before the games start on Sunday and Monday.
-            // Players who are injured or questionable for the weekend games might get dropped on Friday, so this is the last chance for agents to pick them up before the games start.
-            // Players who played on Thursday are stuck where they are.
-            if (_leagueState?.Phase == "free_agency")
-            {
-                foreach(var agent in _agents)
-                {
-                    var prompt =
-                    $"""
-                    Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
-                    We are still in the free-agency phase, and while there are no games today, this is a quick oppertunity to make sure your roster is set correctly for the upcoming games on Sunday and Monday.
-                    Remember, all your starting roster slots must be filled.
-                    Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                    When you're done, use the `roster-management` skill to update your lineup, if necessary.
-                    Return the skill's required decision summary as visible text, even when no change is made.
-                    """;
-
-                    var response = (await agent.RunAsync(prompt)).Response;
-                    await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-                }
-            }
-        }
-        if(dayOfWeek == DayOfWeek.Saturday)
-        {
-            _logger.LogInformation("Running Saturday tasks.");
-
-            // It's Saturday! This is the day before the Sunday games, so agents have one last chance to make roster moves before the games start.
-            // Still in free-agency, so agents can make any last minute roster moves before the games start on Sunday and Monday.
-            // Players who are injured or questionable for the weekend games might get dropped on Friday, so this is the last chance for agents to pick them up before the games start.
-            // Players who played on Thursday are stuck where they are.
-
-            // TODO: Turn this back on. Why not do a sync.
-            //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            //if (weeklyScoresSuccess)
-            //{
-                //_logger.LogInformation("Successfully processed weekly scores for the week.");
-            //}
-
-            if (_leagueState?.Phase == "free_agency")
-            {
-                foreach(var agent in _agents)
-                {
-                    var prompt =
-                    $"""
-                    Today is Saturday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                    Your goal is to ensure you have the best possible roster for the upcoming games on Sunday and Monday. Do not worry about next week.
-                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
-                    We are still in the free-agency phase, however some players may have had games on Thursday, and if so, they will be locked in their current roster spots.
-                    This is one of your last chances to make any roster moves before the games start on Sunday and Monday.
-                    Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                    When you're done, use the `roster-management` skill to update your lineup.
-                    """;
-                    var response = (await agent.RunAsync(prompt)).Response;
-                    await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-                }
-            }
-        }
-        if(dayOfWeek == DayOfWeek.Sunday)
-        {
-            _logger.LogInformation("Running Sunday tasks.");
-
-            // It's Sunday! Games are starting today, so lets do one final oppertunity for the agents to set their lineups for the Sunday games before they start.
-            // TODO: Turn this back on once weekly scores processing is needed.
-            //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            //if (weeklyScoresSuccess)
-            //{
-                //_logger.LogInformation("Successfully processed weekly scores for the week.");
-            //}
-
-            // Only lineup changes are allowed on Sunday, so agents can only set their lineups for the Sunday games, but they can't make any roster moves.
-            // Lets set the league state to games_locked, since the games start on Sunday, and we want to make sure the agents have set their lineups before the games start.
-            _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState?.Season, _leagueState?.Week, "games_locked", "season-runner", _http, _logger);
-
-
-            foreach(var agent in _agents)
-            {
-                var prompt =
-                $"""
-                Today is Sunday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
-                There are games starting today, so this is your last chance to set your lineups for the Sunday games.
-                Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
-                This is a lineup-only run. Do not add, drop, or claim players.
-                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
-                """;
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-            }
-
-        }
-        if(dayOfWeek == DayOfWeek.Monday)
-        {
-            // Only lineup changes are allowed on Monday, so agents can only set their lineups for the Monday game, but they can't make any roster moves.
-            // We will want to make sure the agents have set their lineups before the game starts on Monday.
-            // TODO: Wire in a prompt to remind the agents to set their lineups for the Monday game if they haven't already, since the last game starts on Monday night.
-            _logger.LogInformation("Running Monday tasks.");
-
-            bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-            if (weeklyScoresSuccess)
-            {
-                _logger.LogInformation("Successfully processed weekly scores for the week.");
+                _logger.LogInformation("Running Wednesday morning tasks.");
+                await RunWednesdayAsync();
             }
             else
             {
-                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-                return;
+                _logger.LogInformation("Running Wednesday afternoon tasks.");
+                await RunWednesdayAsync();
             }
+        }
+        
+        if(dayOfWeek == DayOfWeek.Thursday)
+        {
+            await RunThursdayAsync();
+        }
+        
+        if(dayOfWeek == DayOfWeek.Friday)
+        {
+            await RunFridayAsync();
+        }
 
-            
-            foreach(var agent in _agents)
-            {
-                var prompt =
-                $"""
-                Today is Monday of season {_leagueState.Season}, Week {_leagueState.Week}.
-                You are {agent.GetAgentName()}; use this exact ID for every tool call.
-                It's likely most, if not all your players have played, but if any of your players have not played yet, you can still set your lineup for the Monday game.
-                Only compare and move players who have not played and are still unlocked.
-                Locked starters will not be able to be moved, and locked bench players will not be able to be moved.
-                Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
-                """;
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
-            }
+        if(dayOfWeek == DayOfWeek.Saturday)
+        {
+            await RunSaturdayAsync();
+        }
+
+        if(dayOfWeek == DayOfWeek.Sunday)
+        {
+            await RunSundayAsync();
+        }
+
+        if(dayOfWeek == DayOfWeek.Monday)
+        {
+            await RunMondayAsync();
         }
     }
 
@@ -427,20 +142,26 @@ public class SeasonRunner
 
         // Then, we finalize the matchups for the current week to ensure all results are recorded.
         // This "locks in" the results for the week, ensuring that the matchups are finalized and no further changes can be made to the scores or outcomes.
-        var finalized = await FinalizeMatchupsForWeekAsync(_leagueState.Season, _leagueState.Week);
-        if (!finalized)
+        var finalization = await FinalizeMatchupsForWeekAsync(_leagueState.Season, _leagueState.Week);
+        if (finalization is null) {return; }
+        if (finalization.SeasonCompleted)
         {
-            _logger.LogError($"Matchup finalization failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            _leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, _logger);
+            _logger.LogInformation("Season {Season} is complete.", _leagueState.Season);
             return;
         }
+
         _logger.LogInformation($"✅ Matchups finalized for season {_leagueState.Season}, week {_leagueState.Week}.");
 
-        // Then we will advance the league state to the next week, and set the phase to waiver-wire, so the agents can make any waiver claims they want to for the new week.
         int completedWeek = _leagueState.Week;
+        _leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, _logger);
+        var activeAgents = await GetActiveAgentsAsync();
+
+        // Then we will advance the league state to the next week, and set the phase to waiver-wire, so the agents can make any waiver claims they want to for the new week.
         int week = completedWeek + 1;
         _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState.Season, week, "waiver_window", "season-runner", _http, _logger);
 
-        foreach(var agent in _agents)
+        foreach(var agent in activeAgents)
         {
             var reflectionPrompt =
             $"""
@@ -457,7 +178,7 @@ public class SeasonRunner
         }
 
         // Then we will prompt the agents to evaluate whether they should make waiver claims.
-        foreach(var agent in _agents)
+        foreach(var agent in activeAgents)
         {
             var prompt =
             $"""
@@ -482,6 +203,8 @@ public class SeasonRunner
         // Planning on running this twice a day, first in the morning, an then again in the afternoon.
         if (_leagueState?.Phase == "waiver_window")
         {
+            var activeAgents = await GetActiveAgentsAsync();
+            var activeAgentsById = activeAgents.ToDictionary(agent => agent.GetAgentName()!, StringComparer.Ordinal);
             bool success = await ProcessWaiverClaimsAsync(_leagueState.Season, _leagueState.Week);
             if (success)
             {
@@ -495,8 +218,7 @@ public class SeasonRunner
 
                 foreach (var group in waiverResults.GroupBy(claim => claim.AgentId).ToList())
                 {
-                    var agent = _agents.FirstOrDefault(a => a.GetAgentName() == group.Key);
-                    if (agent is null) { continue; }
+                    if (!activeAgentsById.TryGetValue(group.Key, out var agent)) { continue; }
 
                     var payload = new
                     {
@@ -536,7 +258,8 @@ public class SeasonRunner
         }
         if (_leagueState?.Phase == "free_agency")
         {
-            foreach(var agent in _agents)
+            var activeAgents = await GetActiveAgentsAsync();
+            foreach(var agent in activeAgents)
             {
                 var agentId = agent.GetAgentName()!;
                 var prompt =
@@ -555,12 +278,83 @@ public class SeasonRunner
 
     private async Task RunThursdayAsync()
     {
-        // Implementation for Thursday tasks goes here.
+        _logger.LogInformation("Running Thursday tasks.");
+
+        // Thursday! This is the day when some games start, so we want to make sure the agents have set their lineups correctly for the games that are happening today.
+        // Also, later at night, maybe we run this again to get some scores, as well as lock the players who have played.
+        
+        // TODO: Turn this back on once we're ready to process weekly scores for Thursday games.
+        //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+        //            if (!weeklyScoresSuccess)
+        //            {
+        //                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+        //                return;
+        //            }
+
+        // Still in free-agency, so agents can still make roster moves if they want to.
+        // Some games start on Thursday, so we will want to make sure the agents have set their lineups before the games start.
+        // We will want to do this before games start on Thursday.
+        if (_leagueState?.Phase == "free_agency")
+        {
+            var activeAgents = await GetActiveAgentsAsync();
+            foreach(var agent in activeAgents)
+            {
+                var prompt =
+                $"""
+                Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                We are still in the free-agency phase, however some players may have games today.
+                This is your chance to make sure these players are set correctly for their games today.
+                Remember, all your starting roster slots must be filled.
+                Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
+                When you're done, use the `roster-management` skill to update your lineup, if necessary.
+                Return the skill's required decision summary as visible text, even when no change is made.
+                """;
+
+                var response = (await agent.RunAsync(prompt)).Response;
+                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+            }
+        }
     }
 
     private async Task RunFridayAsync()
     {
-        // Implementation for Friday tasks goes here.
+        _logger.LogInformation("Running Friday tasks.");
+
+        // Friday! This is the day after the Thursday games, so we want to make sure the agents have set their lineups correctly for the games that are happening on Sunday and Monday.
+        // Nothing else really happens today.
+        
+        // TODO: Turn this back on! Lets process weekly scores for the Thursday games.
+        //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+        //if (!weeklyScoresSuccess)
+        //{
+            //_logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            //return;
+        //}
+
+        // Still in free-agency, so agents can make any last minute roster moves before the games start on Sunday and Monday.
+        // Players who are injured or questionable for the weekend games might get dropped on Friday, so this is the last chance for agents to pick them up before the games start.
+        // Players who played on Thursday are stuck where they are.
+        if (_leagueState?.Phase == "free_agency")
+        {
+            var activeAgents = await GetActiveAgentsAsync();
+            foreach(var agent in activeAgents)
+            {
+                var prompt =
+                $"""
+                Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
+                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                We are still in the free-agency phase, and while there are no games today, this is a quick oppertunity to make sure your roster is set correctly for the upcoming games on Sunday and Monday.
+                Remember, all your starting roster slots must be filled.
+                Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
+                When you're done, use the `roster-management` skill to update your lineup, if necessary.
+                Return the skill's required decision summary as visible text, even when no change is made.
+                """;
+
+                var response = (await agent.RunAsync(prompt)).Response;
+                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+            }
+        }
     }
 
     private async Task RunSaturdayAsync()
@@ -581,7 +375,8 @@ public class SeasonRunner
 
         if (_leagueState?.Phase == "free_agency")
         {
-            foreach(var agent in _agents)
+            var activeAgents = await GetActiveAgentsAsync();
+            foreach(var agent in activeAgents)
             {
                 var prompt =
                 $"""
@@ -616,7 +411,8 @@ public class SeasonRunner
         _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState?.Season, _leagueState?.Week, "games_locked", "season-runner", _http, _logger);
 
 
-        foreach(var agent in _agents)
+        var activeAgents = await GetActiveAgentsAsync();
+        foreach(var agent in activeAgents)
         {
             var prompt =
             $"""
@@ -632,6 +428,7 @@ public class SeasonRunner
         }
 
     }
+    
     private async Task RunMondayAsync()
     {
         // Only lineup changes are allowed on Monday, so agents can only set their lineups for the Monday game, but they can't make any roster moves.
@@ -653,8 +450,9 @@ public class SeasonRunner
         // Only lineup changes are allowed on Sunday, so agents can only set their lineups for the Sunday games, but they can't make any roster moves.
         // Lets set the league state to games_locked, since the games start on Sunday, and we want to make sure the agents have set their lineups before the games start.
         _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState?.Season, _leagueState?.Week, "games_locked", "season-runner", _http, _logger);
-            
-        foreach(var agent in _agents)
+        
+        var activeAgents = await GetActiveAgentsAsync();
+        foreach(var agent in activeAgents)
         {
             var prompt =
             $"""
@@ -753,18 +551,35 @@ public class SeasonRunner
         return waiverResults;
     }
 
-    private async Task<bool> FinalizeMatchupsForWeekAsync(int season, int week)
+    private async Task<StageAwareFinalizeResult?> FinalizeMatchupsForWeekAsync(int season, int week)
     {
-        var response = await _http.PostAsync($"api/league/matchups/{season}/{week}/finalize", null);
+        var response = await _http.PostAsync($"api/league/seasons/{season}/weeks/{week}/finalize", null);
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync();
             _logger.LogError("Failed to finalize matchups for season {Season}, week {Week}. Status code: {StatusCode}. Response: {Response}", season, week, response.StatusCode, error);
-            return false;
+            return null;
         }
 
         _logger.LogInformation("Finalized matchups for season {Season}, week {Week}.", season, week);
-        return true;
+        return await response.Content.ReadFromJsonAsync<StageAwareFinalizeResult>();
+    }
+
+    private async Task<IReadOnlyList<FantasyAgent>> GetActiveAgentsAsync()
+    {
+        var response = await _http.GetAsync($"api/league/seasons/{_leagueState.Season}/playoffs/eligibility");
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Could not load playoff eligibility: {error}");
+        }
+
+        var eligibility = await response.Content.ReadFromJsonAsync<PlayoffEligibilityResult>() ?? throw new InvalidOperationException("Playoff eligibility response was empty.");
+
+        var activeIds = eligibility.ActiveAgentIds.ToHashSet(StringComparer.Ordinal);
+
+        return _agents.Where(agent => activeIds.Contains(agent.GetAgentName()!)).ToList();
     }
 
     private sealed record WaiverAgentSummary(
@@ -795,4 +610,8 @@ public class SeasonRunner
     private sealed record WaiverPlayerSummary(string SleeperPlayerId, string? FullName, string? Team, string? Position);
 
     private sealed record FantasyProsPointsSyncStatus(int Season, int EndWeek, string? Status, int? RecordCount, DateTimeOffset? CompletedAtUtc);
+
+    private sealed record StageAwareFinalizeResult(bool LockedBracket, bool AdvancedRound, bool SeasonCompleted);
+
+    private sealed record PlayoffEligibilityResult(IReadOnlyList<string> ActiveAgentIds);
 }

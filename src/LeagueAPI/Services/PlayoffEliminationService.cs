@@ -77,7 +77,7 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
 
         // Non-playoff teams are eliminated the moment the bracket locks; they never appear in seeds.
         foreach (var agentId in allAgentIds.Where(agentId => !statusesByAgentId.ContainsKey(agentId)))
-            statusesByAgentId[agentId] = new AgentStatus(null, PlayoffEliminationReasons.NotInPlayoffs);
+            statusesByAgentId[agentId] = new AgentStatus(null, PlayoffParticipantStatuses.Eliminated, PlayoffEliminationReasons.NotInPlayoffs);
 
         var seedsByAgentId = seedEntities.ToDictionary(seed => seed.AgentId, seed => seed.Seed);
         var resolvedGames = gameEntities.Select(game => ResolvedGame.From(game, matchups, seedsByAgentId)).Where(game => game is not null).Select(game => game!).OrderBy(game => Array.IndexOf(PlayoffRounds.All, game.Round)).ThenBy(game => game.GameSlot).ToList();
@@ -162,11 +162,11 @@ public sealed class PlayoffEliminationService(IDbContextFactory<LeagueApiDbConte
             throw new ArgumentException("agentId is required.", nameof(agentId));
     }
 
-    private sealed class AgentStatus(int? seed, string reason = PlayoffEliminationReasons.InContention)
+    private sealed class AgentStatus(int? seed, string status = PlayoffParticipantStatuses.Active, string reason = PlayoffEliminationReasons.InContention)
     {
         public int? Seed { get; } = seed;
 
-        public string Status { get; private set; } = PlayoffParticipantStatuses.Active;
+        public string Status { get; private set; } = status;
 
         public string Reason { get; private set; } = reason;
 

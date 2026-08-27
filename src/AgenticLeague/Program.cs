@@ -81,16 +81,9 @@ await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
 // Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
 logger.LogInformation("testing.");
-//var testAgents = agents.Where(a => a.GetAgentName() == "player-08" || a.GetAgentName() == "player-09" || a.GetAgentName() == "player-10").ToList();
-//var prompt = """test""";
-//var testAgent = agents.First(agent => agent.GetAgentName() == "player-03");
-//var testResponse = await agents.RunAsync("Look at your roster, and tell me if your starting roster is full or not. If it is, respond with 'Starting roster is full.'. If it is not, respond with what position is missing a starting player and which bench player you would fill it with. Don't make any moves, just evaluate. You MUST provide a response.");
-//Console.WriteLine($"Response from Player 1: {testResponse.Response}");
 
 
 await RunTestWeekAsync(agents, host, _http, _scoresHttp, leagueState);
-var remainingCreditsAfter = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
-logger.LogInformation("Total Credits Used: " + (remainingCredits - remainingCreditsAfter));
 
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
@@ -141,3 +134,4 @@ static async Task RunTestWeekAsync(List<FantasyAgent> agents, IHost host, HttpCl
     await seasonRunner.RunTestWeekAsync();
     testWeekLogger.LogInformation("🎉 Test week runner completed.");
 }
+
