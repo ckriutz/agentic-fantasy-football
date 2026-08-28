@@ -1,16 +1,29 @@
+using AgenticLeague.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-var builder = Host.CreateApplicationBuilder(args);
+// First, determine the mode in which the application should run (e.g., test mode).
+// If we mess this up we might as well abort immediately.
+string? mode;
+try
+{
+    mode = GetMode(args);
+}
+catch (ArgumentException ex)
+{
+    Console.Error.WriteLine(ex.Message);
+    return;
+}
 
+// Lets set up the application.
+var builder = Host.CreateApplicationBuilder(args);
 var host = builder.Build();
 var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
 HttpClient _http = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("API_BASE_URL")) };
-HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
 
 logger.LogInformation("Booting up Agentic Fantasy Football League...");
 // I want to print out a few things before we start the league, just to make sure everything is working correctly.
@@ -38,9 +51,6 @@ catch (Exception ex)
     return;
 }
 
-// Now the current leauge state. This is important because we want to make sure the league is in the correct state before we start running the agents.
-var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
-
 var creditCheckTool = new CreditCheckTool();
 var creditsResponse = await creditCheckTool.GetRemainingCreditsAsync(EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY"));
 var remainingCredits = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
@@ -52,39 +62,107 @@ if(remainingCredits < 2)
     return;
 }
 
-logger.LogInformation("✅ All checks passed. API is healthy, and league state is valid. Current league phase: " + leagueState.Phase);
+logger.LogInformation("✅ All checks passed. API is healthy.");
 logger.LogInformation("🏈 Starting Agentic Fantasy Football League!");
 
-// Load all the agents, and initialze them.
-var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
-response.EnsureSuccessStatusCode();
-var agentProfilesJson = await response.Content.ReadAsStringAsync();
-var agentProfiles = System.Text.Json.JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-List<FantasyAgent> agents = new List<FantasyAgent>();
-var fantasyAgentLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FantasyAgent>();
+List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
 
-logger.LogInformation("🤖 Initializing agents...");
-foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
+// Now we go though each option for the mode, and run those methods.
+if (string.Equals(mode, "test", StringComparison.OrdinalIgnoreCase))
 {
-    // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
-    // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
-    var fantasyAgent = new FantasyAgent(agentConfig, fantasyAgentLogger, _http);
-    await fantasyAgent.InitializeAsync();
-    await fantasyAgent.EnsureBootstrappedAsync();
-    agents.Add(fantasyAgent);
+    AgentProfile tProfile = new AgentProfile();
+    tProfile.IsEnabled = true;
+    tProfile.AgentId = "TestAgentMeta";
+    tProfile.Connection = "OpenRouter";
+    tProfile.ModelName = "meta/muse-spark-1.2-contributor";
+    
+    FantasyAgent testAgent = new FantasyAgent(tProfile, host.Services.GetRequiredService<ILogger<FantasyAgent>>(), _http);
+
+    await testAgent.InitializeAsync();
+    await testAgent.EnsureBootstrappedAsync();
+    return;
 }
 
-logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Count);
+if (string.Equals(mode, "echo", StringComparison.OrdinalIgnoreCase))
+{
+    var testAgent = agents.FirstOrDefault(a => a.GetAgentName() == "player-02");
+    var result = await testAgent.RunAsync("Look though your bootstrap and give me a 3 sentence summary of your strategy.");
+    logger.LogInformation("Agent {AgentId} produced response: {Response}", testAgent.GetAgentName(), result.Response.Text?.Trim());
+    return;
+}
+
+// Now the current leauge state. This is important because we want to make sure the league is in the correct state before we start running the agents.
+var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
+HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
+logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
 
 // Now to run the draft, if the league is in the drafting phase. If not, we can skip this step and move on to the season runner.
 await RunDraftAsync(agents, leagueState.Phase, _http, host);
 
-// Since I'm casaully testing, I don't want to pass ALL the agents in, just a few.
-logger.LogInformation("testing.");
-
-
 await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
 
+static string? GetMode(string[] arguments)
+{
+    string? mode = null;
+
+    for (var index = 0; index < arguments.Length; index++)
+    {
+        var argument = arguments[index];
+        string? value = null;
+
+        if (string.Equals(argument, "--mode", StringComparison.OrdinalIgnoreCase))
+        {
+            if (index + 1 >= arguments.Length || arguments[index + 1].StartsWith("--", StringComparison.Ordinal))
+                throw new ArgumentException("The --mode option requires a value. Supported mode: test.");
+
+            value = arguments[++index];
+        }
+        else if (argument.StartsWith("--mode=", StringComparison.OrdinalIgnoreCase))
+        {
+            value = argument["--mode=".Length..];
+        }
+
+        if (value is null)
+            continue;
+        if (mode is not null)
+            throw new ArgumentException("The --mode option can only be supplied once.");
+
+        mode = value.Trim().ToLowerInvariant();
+    }
+
+    // Here are the supported modes for the application. Currently, "test" and "echo" are supported.
+
+    if (mode is not null && mode != "test" && mode != "echo")
+        throw new ArgumentException($"Unsupported mode '{mode}'. Supported modes: test, echo.");
+
+    return mode;
+}
+
+static async Task<List<FantasyAgent>> LoadAgentsAsync(HttpClient _http, IHost host, ILogger logger)
+{
+    // Load all the agents, and initialze them.
+    var response = await _http.GetAsync("api/agent-profiles?enabledOnly=false");
+    response.EnsureSuccessStatusCode();
+    var agentProfilesJson = await response.Content.ReadAsStringAsync();
+    var agentProfiles = JsonSerializer.Deserialize<List<AgenticLeague.Models.AgentProfile>>(agentProfilesJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+    List<FantasyAgent> agents = new List<FantasyAgent>();
+    var fantasyAgentLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<FantasyAgent>();
+
+    logger.LogInformation("🤖 Initializing agents...");
+    foreach (var agentConfig in agentProfiles.Where(p => p.IsEnabled))
+    {
+        // In this loop, we're connecting to all the agents, and making sure they're initialized and bootstrapped before we start the league.
+        // This is important because we want to make sure all agents are ready to go before we start the draft, and it also allows us to catch any issues with initialization or bootstrapping early on.
+        var fantasyAgent = new FantasyAgent(agentConfig, fantasyAgentLogger, _http);
+        await fantasyAgent.InitializeAsync();
+        await fantasyAgent.EnsureBootstrappedAsync();
+
+        agents.Add(fantasyAgent);
+    }
+
+    logger.LogInformation("✅ Success! Number of agents initialized: " + agents.Count);
+    return agents;
+}
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
 {

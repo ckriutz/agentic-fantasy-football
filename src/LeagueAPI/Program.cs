@@ -205,7 +205,7 @@ app.MapPatch("/api/agent-profiles/{agentId}/team-name", async (
     try
     {
         var profile = await agentProfileWriter.SetTeamNameAsync(agentId, request.TeamName, cancellationToken);
-        return profile is null ? Results.NotFound() : Results.Ok(profile);
+        return Results.Ok(profile);
     }
     catch (ArgumentException ex)
     {
@@ -222,7 +222,7 @@ app.MapPatch("/api/agent-profiles/{agentId}/bootstrap-status", async (
     try
     {
         var profile = await agentProfileWriter.SetBootstrapStatusAsync(agentId, request.IsBootstrapped, cancellationToken);
-        return profile is null ? Results.NotFound() : Results.Ok(profile);
+        return Results.Ok(profile);
     }
     catch (ArgumentException ex)
     {

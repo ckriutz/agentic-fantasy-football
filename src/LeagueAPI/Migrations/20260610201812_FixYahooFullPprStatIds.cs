@@ -15,7 +15,8 @@ namespace LeagueAPI.Migrations
                 WHERE "TemplateKey" = 'full-ppr';
 
                 INSERT INTO scoring_template_rules ("TemplateKey", "StatId", "StatName", "Modifier")
-                VALUES
+                SELECT *
+                FROM (VALUES
                     ('full-ppr', 4, 'Passing Yards', 0.04),
                     ('full-ppr', 5, 'Passing Touchdowns', 4.0),
                     ('full-ppr', 6, 'Interceptions', -1.0),
@@ -48,7 +49,13 @@ namespace LeagueAPI.Migrations
                     ('full-ppr', 51, 'Points Allowed 1-6', 7.0),
                     ('full-ppr', 52, 'Points Allowed 7-13', 4.0),
                     ('full-ppr', 53, 'Points Allowed 14-20', 1.0),
-                    ('full-ppr', 54, 'Points Allowed 21-27', 0.0);
+                    ('full-ppr', 54, 'Points Allowed 21-27', 0.0)
+                ) AS rules ("TemplateKey", "StatId", "StatName", "Modifier")
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM scoring_templates
+                    WHERE "TemplateKey" = 'full-ppr'
+                );
 
                 UPDATE scoring_templates
                 SET "UpdatedAtUtc" = TIMESTAMPTZ '2026-06-10 20:18:12+00'
@@ -64,7 +71,8 @@ namespace LeagueAPI.Migrations
                 WHERE "TemplateKey" = 'full-ppr';
 
                 INSERT INTO scoring_template_rules ("TemplateKey", "StatId", "StatName", "Modifier")
-                VALUES
+                SELECT *
+                FROM (VALUES
                     ('full-ppr', 4, 'Passing Yards', 0.04),
                     ('full-ppr', 5, 'Passing Touchdowns', 4.0),
                     ('full-ppr', 6, 'Interceptions', -1.0),
@@ -99,7 +107,13 @@ namespace LeagueAPI.Migrations
                     ('full-ppr', 65, 'FG Missed 20-29 Yards', 0.0),
                     ('full-ppr', 66, 'FG Missed 30-39 Yards', 0.0),
                     ('full-ppr', 67, 'FG Missed 40-49 Yards', 0.0),
-                    ('full-ppr', 68, 'FG Missed 50+ Yards', 0.0);
+                    ('full-ppr', 68, 'FG Missed 50+ Yards', 0.0)
+                ) AS rules ("TemplateKey", "StatId", "StatName", "Modifier")
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM scoring_templates
+                    WHERE "TemplateKey" = 'full-ppr'
+                );
 
                 UPDATE scoring_templates
                 SET "UpdatedAtUtc" = TIMESTAMPTZ '2026-04-23 21:57:16.482314+00'

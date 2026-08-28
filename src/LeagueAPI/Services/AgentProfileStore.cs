@@ -85,43 +85,47 @@ public sealed class AgentProfileStore(IDbContextFactory<LeagueApiDbContext> dbCo
         return profile;
     }
 
-    public async Task<AgentProfile?> SetTeamNameAsync(string agentId, string teamName, CancellationToken cancellationToken)
+    public async Task<AgentProfile> SetTeamNameAsync(string agentId, string teamName, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeAgentId(agentId);
         var normalizedTeamName = NormalizeRequired(teamName, nameof(teamName), MaxTeamNameLength);
+        var now = DateTimeOffset.UtcNow;
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var profile = await dbContext.AgentProfiles
-            .FirstOrDefaultAsync(row => row.AgentId == normalizedAgentId, cancellationToken);
-
-        if (profile is null)
-            return null;
+        var profile = await GetOrCreatePlaceholderProfileAsync(dbContext, normalizedAgentId, now, cancellationToken);
 
         profile.TeamName = normalizedTeamName;
-        profile.LastUpdatedAt = DateTimeOffset.UtcNow;
-
+        profile.LastUpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken);
         return profile;
     }
 
-    public async Task<AgentProfile?> SetBootstrapStatusAsync(string agentId, bool isBootstrapped, CancellationToken cancellationToken)
+    public async Task<AgentProfile> SetBootstrapStatusAsync(string agentId, bool isBootstrapped, CancellationToken cancellationToken)
     {
         var normalizedAgentId = NormalizeAgentId(agentId);
+        var now = DateTimeOffset.UtcNow;
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var profile = await dbContext.AgentProfiles
-            .FirstOrDefaultAsync(row => row.AgentId == normalizedAgentId, cancellationToken);
-
-        if (profile is null)
-            return null;
+        var profile = await GetOrCreatePlaceholderProfileAsync(dbContext, normalizedAgentId, now, cancellationToken);
 
         profile.IsBootstrapped = isBootstrapped;
-        profile.LastUpdatedAt = DateTimeOffset.UtcNow;
-
+        profile.LastUpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken);
         return profile;
+    }
+
+    private static async Task<AgentProfile> GetOrCreatePlaceholderProfileAsync(LeagueApiDbContext dbContext, string agentId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO agent_profiles ("AgentId", "TeamName", "ModelName", "Connection", "CreatedAtUtc", "LastUpdatedAt", "IsBootstrapped", "IsEnabled")
+            VALUES ({agentId}, '', '', '', {now}, {now}, FALSE, FALSE)
+            ON CONFLICT ("AgentId") DO NOTHING
+            """,
+            cancellationToken);
+
+        return await dbContext.AgentProfiles
+            .SingleAsync(profile => profile.AgentId == agentId, cancellationToken);
     }
 
     private static string NormalizeAgentId(string agentId)

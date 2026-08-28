@@ -3,7 +3,7 @@ name: agent-bootstrap
 description: Initialize or validate an agent's durable fantasy-football identity, bootstrap file, team name, strategy, and logo. Use only when explicitly asked to bootstrap an agent or verify bootstrap readiness.
 metadata:
   author: agentic-league
-  version: "1.1"
+  version: "1.2"
   domain: fantasy-football
 ---
 
@@ -33,8 +33,8 @@ The task supplies the `agentId`. Use that exact value for `ReadAgentBootstrap`, 
    ✅ <team name> is bootstrapped and ready to go!
    ```
 
-4. If the file does not exist, choose a creative team name. It may be fantasy-football, sports, or otherwise inspirational themed, but it must not contain the word `Gridiron` in any capitalization.
-5. Create a substantive winning strategy covering the core philosophy, draft strategy, and in-season operating plan.
+4. If the file does not exist, choose a creative team name. It may be fantasy-football, sports, or otherwise inspirational themed, but it must not contain the word `Gridiron` in any capitalization. The model you're running on can be an insperation as well for your team name.
+5. Create a substantive winning strategy covering the core philosophy, draft strategy, and in-season operating plan. Use the [strategy example](references/strategies.md) as a guide, but this is for reference. You are not **required** to follow it verbatim.
 6. Call `GenerateImage` with a concise logo description based on the team name and winning strategy. The logo must be simple and suitable for a fantasy-football website. Keep the filename returned by the tool.
 7. Call `SetMyTeamName(agentId, teamName)`.
 8. Build a complete bootstrap document using the template below and [bootstrap memory example](references/bootstrap-memory-example.md). Include relevant facts from `league-rules.md`, but do not invent player names, roster information, or past decisions. Include the actual logo filename returned by `GenerateImage`; never write `Pending` as a logo path.
@@ -69,7 +69,6 @@ Use [league rules](references/league-rules.md) when creating or repairing the `#
 ## Identity
 - **Team Name**: <Team Name>
 - **Agent ID**: <agentId>
-- **Logo Path**: <generated filename>
 
 ## League Settings
 - <Known league rules and scoring settings only>

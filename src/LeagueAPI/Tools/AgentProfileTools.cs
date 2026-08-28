@@ -17,7 +17,7 @@ public sealed class AgentProfileTools(IAgentProfileReader agentProfileReader, IA
         return await _agentProfileReader.GetAgentProfileAsync(agentId, CancellationToken.None);
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Updates the agent's team name in the database. Call this after choosing a team name during bootstrap. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
+    [McpServerTool(UseStructuredContent = true), Description("Creates the agent's disabled profile when needed, then updates its team name in the database. Call this after choosing a team name during bootstrap. A newly created profile has blank model and connection values until configured separately. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<AgentProfile, AgentProfileErrorDetails>> SetMyTeamName(
         [Description("The agent ID, such as player-01.")] string agentId,
         [Description("The team name chosen by the agent.")] string teamName)
@@ -25,15 +25,6 @@ public sealed class AgentProfileTools(IAgentProfileReader agentProfileReader, IA
         try
         {
             var profile = await _agentProfileWriter.SetTeamNameAsync(agentId, teamName, CancellationToken.None);
-            if (profile is null)
-            {
-                return ToolResult<AgentProfile, AgentProfileErrorDetails>.Failure(
-                    "agent_not_found",
-                    $"No agent profile exists for '{agentId}'.",
-                    new AgentProfileErrorDetails { AgentId = agentId, TeamName = teamName },
-                    "Call GetMyProfile to confirm your agent ID, then retry with a valid agent.");
-            }
-
             return ToolResult<AgentProfile, AgentProfileErrorDetails>.Success(profile);
         }
         catch (ArgumentException exception)
@@ -46,7 +37,7 @@ public sealed class AgentProfileTools(IAgentProfileReader agentProfileReader, IA
         }
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Updates the agent's bootstrap status in the database. Set to true once the bootstrap file, team name, and logo have been created. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
+    [McpServerTool(UseStructuredContent = true), Description("Creates the agent's disabled profile when needed, then updates its bootstrap status in the database. Set to true once the bootstrap file, team name, and logo have been created. A newly created profile has blank model and connection values until configured separately. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
     public async Task<ToolResult<AgentProfile, AgentProfileErrorDetails>> SetMyBootstrapStatus(
         [Description("The agent ID, such as player-01.")] string agentId,
         [Description("True when bootstrap is complete.")] bool isBootstrapped)
@@ -54,15 +45,6 @@ public sealed class AgentProfileTools(IAgentProfileReader agentProfileReader, IA
         try
         {
             var profile = await _agentProfileWriter.SetBootstrapStatusAsync(agentId, isBootstrapped, CancellationToken.None);
-            if (profile is null)
-            {
-                return ToolResult<AgentProfile, AgentProfileErrorDetails>.Failure(
-                    "agent_not_found",
-                    $"No agent profile exists for '{agentId}'.",
-                    new AgentProfileErrorDetails { AgentId = agentId },
-                    "Call GetMyProfile to confirm your agent ID, then retry with a valid agent.");
-            }
-
             return ToolResult<AgentProfile, AgentProfileErrorDetails>.Success(profile);
         }
         catch (ArgumentException exception)
