@@ -79,6 +79,7 @@ builder.Services.AddSingleton<StageAwareFinalizationService>();
 builder.Services.AddSingleton<PlayoffEliminationService>();
 builder.Services.AddSingleton<PlayerGameLockService>();
 builder.Services.AddSingleton<WaiverService>();
+builder.Services.AddSingleton<RosterMoveService>();
 
 builder.Services.AddSingleton<PlayerCatalogStore>();
 builder.Services.AddSingleton<IPlayerCatalogReader>(serviceProvider =>
@@ -90,6 +91,7 @@ builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
     .WithTools<PlayerCatalogTools>()
     .WithTools<RosterTools>()
+    .WithTools<RosterMoveTools>()
     .WithTools<WaiverTools>()
     .WithTools<AgentProfileTools>()
     .WithTools<LeagueStateTools>()
@@ -112,7 +114,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/players/roster-status?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
         "/api/players/available?name=&team=&position=&byeWeek=&limit=",
         "/api/rosters/{agentId}",
-        "/api/rosters/{agentId}/players/{sleeperPlayerId}?acquisitionSource=",
+        "/api/league/roster-moves (POST: agentId, addSleeperPlayerId, dropSleeperPlayerId)",
         "/api/rosters/{agentId}/players/{sleeperPlayerId}/slot?slotType=",
         "/api/rosters/{agentId}/lineup/auto",
         "/api/sync/sleeper/latest",
@@ -146,10 +148,8 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/waivers/priority/seed (POST: seed from draft order, ?force=true to reset)",
         "/api/league/waivers/{season}/{week} (GET: claims, ?agentId= to filter)",
         "/api/league/waivers/{season}/{week}/agents/{agentId}/summary",
-        "/api/league/waivers/{season}/{week}/claims (POST: submit prioritized claim list)",
         "/api/league/waivers/{season}/{week}/process (POST: run waiver processing)",
-        "/api/league/waivers/{season}/{week}/status (GET: has week been processed?)",
-        "/api/league/free-agents/{season}/{week}/add (POST: immediate free-agent add/drop)"
+        "/api/league/waivers/{season}/{week}/status (GET: has week been processed?)"
     }
 }));
 
@@ -682,45 +682,23 @@ app.MapGet("/api/players/{sleeperPlayerId}/availability", async (
     }
 });
 
-app.MapPost("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
-    string agentId,
-    string sleeperPlayerId,
-    string? acquisitionSource,
-    IRosterWriter rosterWriter,
+app.MapPost("/api/league/roster-moves", async (
+    MakeRosterMoveRequest request,
+    RosterMoveService rosterMoveService,
     CancellationToken cancellationToken) =>
 {
     try
     {
-        var player = await rosterWriter.AddPlayerToRosterAsync(
-            agentId,
-            sleeperPlayerId,
-            string.IsNullOrWhiteSpace(acquisitionSource) ? "manual" : acquisitionSource,
+        var result = await rosterMoveService.MakeRosterMoveAsync(
+            request.AgentId,
+            request.AddSleeperPlayerId,
+            request.DropSleeperPlayerId,
+            request.AcquisitionSource,
             cancellationToken);
 
-        return Results.Ok(player);
+        return Results.Ok(result);
     }
-    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
-app.MapDelete("/api/rosters/{agentId}/players/{sleeperPlayerId}", async (
-    string agentId,
-    string sleeperPlayerId,
-    IRosterWriter rosterWriter,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var player = await rosterWriter.RemovePlayerFromRosterAsync(
-            agentId,
-            sleeperPlayerId,
-            cancellationToken);
-
-        return Results.Ok(player);
-    }
-    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
         return CreateDomainErrorResult(ex);
     }
@@ -983,25 +961,6 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}", async (
     return Results.Ok(claims);
 });
 
-app.MapPost("/api/league/waivers/{season:int}/{week:int}/claims", async (
-    int season,
-    int week,
-    SubmitWaiverClaimsRequest request,
-    WaiverService waiverService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var claims = await waiverService.SubmitWaiverClaimsAsync(
-            request.AgentId, season, week, request.Claims, cancellationToken);
-        return Results.Ok(claims);
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or RosterPlayerNotFoundException or RosterConflictException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
 app.MapPost("/api/league/waivers/{season:int}/{week:int}/process", async (
     int season,
     int week,
@@ -1044,25 +1003,6 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}/agents/{agentId}/summary
     catch (ArgumentException ex)
     {
         return Results.BadRequest(new { error = ex.Message });
-    }
-});
-
-app.MapPost("/api/league/free-agents/{season:int}/{week:int}/add", async (
-    int season,
-    int week,
-    AddFreeAgentRequest request,
-    WaiverService waiverService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var result = await waiverService.AddFreeAgentAsync(
-            request.AgentId, season, week, request.AddSleeperPlayerId, request.DropSleeperPlayerId, cancellationToken);
-        return Results.Ok(result);
-    }
-    catch (Exception ex)
-    {
-        return CreateDomainErrorResult(ex);
     }
 });
 

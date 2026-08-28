@@ -7,19 +7,6 @@ public sealed record WaiverClaimItem(
     string AddSleeperPlayerId,
     string DropSleeperPlayerId);
 
-public sealed record SubmitWaiverClaimsRequest(
-    string AgentId,
-    int Season,
-    int Week,
-    IReadOnlyList<WaiverClaimItem> Claims);
-
-public sealed record AddFreeAgentRequest(
-    string AgentId,
-    int Season,
-    int Week,
-    string AddSleeperPlayerId,
-    string? DropSleeperPlayerId);
-
 public sealed record SeedWaiverPriorityRequest(
     IReadOnlyList<string> DraftOrder);
 

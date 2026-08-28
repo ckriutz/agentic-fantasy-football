@@ -196,10 +196,10 @@ public class DraftRunner
             If you haven't already use the `ReadAgentBootstrap` tool to read your bootstrap file and see your strategy and roster needs.
             Call `GetAvailablePlayers` filtered by the needed position to see players who are still available.
             Use the `SearchWeb` tool to research the available players.
-            Call `AddPlayerToRoster` at most one time with agentId {agent.GetAgentName()} and acquisitionSource `draft`.
-            Once `AddPlayerToRoster` succeeds, stop calling tools and respond.
+            Call `MakeRosterMove` at most one time with agentId {agent.GetAgentName()} and the selected player's Sleeper ID as addSleeperPlayerId.
+            Once `MakeRosterMove` succeeds with result status `completed`, stop calling tools and respond.
             Do not add a backup/second player in this turn.
-            If `AddPlayerToRoster` fails, stop calling tools and report the exact failure.
+            If `MakeRosterMove` fails, stop calling tools and report the exact failure.
             Update your Bootstrap file using the `WriteAgentBootstrap` tool to update your roster, strategy, or insights on your next pick based on the player you drafted.
             When you're done, respond with the name of the player you added and why. This is your team so the reasoning for your pick should come from your perspective as the agent making the pick, based on your strategy and team needs.
         """;
@@ -295,7 +295,12 @@ public class DraftRunner
         {
             try
             {
-                var result = await _http.PostAsJsonAsync($"/api/rosters/{agentId}/players/{bestAvailablePlayerId}?acquisitionSource=autodraft", new { sleeperPlayerId = bestAvailablePlayerId, acquisitionSource = "auto-draft" });
+                var result = await _http.PostAsJsonAsync("/api/league/roster-moves", new
+                {
+                    agentId,
+                    addSleeperPlayerId = bestAvailablePlayerId,
+                    acquisitionSource = "auto-draft"
+                });
                 if (!result.IsSuccessStatusCode)
                 {
                     var body = await result.Content.ReadAsStringAsync();

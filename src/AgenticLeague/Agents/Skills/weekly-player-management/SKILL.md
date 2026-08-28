@@ -17,8 +17,7 @@ First thing to check is the league phase by using the `GetLeagueState` tool. If 
 
 - Acquisition is optional. A well-supported no-move outcome is correct.
 - Never acquire a player before confirming the league phase.
-- Use only the phase-aware acquisition tools: `SubmitWaiverClaimForCurrentWeek` during `waiver_window`, and `AddFreeAgentForCurrentWeek` during `free_agency`.
-- Do **not** use `AddPlayerToRoster`, `RemovePlayerFromRoster`, or any explicit-week add variant. They either do not exist for weekly play or bypass the waiver/free-agent lifecycle, and calling them just returns errors.
+- Use only `MakeRosterMove` for additions, drops, and waiver claims. The server applies the correct behavior for the current league phase.
 - Make **at most one successful acquisition per run**. Once an add or claim succeeds, stop acquiring and write the summary. Never chain a second add in the same run.
 - Attempt an acquisition, and then check the result `ok` field: if `false`, read `error.code`, `error.message`, and `error.nextStep`, apply `nextStep` only if it is a single safe correction, and otherwise stop. Do **not** retry the same call or cycle through other players hoping one succeeds.
 - Do not drop a healthy, needed starter merely to make a speculative addition.
@@ -28,7 +27,7 @@ First thing to check is the league phase by using the `GetLeagueState` tool. If 
 
 ## Required tools
 
-Tool names below are shown in PascalCase; the runtime exposes the league (MCP) tools in snake_case (e.g. `AddFreeAgentForCurrentWeek` is `add_free_agent_for_current_week`, `GetMyRoster` is `get_my_roster`). They are the same tools — match on either form.
+Tool names below are shown in PascalCase; the runtime exposes the league (MCP) tools in snake_case (e.g. `MakeRosterMove` is `make_roster_move`, `GetMyRoster` is `get_my_roster`). They are the same tools — match on either form.
 
 | Tool | Purpose |
 |------|---------|
@@ -38,8 +37,7 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 | `GetMyRoster` | Find deficiencies, roster capacity, drop candidates, and locks. |
 | `GetAvailablePlayers` | Find unrostered candidates by position. |
 | `SearchWeb` | Confirm current injuries, roles, depth charts, and meaningful news. |
-| `SubmitWaiverClaimForCurrentWeek` | Submit a waiver claim during `waiver_window`. |
-| `AddFreeAgentForCurrentWeek` | Add an available player immediately during `free_agency`. |
+| `MakeRosterMove` | Make one phase-aware add, drop, or replacement. Returns `pending_waiver` during the waiver window and `completed` after an immediate draft or free-agent move. |
 
 ## Workflow
 
@@ -48,7 +46,7 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 1. Call `GetLeagueState` first and treat its `season`, `week`, and `phase` as authoritative.
 2. Call `GetMyWaiverStatus(agentId)` to inspect waiver priority, pending claims, and prior results.
 3. If `phase` is neither `waiver_window` nor `free_agency`, make no acquisition. Explain the phase and end with the required summary.
-4. If `phase` is `waiver_window` and `HasPendingClaims` is true, do not replace your claim unless current roster information or research justifies a better one. `SubmitWaiverClaimForCurrentWeek` replaces your existing pending claim for that week.
+4. If `phase` is `waiver_window` and `HasPendingClaims` is true, do not replace your claim unless current roster information or research justifies a better one. Calling `MakeRosterMove` with an add during this phase replaces your existing pending claim for that week.
 
 ### 2. Diagnose roster needs
 
@@ -75,20 +73,14 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 4. Use `SearchWeb` for the leading candidates when injury news, depth-chart role, target share, or a recent breakout determines whether the move is worthwhile. This matters most for first-year players, where research is the only role evidence available.
 5. Do not add a player merely because they are available. The candidate must fill an identified need or be a material improvement over the proposed drop.
 
-### 4. Choose a valid transaction path
+### 4. Make one phase-aware roster move
 
-#### Waiver window
-
-- Use `SubmitWaiverClaimForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)` to submit a single claim for the current week.
-- If the roster is full, pass a valid rostered `dropSleeperPlayerId`. If the roster has an open slot, pass `null`; the tool supports a no-drop claim, so do not invent a drop.
-- Each submission replaces your existing pending claim for the week, so submit your single best add/drop pairing.
-- Do not submit a claim if no candidate is a genuine improvement.
-
-#### Free agency
-
-- Use `AddFreeAgentForCurrentWeek(agentId, addSleeperPlayerId, dropSleeperPlayerId)`.
-- Pass `dropSleeperPlayerId` only when the roster is full.
-- Make at most one successful add per run. Check the result `ok` field: if `true`, you are done acquiring; if `false`, read `error.nextStep` and either apply that single correction or stop — do not loop through alternate players.
+- Call `MakeRosterMove(agentId, addSleeperPlayerId, dropSleeperPlayerId)` for both waiver and free-agency moves.
+- If the roster is full, pass a valid rostered `dropSleeperPlayerId`. If the roster has an open slot, pass `null`; do not invent a drop.
+- During `waiver_window`, result status `pending_waiver` means the claim was submitted and the roster has not changed yet. Each submission replaces the existing pending claim for the week.
+- During `free_agency`, result status `completed` means the add/drop happened immediately.
+- Do not make a move if no candidate is a genuine improvement.
+- Make at most one successful call per run. If `ok` is false, read `error.nextStep` and either apply that single correction or stop; do not loop through alternate players.
 
 ### 5. Follow through and preserve memory
 
@@ -136,15 +128,13 @@ End every run with this exact structure:
 | Mistake | Correct behavior |
 |---------|------------------|
 | Calling an add tool before reading phase | Call `GetLeagueState` first. |
-| Adding during `waiver_window` with a free-agent tool | Submit a waiver claim instead. |
-| Adding during `free_agency` with waiver claims | Use `AddFreeAgentForCurrentWeek`. |
 | Replacing pending claims accidentally | Resubmit only when intentionally replacing the full ordered list. |
 | Treating a submitted claim as an acquired player | It is pending until waiver processing reports success. |
-| Using direct roster add/remove tools | Use the phase-aware waiver tools for acquisitions. |
+| Choosing a phase-specific mutation tool | Always use `MakeRosterMove`; the server chooses draft, waiver, or free-agency behavior. |
 | Dropping an asset for a one-week speculative add | Require a meaningful need and material upgrade. |
 | Skipping a player because `rankAverage` or `tier` is missing | Missing ranking fields mean unranked, not bad. Judge on projections, depth chart, and research. |
 | Calling `GetAvailablePlayers` with no `position` | Always pass `position`; projected points only compare within a position. |
 | Retrying a failed add with different players | Attempt once; on `ok: false` follow `error.nextStep` or stop and report. |
-| Calling `add_free_agent` or `AddPlayerToRoster` | Use `AddFreeAgentForCurrentWeek` only. |
+| Calling an old add, drop, free-agent, or waiver mutation tool | Use `MakeRosterMove` only. |
 | Making a second add after one already succeeded | One successful acquisition per run, then summarize. |
 | Leaving a newly added starter candidate on the bench | Run `roster-management` after a confirmed successful add when lineup changes are needed. |
