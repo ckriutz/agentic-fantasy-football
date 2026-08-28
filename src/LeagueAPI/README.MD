@@ -209,30 +209,6 @@ curl -X POST http://127.0.0.1:5181/api/sync/fantasypros/points \
    -d '{"containerName":"fantasypros","blobName":"points/2025/weekly.json","requestedSeason":2025,"servedSeason":"2025","servedScoring":"HALF","endWeek":18,"retrievedAtUtc":"2025-09-10T00:00:00Z"}'
 ```
 
-### Get weekly fantasy points leaderboard
-
-`GET /api/points/{season}/{week}?position=&limit=`
-
-Returns FantasyPros weekly fantasy points for that week, highest first. `limit` defaults to 25.
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5181/api/points/2025/1?position=QB&limit=10"
-```
-
-### Get weekly fantasy points for one player
-
-`GET /api/points/player/{sleeperPlayerId}/{season}/week/{week}`
-
-Responds with `404 Not Found` when no score row exists for that player/week.
-
-Example:
-
-```bash
-curl "http://127.0.0.1:5181/api/points/player/4046/2025/week/1"
-```
-
 ### Get season fantasy point totals for one player
 
 `GET /api/points/player/{sleeperPlayerId}/{season}`
@@ -284,15 +260,13 @@ You want to see:
 ### 5. Validate scored point reads
 
 ```bash
-curl "http://127.0.0.1:5181/api/points/2025/1?position=QB&limit=5"
-curl "http://127.0.0.1:5181/api/points/player/4046/2025/week/1"
 curl "http://127.0.0.1:5181/api/points/player/4046/2025"
 ```
 
 You want to see:
 
-- scored rows returned for the requested week
-- season totals adding up from weekly rows
+- a week-by-week scoring breakdown
+- season totals adding up from those weekly rows
 
 ## MCP endpoint
 

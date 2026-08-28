@@ -111,12 +111,9 @@ app.MapGet("/", () => Results.Ok(new
         "/api/players/{sleeperPlayerId}",
         "/api/players/{sleeperPlayerId}/availability",
         "/api/players?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
-        "/api/players/roster-status?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
         "/api/players/available?name=&team=&position=&byeWeek=&limit=",
         "/api/rosters/{agentId}",
         "/api/league/roster-moves (POST: agentId, addSleeperPlayerId, dropSleeperPlayerId)",
-        "/api/rosters/{agentId}/players/{sleeperPlayerId}/slot?slotType=",
-        "/api/rosters/{agentId}/lineup/auto",
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper (POST: containerName, blobName, retrievedAtUtc)",
         "/api/sync/sportsdata/latest",
@@ -125,8 +122,6 @@ app.MapGet("/", () => Results.Ok(new
         "/api/sync/fantasypros (POST: containerName, blobName, season, week, retrievedAtUtc)",
         "/api/sync/fantasypros/points/latest?season=",
         "/api/sync/fantasypros/points (POST: containerName, blobName, requestedSeason, servedSeason, servedScoring, endWeek, retrievedAtUtc)",
-        "/api/points/{season}/{week}?position=&limit=",
-        "/api/points/player/{sleeperPlayerId}/{season}/week/{week}",
         "/api/points/player/{sleeperPlayerId}/{season}",
         "/api/agent-profiles?enabledOnly=",
         "/api/agent-profiles/{agentId}",
@@ -136,18 +131,14 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/schedule/{week} (GET: list one week)",
         "/api/league/seasons/{season}/standings (GET: regular-season standings)",
         "/api/league/seasons/{season}/playoffs/bracket (GET: projected playoff bracket; returns the locked bracket once playoffs begin)",
-        "/api/league/seasons/{season}/playoffs/lock (POST: lock final seeds and create week-15 playoff matchups)",
         "/api/league/seasons/{season}/playoffs/eligibility (GET: active vs eliminated agents for the season)",
         "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks/advances playoffs and completes the season after the championship week)",
-        "/api/league/schedule (POST: generate, GET: list all for current season)",
-        "/api/league/schedule/{week} (GET: list one week of current season)",
         "/api/league/state",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
         "/api/league/waivers/priority (GET: priority order)",
         "/api/league/waivers/priority/seed (POST: seed from draft order, ?force=true to reset)",
         "/api/league/waivers/{season}/{week} (GET: claims, ?agentId= to filter)",
-        "/api/league/waivers/{season}/{week}/agents/{agentId}/summary",
         "/api/league/waivers/{season}/{week}/process (POST: run waiver processing)",
         "/api/league/waivers/{season}/{week}/status (GET: has week been processed?)"
     }
@@ -365,22 +356,6 @@ app.MapGet("/api/league/seasons/{season:int}/playoffs/bracket", async (
     }
 });
 
-app.MapPost("/api/league/seasons/{season:int}/playoffs/lock", async (
-    int season,
-    PlayoffService playoffService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var result = await playoffService.LockBracketAsync(season, LeagueStateUpdatedBy.Manual, cancellationToken);
-        return Results.Ok(result);
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
 app.MapGet("/api/league/seasons/{season:int}/playoffs/eligibility", async (
     int season,
     PlayoffEliminationService eliminationService,
@@ -406,79 +381,6 @@ app.MapPost("/api/league/seasons/{season:int}/weeks/{week:int}/finalize", async 
     try
     {
         var result = await finalizationService.FinalizeWeekAsync(season, week, LeagueStateUpdatedBy.SeasonRunner, cancellationToken);
-        return Results.Ok(result);
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
-// Compatibility aliases that resolve the current season from LeagueState.
-app.MapPost("/api/league/schedule", async (
-    bool? force,
-    ScheduleService scheduleService,
-    LeagueStateService leagueStateService,
-    CancellationToken cancellationToken) =>
-{
-    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
-    return await GenerateScheduleForSeasonAsync(leagueState.Season, force ?? false, scheduleService, cancellationToken);
-});
-
-app.MapGet("/api/league/schedule", async (
-    ScheduleService scheduleService,
-    LeagueStateService leagueStateService,
-    CancellationToken cancellationToken) =>
-{
-    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
-    return await GetScheduleForSeasonAsync(leagueState.Season, scheduleService, cancellationToken);
-});
-
-app.MapGet("/api/league/schedule/{week:int}", async (
-    int week,
-    ScheduleService scheduleService,
-    LeagueStateService leagueStateService,
-    CancellationToken cancellationToken) =>
-{
-    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
-    return await GetScheduleForSeasonWeekAsync(leagueState.Season, week, scheduleService, cancellationToken);
-});
-
-app.MapGet("/api/league/standings", async (
-    ScheduleService scheduleService,
-    LeagueStateService leagueStateService,
-    CancellationToken cancellationToken) =>
-{
-    var leagueState = await leagueStateService.GetLeagueStateAsync(cancellationToken);
-    return await GetStandingsForSeasonAsync(leagueState.Season, scheduleService, cancellationToken);
-});
-
-app.MapPost("/api/league/matchups/{season:int}/{week:int}/scores", async (
-    int season,
-    int week,
-    MatchupScoringService matchupScoringService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var result = await matchupScoringService.UpdateLiveScoresAsync(season, week, cancellationToken);
-        return Results.Ok(result);
-    }
-    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
-app.MapPost("/api/league/matchups/{season:int}/{week:int}/finalize", async (
-    int season,
-    int week,
-    MatchupScoringService matchupScoringService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var result = await matchupScoringService.FinalizeWeekAsync(season, week, cancellationToken);
         return Results.Ok(result);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -602,31 +504,6 @@ static PlayerQuery BuildPlayerQuery(
     };
 }
 
-app.MapGet("/api/players/roster-status", async (
-    string? name,
-    string? team,
-    string? position,
-    int? byeWeek,
-    string? sortBy,
-    bool? sortDescending,
-    int? limit,
-    IRosterReader rosterReader,
-    CancellationToken cancellationToken) =>
-{
-    var players = await rosterReader.QueryPlayersAsync(
-        BuildPlayerQuery(
-            name,
-            team,
-            position,
-            byeWeek,
-            sortBy,
-            sortDescending,
-            limit),
-        cancellationToken);
-
-    return Results.Ok(players);
-});
-
 app.MapGet("/api/players/available", async (
     string? name,
     string? team,
@@ -699,45 +576,6 @@ app.MapPost("/api/league/roster-moves", async (
         return Results.Ok(result);
     }
     catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
-app.MapPut("/api/rosters/{agentId}/players/{sleeperPlayerId}/slot", async (
-    string agentId,
-    string sleeperPlayerId,
-    string slotType,
-    IRosterWriter rosterWriter,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var player = await rosterWriter.SetPlayerSlotAsync(
-            agentId,
-            sleeperPlayerId,
-            slotType,
-            cancellationToken);
-
-        return Results.Ok(player);
-    }
-    catch (Exception ex) when (ex is ArgumentException or RosterMoveValidationException or RosterPlayerNotFoundException or RosterConflictException)
-    {
-        return CreateDomainErrorResult(ex);
-    }
-});
-
-app.MapPost("/api/rosters/{agentId}/lineup/auto", async (
-    string agentId,
-    IRosterWriter rosterWriter,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var roster = await rosterWriter.AutoSetLineupAsync(agentId, cancellationToken);
-        return Results.Ok(roster);
-    }
-    catch (Exception ex) when (ex is ArgumentException or RosterPlayerNotFoundException or RosterConflictException)
     {
         return CreateDomainErrorResult(ex);
     }
@@ -874,40 +712,6 @@ app.MapGet("/api/sync/fantasypros/points/latest", async (int? season, FantasyPro
 
 // --- FantasyPros points (read surface) ---
 
-app.MapGet("/api/points/{season:int}/{week:int}", async (
-    int season,
-    int week,
-    string? position,
-    int? limit,
-    PlayerPointsReadService playerPointsReadService,
-    CancellationToken cancellationToken) =>
-{
-    var points = await playerPointsReadService.GetWeeklyPointsAsync(
-        season,
-        week,
-        position,
-        limit ?? 25,
-        cancellationToken);
-
-    return Results.Ok(points);
-});
-
-app.MapGet("/api/points/player/{sleeperPlayerId}/{season:int}/week/{week:int}", async (
-    string sleeperPlayerId,
-    int season,
-    int week,
-    PlayerPointsReadService playerPointsReadService,
-    CancellationToken cancellationToken) =>
-{
-    var point = await playerPointsReadService.GetPlayerWeeklyPointsAsync(
-        sleeperPlayerId,
-        season,
-        week,
-        cancellationToken);
-
-    return point is null ? Results.NotFound() : Results.Ok(point);
-});
-
 app.MapGet("/api/points/player/{sleeperPlayerId}/{season:int}", async (
     string sleeperPlayerId,
     int season,
@@ -986,24 +790,6 @@ app.MapGet("/api/league/waivers/{season:int}/{week:int}/status", async (
 {
     var status = await waiverService.GetWaiverProcessStatusAsync(season, week, cancellationToken);
     return Results.Ok(status);
-});
-
-app.MapGet("/api/league/waivers/{season:int}/{week:int}/agents/{agentId}/summary", async (
-    int season,
-    int week,
-    string agentId,
-    WaiverService waiverService,
-    CancellationToken cancellationToken) =>
-{
-    try
-    {
-        var summary = await waiverService.GetMyWaiverStatusAsync(agentId, season, week, cancellationToken);
-        return Results.Ok(summary);
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
 });
 
 app.MapMcp("/mcp");
