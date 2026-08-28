@@ -30,7 +30,7 @@ public class DraftRunner
         _http = httpClient;
     }
 
-    public async Task RunDraftAsync()
+    public async Task<DraftState> RunDraftAsync()
     {
         // First we check to see if we have a draft-state.json file.
         // This file will have information about the current state of the draft,
@@ -41,7 +41,7 @@ public class DraftRunner
         if (_draftState.IsDraftComplete)
         {
             _logger.LogInformation("Draft is already complete according to draft-state.json. Exiting draft runner.");
-            return;
+            return _draftState;
         }
         if (_draftState.Round == 1 && _draftState.Pick == 1)
         {
@@ -139,6 +139,7 @@ public class DraftRunner
         await RunPostDraftAsync(_agents);
         _logger.LogInformation("Post-draft review complete!");
 
+        return _draftState;
     }
 
     // This is a simple helper method to save the draft state to a file.

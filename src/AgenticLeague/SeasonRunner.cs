@@ -31,19 +31,6 @@ public class SeasonRunner
         _leagueState = leagueState;
     }
 
-    public async Task RunTestWeekAsync()
-    {
-        _logger.LogInformation($"Running test week {_leagueState.Week} tasks.", _leagueState.Week);
-        await RunTuesdayAsync();
-        //await RunWednesdayAsync();
-        //await RunWednesdayAsync();
-        //await RunThursdayAsync();
-        //await RunFridayAsync();
-        //await RunSaturdayAsync();
-        //await RunSundayAsync();
-        //await RunMondayAsync();
-    }
-
     public async Task RunAsync()
     {
         _logger.LogInformation("Season runner is starting.");
@@ -283,13 +270,13 @@ public class SeasonRunner
         // Thursday! This is the day when some games start, so we want to make sure the agents have set their lineups correctly for the games that are happening today.
         // Also, later at night, maybe we run this again to get some scores, as well as lock the players who have played.
         
-        // TODO: Turn this back on once we're ready to process weekly scores for Thursday games.
-        //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
-        //            if (!weeklyScoresSuccess)
-        //            {
-        //                _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-        //                return;
-        //            }
+
+        var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+        if (!weeklyScoresSuccess)
+        {
+            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            return;
+        }
 
         // Still in free-agency, so agents can still make roster moves if they want to.
         // Some games start on Thursday, so we will want to make sure the agents have set their lineups before the games start.
@@ -324,13 +311,13 @@ public class SeasonRunner
         // Friday! This is the day after the Thursday games, so we want to make sure the agents have set their lineups correctly for the games that are happening on Sunday and Monday.
         // Nothing else really happens today.
         
-        // TODO: Turn this back on! Lets process weekly scores for the Thursday games.
-        //var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
-        //if (!weeklyScoresSuccess)
-        //{
-            //_logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
-            //return;
-        //}
+
+        var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
+        if (!weeklyScoresSuccess)
+        {
+            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            return;
+        }
 
         // Still in free-agency, so agents can make any last minute roster moves before the games start on Sunday and Monday.
         // Players who are injured or questionable for the weekend games might get dropped on Friday, so this is the last chance for agents to pick them up before the games start.
@@ -366,12 +353,11 @@ public class SeasonRunner
         // Players who are injured or questionable for the weekend games might get dropped on Friday, so this is the last chance for agents to pick them up before the games start.
         // Players who played on Thursday are stuck where they are.
 
-        // TODO: Turn this back on. Why not do a sync.
-        //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-        //if (weeklyScoresSuccess)
-        //{
-            //_logger.LogInformation("Successfully processed weekly scores for the week.");
-        //}
+        bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
+        if (weeklyScoresSuccess)
+        {
+            _logger.LogInformation("Successfully processed weekly scores for the week.");
+        }
 
         if (_leagueState?.Phase == "free_agency")
         {
@@ -399,17 +385,16 @@ public class SeasonRunner
         _logger.LogInformation("Running Sunday tasks.");
 
         // It's Sunday! Games are starting today, so lets do one final oppertunity for the agents to set their lineups for the Sunday games before they start.
-        // TODO: Turn this back on once weekly scores processing is needed.
-        //bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
-        //if (weeklyScoresSuccess)
-        //{
-            //_logger.LogInformation("Successfully processed weekly scores for the week.");
-        //}
+
+        bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);
+        if (weeklyScoresSuccess)
+        {
+            _logger.LogInformation("Successfully processed weekly scores for the week.");
+        }
 
         // Only lineup changes are allowed on Sunday, so agents can only set their lineups for the Sunday games, but they can't make any roster moves.
         // Lets set the league state to games_locked, since the games start on Sunday, and we want to make sure the agents have set their lineups before the games start.
         _leagueState = await LeagueStateHelper.SetLeagueStateAsync(_leagueState?.Season, _leagueState?.Week, "games_locked", "season-runner", _http, _logger);
-
 
         var activeAgents = await GetActiveAgentsAsync();
         foreach(var agent in activeAgents)
@@ -433,7 +418,7 @@ public class SeasonRunner
     {
         // Only lineup changes are allowed on Monday, so agents can only set their lineups for the Monday game, but they can't make any roster moves.
         // We will want to make sure the agents have set their lineups before the game starts on Monday.
-        // TODO: Wire in a prompt to remind the agents to set their lineups for the Monday game if they haven't already, since the last game starts on Monday night.
+
         _logger.LogInformation("Running Monday tasks.");
 
         bool weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState?.Season ?? 0, _leagueState?.Week ?? 0);

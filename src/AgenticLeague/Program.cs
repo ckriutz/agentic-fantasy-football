@@ -83,7 +83,7 @@ await RunDraftAsync(agents, leagueState.Phase, _http, host);
 logger.LogInformation("testing.");
 
 
-await RunTestWeekAsync(agents, host, _http, _scoresHttp, leagueState);
+await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
 
 
 static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpClient _http, IHost host)
@@ -93,17 +93,29 @@ static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpCli
     {
         draftLogger.LogInformation("League state is drafting. Starting the draft runner...");
         DraftRunner draftRunner = new DraftRunner(agents, draftLogger, _http);
-        await draftRunner.RunDraftAsync();
+        var draftState = await draftRunner.RunDraftAsync();
         draftLogger.LogInformation("🎉 Draft runner completed.");
 
-        // Move the league from drafting into the free-agency phase so the agents can
-        // start making roster moves once the draft is complete.
+        var seedWaiverPriorityResponse = await _http.PostAsJsonAsync("api/league/waivers/priority/seed", new
+        {
+            draftOrder = draftState.DraftOrder
+        });
+        seedWaiverPriorityResponse.EnsureSuccessStatusCode();
+
+        var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, draftLogger);
+        var generateScheduleResponse = await _http.PostAsync($"api/league/seasons/{leagueState.Season}/schedule", null);
+        generateScheduleResponse.EnsureSuccessStatusCode();
+
         var advanceResponse = await _http.PutAsJsonAsync("api/league/state", new
         {
+            season = leagueState.Season,
+            week = 1,
             phase = "free_agency",
+            seasonStage = "regular_season",
             updatedBy = "season-runner"
         });
         advanceResponse.EnsureSuccessStatusCode();
+        draftLogger.LogInformation("Post-draft setup completed for season {Season}.", leagueState.Season);
     }
     else
     {
@@ -126,12 +138,3 @@ static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost 
     await seasonRunner.RunAsync();
     seasonLogger.LogInformation("🎉 Season runner completed.");
 }
-
-static async Task RunTestWeekAsync(List<FantasyAgent> agents, IHost host, HttpClient http, HttpClient scoresHttp, LeagueState leagueState)
-{
-    ILogger testWeekLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("TestWeekRunner");
-    SeasonRunner seasonRunner = new SeasonRunner(agents, testWeekLogger, http, scoresHttp, leagueState);
-    await seasonRunner.RunTestWeekAsync();
-    testWeekLogger.LogInformation("🎉 Test week runner completed.");
-}
-

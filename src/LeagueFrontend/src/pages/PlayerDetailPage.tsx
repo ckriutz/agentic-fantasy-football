@@ -5,9 +5,11 @@ import { Link, useParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { apiBaseUrl } from '@/lib/config'
 
-const CURRENT_SEASON = 2025
-
 type FetchState = 'loading' | 'success' | 'error'
+
+type LeagueState = {
+  season: number
+}
 
 type PlayerData = {
   age: number | null
@@ -139,21 +141,28 @@ function PlayerDetailPage() {
   const [player, setPlayer] = useState<Player | null>(null)
   const [availability, setAvailability] = useState<Availability | null>(null)
   const [seasonPoints, setSeasonPoints] = useState<SeasonPoints | null>(null)
+  const [season, setSeason] = useState<number | null>(null)
 
   const fetchAll = useCallback(async () => {
     if (!sleeperId) return
     setState('loading')
     try {
-      const [playerRes, availRes, pointsRes] = await Promise.all([
+      const [playerRes, availRes, leagueStateRes] = await Promise.all([
         fetch(`${apiBaseUrl}/api/players/${sleeperId}`),
         fetch(`${apiBaseUrl}/api/players/${sleeperId}/availability`),
-        fetch(`${apiBaseUrl}/api/points/player/${sleeperId}/${CURRENT_SEASON}`)
+        fetch(`${apiBaseUrl}/api/league/state`)
       ])
 
       if (!playerRes.ok) { setState('error'); return }
       setPlayer((await playerRes.json()) as Player)
 
       if (availRes.ok) setAvailability((await availRes.json()) as Availability)
+
+      if (!leagueStateRes.ok) { setState('error'); return }
+      const leagueState = (await leagueStateRes.json()) as LeagueState
+      setSeason(leagueState.season)
+
+      const pointsRes = await fetch(`${apiBaseUrl}/api/points/player/${sleeperId}/${leagueState.season}`)
       if (pointsRes.ok) {
         setSeasonPoints((await pointsRes.json()) as SeasonPoints)
       }
@@ -347,7 +356,7 @@ function PlayerDetailPage() {
             {/* Weekly points card */}
             <Card className="border-white/10 bg-slate-900 text-slate-50">
               <CardHeader>
-                <CardTitle className="text-lg text-white">{CURRENT_SEASON} Weekly Points</CardTitle>
+                <CardTitle className="text-lg text-white">{season} Weekly Points</CardTitle>
               </CardHeader>
               <CardContent>
                 {seasonPoints ? (
@@ -379,7 +388,7 @@ function PlayerDetailPage() {
                     )}
                   </>
                 ) : (
-                  <p className="text-sm text-slate-500 italic">No {CURRENT_SEASON} stats available.</p>
+                  <p className="text-sm text-slate-500 italic">No {season} stats available.</p>
                 )}
               </CardContent>
             </Card>
