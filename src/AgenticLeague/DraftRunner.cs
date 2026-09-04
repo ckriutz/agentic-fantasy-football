@@ -52,8 +52,17 @@ public class DraftRunner
             _logger.LogInformation($"Resuming draft from saved state: Round {_draftState.Round}, Pick {_draftState.Pick}");
         }
 
+        // Right now, I only want to run the first round.
+        if (_draftState.Round > 1)
+        {
+            _logger.LogInformation("Only running the first round for now. Exiting.");
+            return _draftState;
+        }
+
         // Okay, now that we have the draft set up, lets do it!
         var orderedAgents = GetOrderedAgents();
+
+        
 
         // Verify the state is correct.
         int expectedRound = ((_draftState.Pick - 1) / orderedAgents.Count) + 1;

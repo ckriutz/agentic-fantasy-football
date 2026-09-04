@@ -70,7 +70,7 @@ public class FantasyAgent
             return;
         }
 
-        var bootstrapPrompt = $"Use the `agent-bootstrap` skill to bootstrap agent `{_profile.AgentId}`. No reason to use any other skills.";
+        var bootstrapPrompt = $"Use the `agent-bootstrap` skill to bootstrap agent `{_profile.AgentId}`. You're model is `{_profile.ModelName}`. No reason to use any other skills.";
 
         try
         {

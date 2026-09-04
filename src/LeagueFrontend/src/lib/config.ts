@@ -27,9 +27,12 @@ const blobContainerName = firstNonEmpty(
   import.meta.env.VITE_BLOB_CONTAINER_NAME,
 ) ?? 'agentdata'
 
-export function getAgentLogoUrl(agentId: string): string | null {
-  if (!blobBaseUrl) return null
-  return `${blobBaseUrl.replace(/\/$/, '')}/${blobContainerName}/${encodeURIComponent(agentId)}/logo.jpg`
+const logoFileNames = ['logo.png', 'logo.jpg', 'logo.jpeg', 'logo.webp', 'logo.gif']
+
+export function getAgentLogoUrls(agentId: string): string[] {
+  if (!blobBaseUrl) return []
+  const base = `${blobBaseUrl.replace(/\/$/, '')}/${blobContainerName}/${encodeURIComponent(agentId)}`
+  return logoFileNames.map((fileName) => `${base}/${fileName}`)
 }
 
 export function getAgentBootstrapUrl(agentId: string): string | null {

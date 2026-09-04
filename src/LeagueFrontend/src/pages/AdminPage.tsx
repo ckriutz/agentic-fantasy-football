@@ -612,57 +612,10 @@ function WeeklyScoresCard() {
 }
 
 function AdminPage() {
-  const [scheduleExists, setScheduleExists] = useState<boolean | null>(null)
-  const [generatingSchedule, setGeneratingSchedule] = useState(false)
-
-  const checkSchedule = useCallback(async () => {
-    try {
-      const stateRes = await fetch(`${apiBaseUrl}/api/league/state`)
-      if (!stateRes.ok) { setScheduleExists(false); return }
-      const { season } = await stateRes.json() as { season: number }
-      const res = await fetch(`${apiBaseUrl}/api/league/seasons/${season}/schedule`)
-      if (!res.ok) { setScheduleExists(false); return }
-      const data = await res.json() as unknown[]
-      setScheduleExists(Array.isArray(data) && data.length > 0)
-    } catch {
-      setScheduleExists(false)
-    }
-  }, [])
-
-  useEffect(() => { void checkSchedule() }, [checkSchedule])
-
-  const generateSchedule = useCallback(async () => {
-    setGeneratingSchedule(true)
-    try {
-      const stateRes = await fetch(`${apiBaseUrl}/api/league/state`)
-      if (!stateRes.ok) { return }
-      const { season } = await stateRes.json() as { season: number }
-      await fetch(`${apiBaseUrl}/api/league/seasons/${season}/schedule`, { method: 'POST' })
-      await checkSchedule()
-    } finally {
-      setGeneratingSchedule(false)
-    }
-  }, [checkSchedule])
-
   return (
     <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-semibold tracking-tight text-white">Admin</h2>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={scheduleExists === null || scheduleExists === true || generatingSchedule}
-          onClick={() => void generateSchedule()}
-          className="flex items-center gap-2 border-white/20 text-slate-300 hover:border-white/40 hover:text-white disabled:opacity-40"
-          title={scheduleExists ? 'Schedule already generated for this season' : 'Generate league schedule'}
-        >
-          {generatingSchedule ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <CalendarDays className="size-4" />
-          )}
-          Generate Schedule
-        </Button>
       </div>
 
       <LeagueStateCard />

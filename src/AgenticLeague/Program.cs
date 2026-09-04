@@ -51,12 +51,7 @@ catch (Exception ex)
     return;
 }
 
-var creditCheckTool = new CreditCheckTool();
-var creditsResponse = await creditCheckTool.GetRemainingCreditsAsync(EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY"));
-var remainingCredits = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
-logger.LogInformation("Remaining OpenRouter Credits: " + remainingCredits);
-
-if(remainingCredits < 2)
+if(await RunCreditCheckAsync(logger) < 2)
 {
     logger.LogError("Not enough OpenRouter credits remaining to run the league. Please add more credits and try again.");
     return;
@@ -65,41 +60,56 @@ if(remainingCredits < 2)
 logger.LogInformation("✅ All checks passed. API is healthy.");
 logger.LogInformation("🏈 Starting Agentic Fantasy Football League!");
 
-List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
+
 
 // Now we go though each option for the mode, and run those methods.
-if (string.Equals(mode, "test", StringComparison.OrdinalIgnoreCase))
+if (string.Equals(mode, "bootstrap", StringComparison.OrdinalIgnoreCase))
 {
     AgentProfile tProfile = new AgentProfile();
     tProfile.IsEnabled = true;
-    tProfile.AgentId = "TestAgentMeta";
+    tProfile.AgentId = "inception";
     tProfile.Connection = "OpenRouter";
-    tProfile.ModelName = "meta/muse-spark-1.2-contributor";
+    tProfile.ModelName = "inception/mercury-2.5-preview";
     
     FantasyAgent testAgent = new FantasyAgent(tProfile, host.Services.GetRequiredService<ILogger<FantasyAgent>>(), _http);
 
     await testAgent.InitializeAsync();
     await testAgent.EnsureBootstrappedAsync();
+
     return;
 }
 
-if (string.Equals(mode, "echo", StringComparison.OrdinalIgnoreCase))
+if (string.Equals(mode, "test", StringComparison.OrdinalIgnoreCase))
 {
-    var testAgent = agents.FirstOrDefault(a => a.GetAgentName() == "player-02");
-    var result = await testAgent.RunAsync("Look though your bootstrap and give me a 3 sentence summary of your strategy.");
-    logger.LogInformation("Agent {AgentId} produced response: {Response}", testAgent.GetAgentName(), result.Response.Text?.Trim());
+    logger.LogInformation("Running a test.");
+    List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
+    var testAgent = agents.FirstOrDefault(a => a.GetAgentName() == "inception");
+    //var result = await testAgent.RunAsync($"You are {testAgent.GetAgentName()}. Use that exact value for `ReadAgentBootstrap`, `WriteAgentBootstrap`, `SetMyTeamName`, and `SetMyBootstrapStatus`. Review your bootstrap and read through the core philosophy and the draft strategy. Then use the `searchWeb` tool and the `GetAvailablePlayers` tool in order to research and prepare for the draft. This is an opportunity to build out a more concrete plan for the upcoming draft. Once your research is complete, update your bootstrap file using the `WriteAgentBootstrap` tool. You're not finished unless you've written the research to the bootstrap file by using the `WriteAgentBootstrap` tool.");
+    var result = await testAgent.RunAsync($"You are {testAgent.GetAgentName()}. Use that exact value for the `GenerateImage` tool. Your team name is Starlight Diffusion by the Inception company running the Mercury 2.5 llm. You need a logo for your team. Call `GenerateImage` with a concise logo description based on the team name. The logo must be simple and suitable for a fantasy-football website. This logo must work well for a blog. Be creative. Use the team name when generating the image.");
+    logger.LogInformation("Agent {AgentId} produced response: {Response}", testAgent.GetAgentName(), result);
     return;
 }
 
-// Now the current leauge state. This is important because we want to make sure the league is in the correct state before we start running the agents.
-var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
-HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
-logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
+if(string.Equals(mode, "draft", StringComparison.OrdinalIgnoreCase))
+{
+    var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
+    HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
+    logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
+    List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
+    await RunDraftAsync(agents, leagueState.Phase, _http, host);
+}
 
-// Now to run the draft, if the league is in the drafting phase. If not, we can skip this step and move on to the season runner.
-await RunDraftAsync(agents, leagueState.Phase, _http, host);
+if(string.Equals(mode, "season", StringComparison.OrdinalIgnoreCase))
+{
+    var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
+    HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
+    logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
+    List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
+    await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
+}
 
-await RunSeasonAsync(agents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
+
+
 
 static string? GetMode(string[] arguments)
 {
@@ -132,8 +142,8 @@ static string? GetMode(string[] arguments)
 
     // Here are the supported modes for the application. Currently, "test" and "echo" are supported.
 
-    if (mode is not null && mode != "test" && mode != "echo")
-        throw new ArgumentException($"Unsupported mode '{mode}'. Supported modes: test, echo.");
+    if (mode is not null && mode != "test" && mode != "echo" && mode != "season" && mode != "draft" && mode != "bootstrap")
+        throw new ArgumentException($"Unsupported mode '{mode}'. Supported modes: test, echo, season, draft, bootstrap");
 
     return mode;
 }
@@ -215,4 +225,13 @@ static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost 
     SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, scoresHttp, leagueState);
     await seasonRunner.RunAsync();
     seasonLogger.LogInformation("🎉 Season runner completed.");
+}
+
+static async Task<double> RunCreditCheckAsync(ILogger logger)
+{
+    var creditCheckTool = new CreditCheckTool();
+    var creditsResponse = await creditCheckTool.GetRemainingCreditsAsync(EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY"));
+    var remainingCredits = creditsResponse.TotalCredits - creditsResponse.TotalUsage;
+    logger.LogInformation("Remaining OpenRouter Credits: " + remainingCredits);
+    return remainingCredits;
 }

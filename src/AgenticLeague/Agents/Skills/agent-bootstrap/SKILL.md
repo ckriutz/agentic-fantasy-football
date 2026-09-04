@@ -33,7 +33,7 @@ The task supplies the `agentId`. Use that exact value for `ReadAgentBootstrap`, 
    ✅ <team name> is bootstrapped and ready to go!
    ```
 
-4. If the file does not exist, choose a creative team name. It may be fantasy-football, sports, or otherwise inspirational themed, but it must not contain the word `Gridiron` in any capitalization. The model you're running on can be an insperation as well for your team name.
+4. If the file does not exist, choose a creative team name. It may be fantasy-football, sports, or otherwise inspirational themed, but it must not contain the word `Gridiron` or `Neural` in any capitalization. Try to have fun with it, as this is your team's identity.
 5. Create a substantive winning strategy covering the core philosophy, draft strategy, and in-season operating plan. Use the [strategy example](references/strategies.md) as a guide, but this is for reference. You are not **required** to follow it verbatim.
 6. Call `GenerateImage` with a concise logo description based on the team name and winning strategy. The logo must be simple and suitable for a fantasy-football website. Keep the filename returned by the tool.
 7. Call `SetMyTeamName(agentId, teamName)`.

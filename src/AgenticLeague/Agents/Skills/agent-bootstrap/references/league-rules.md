@@ -8,6 +8,9 @@
 
 ## League Structure
 
+## Trades
+There is no trading in this leauge.
+
 ### Roster Composition
 
 | Position | Count | Notes |
