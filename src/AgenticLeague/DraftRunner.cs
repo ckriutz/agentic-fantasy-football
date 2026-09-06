@@ -15,6 +15,7 @@ public class DraftRunner
     const int maxDraftPickAttempts = 3;
     const int maxRosterSize = 16;
     const int totalRounds = 16;
+    const int reviewAfterRound = 3;
     private DraftState _draftState = new();
     private BlobStorageTools _blobStorageTools;
 
@@ -52,10 +53,9 @@ public class DraftRunner
             _logger.LogInformation($"Resuming draft from saved state: Round {_draftState.Round}, Pick {_draftState.Pick}");
         }
 
-        // Right now, I only want to run the first round.
-        if (_draftState.Round > 1)
+        if (_draftState.Round > reviewAfterRound)
         {
-            _logger.LogInformation("Only running the first round for now. Exiting.");
+            _logger.LogInformation("Draft is paused after round {ReviewAfterRound} for review.", reviewAfterRound);
             return _draftState;
         }
 
@@ -75,9 +75,8 @@ public class DraftRunner
 
         // If we've gotten here, we're good!
         // So now, let's loop through every round, giving each agent their chance to pick.
-        // There are 15 rounds, so each player can fill their roster.
-        // Right now, for testing purposes, we're just doing 2 rounds, but we can increase this to 15 later.
-        for(; _draftState.Round <= totalRounds; _draftState.Round++)
+        // Stop at the review round without marking the full draft complete.
+        for(; _draftState.Round <= totalRounds && _draftState.Round <= reviewAfterRound; _draftState.Round++)
         {
             _logger.LogInformation($"Starting round {_draftState.Round}");
 
@@ -138,6 +137,13 @@ public class DraftRunner
                 _draftState.Pick++;
                 await SaveDraftStateAsync();
             }
+        }
+
+        if (_draftState.Round <= totalRounds)
+        {
+            await SaveDraftStateAsync(writeIndented: true);
+            _logger.LogInformation("Draft paused after round {CompletedRound} for review. The next run will resume at round {NextRound}.", reviewAfterRound, _draftState.Round);
+            return _draftState;
         }
 
         // Draft is complete! Update state and save.
@@ -202,7 +208,7 @@ public class DraftRunner
             This is currently round {round} of {totalRounds} total rounds, and this is pick {pick} of {totalRounds * _agents.Count} total picks.
             {previousAttemptPrompt}
             Look at your roster using the `GetMyRoster` tool and identify what player you need to draft next.
-            If you haven't already use the `ReadAgentBootstrap` tool to read your bootstrap file and see your strategy and roster needs.
+            If you haven't already use the `ReadAgentBootstrap` tool to read your bootstrap file and see your strategy and roster needs. Your strategy for the draft is documented in your bootstrap file, and you should use it to inform your draft pick.
             Call `GetAvailablePlayers` filtered by the needed position to see players who are still available.
             Use the `SearchWeb` tool to research the available players.
             Call `MakeRosterMove` at most one time with agentId {agent.GetAgentName()} and the selected player's Sleeper ID as addSleeperPlayerId.

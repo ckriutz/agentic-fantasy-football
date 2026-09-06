@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json;
 using LeagueAPI.Models;
 using LeagueAPI.Services;
 using ModelContextProtocol.Server;
@@ -6,16 +7,22 @@ using ModelContextProtocol.Server;
 namespace LeagueAPI.Tools;
 
 [McpServerToolType]
-public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
+public sealed class RosterMoveTools(RosterMoveService rosterMoveService, ILogger<RosterMoveTools> logger)
 {
     private readonly RosterMoveService _rosterMoveService = rosterMoveService;
+    private readonly ILogger<RosterMoveTools> _logger = logger;
 
     [McpServerTool(UseStructuredContent = true), Description("Make one phase-aware roster move. During drafting, the player is added immediately. During the waiver window, the move becomes a pending waiver claim. During free agency, the add/drop is completed immediately. Roster moves are rejected in locked or complete phases. Check the ok field and the result status: 'completed' means the roster changed, while 'pending_waiver' means the claim was submitted but the roster has not changed yet.")]
-    public async Task<ToolResult<RosterMoveResult, WaiverOperationErrorDetails>> MakeRosterMove([Description("Your exact agent ID, such as player-01.")] string agentId, [Description("Sleeper player ID to add. Required for drafting, waivers, and free-agent acquisitions. Omit only for a pure drop during free agency.")] string? addSleeperPlayerId = null, [Description("Optional Sleeper player ID to drop. Use when a full roster needs space, or omit addSleeperPlayerId to make a pure drop during free agency.")] string? dropSleeperPlayerId = null)
+    public async Task<ToolResult<RosterMoveResult, WaiverOperationErrorDetails>> MakeRosterMove([Description("Your exact agent ID, such as player-01.")] string agentId, [Description("Sleeper player ID to add, supplied as either a JSON string or number. Required for drafting, waivers, and free-agent acquisitions. Omit only for a pure drop during free agency.")] JsonElement? addSleeperPlayerId = null, [Description("Optional Sleeper player ID to drop, supplied as either a JSON string or number. Use when a full roster needs space, or omit addSleeperPlayerId to make a pure drop during free agency.")] JsonElement? dropSleeperPlayerId = null)
     {
+        string? normalizedAddSleeperPlayerId = null;
+        string? normalizedDropSleeperPlayerId = null;
+
         try
         {
-            var result = await _rosterMoveService.MakeRosterMoveAsync(agentId, addSleeperPlayerId, dropSleeperPlayerId, acquisitionSource: null, CancellationToken.None);
+            normalizedAddSleeperPlayerId = NormalizeSleeperPlayerId(addSleeperPlayerId, nameof(addSleeperPlayerId));
+            normalizedDropSleeperPlayerId = NormalizeSleeperPlayerId(dropSleeperPlayerId, nameof(dropSleeperPlayerId));
+            var result = await _rosterMoveService.MakeRosterMoveAsync(agentId, normalizedAddSleeperPlayerId, normalizedDropSleeperPlayerId, acquisitionSource: null, CancellationToken.None);
             return ToolResult<RosterMoveResult, WaiverOperationErrorDetails>.Success(result);
         }
         catch (LeaguePhaseException exception)
@@ -24,8 +31,8 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
                 "invalid_league_phase",
                 exception.Message,
                 agentId,
-                addSleeperPlayerId,
-                dropSleeperPlayerId,
+                normalizedAddSleeperPlayerId,
+                normalizedDropSleeperPlayerId,
                 "Wait until drafting, the waiver window, or free agency before making a roster move.",
                 requiredPhase: exception.RequiredPhase,
                 currentPhase: exception.CurrentPhase,
@@ -38,8 +45,8 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
                 "invalid_waiver_move",
                 exception.Message,
                 exception.AgentId ?? agentId,
-                exception.AddSleeperPlayerId ?? addSleeperPlayerId,
-                exception.DropSleeperPlayerId ?? dropSleeperPlayerId,
+                exception.AddSleeperPlayerId ?? normalizedAddSleeperPlayerId,
+                exception.DropSleeperPlayerId ?? normalizedDropSleeperPlayerId,
                 "Refresh your roster and available players, correct the identified issue once, then retry.",
                 currentRosterSize: exception.CurrentRosterSize,
                 maxRosterSize: exception.MaxRosterSize);
@@ -50,8 +57,8 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
                 GetFreeAgentErrorCode(exception.FailureType),
                 exception.Message,
                 exception.AgentId ?? agentId,
-                exception.AddSleeperPlayerId ?? addSleeperPlayerId,
-                exception.DropSleeperPlayerId ?? dropSleeperPlayerId,
+                exception.AddSleeperPlayerId ?? normalizedAddSleeperPlayerId,
+                exception.DropSleeperPlayerId ?? normalizedDropSleeperPlayerId,
                 "Refresh your roster and player availability, then make one corrected move or stop.",
                 ownerAgentId: exception.OwnerAgentId,
                 currentRosterSize: exception.CurrentRosterSize,
@@ -60,7 +67,7 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
         }
         catch (RosterPlayerOwnershipConflictException exception)
         {
-            if (addSleeperPlayerId is null)
+            if (normalizedAddSleeperPlayerId is null)
             {
                 return Failure(
                     "player_owned_by_other_agent",
@@ -78,7 +85,7 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
                 exception.Message,
                 exception.RequestedAgentId,
                 exception.SleeperPlayerId,
-                dropSleeperPlayerId,
+                normalizedDropSleeperPlayerId,
                 alreadyOnRequestedRoster
                     ? "Do not add the player again. Call GetMyRoster to inspect the current roster."
                     : "Refresh player availability and choose an available player.",
@@ -90,32 +97,63 @@ public sealed class RosterMoveTools(RosterMoveService rosterMoveService)
                 "roster_full",
                 exception.Message,
                 exception.AgentId,
-                addSleeperPlayerId,
-                dropSleeperPlayerId,
+                normalizedAddSleeperPlayerId,
+                normalizedDropSleeperPlayerId,
                 "Provide a valid dropSleeperPlayerId from your roster, then retry.",
                 currentRosterSize: exception.CurrentRosterSize,
                 maxRosterSize: exception.MaxRosterSize);
         }
         catch (RosterPlayerIneligibleException exception)
         {
-            return Failure("player_ineligible", exception.Message, agentId, exception.SleeperPlayerId, dropSleeperPlayerId, "Choose an active player eligible for this league's roster slots.");
+            return Failure("player_ineligible", exception.Message, agentId, exception.SleeperPlayerId, normalizedDropSleeperPlayerId, "Choose an active player eligible for this league's roster slots.");
         }
         catch (RosterPlayerNotFoundException exception)
         {
             return Failure(
-                addSleeperPlayerId is null ? "player_not_on_roster" : "player_not_found",
+                normalizedAddSleeperPlayerId is null ? "player_not_on_roster" : "player_not_found",
                 exception.Message,
                 agentId,
-                addSleeperPlayerId,
-                dropSleeperPlayerId,
-                addSleeperPlayerId is null
+                normalizedAddSleeperPlayerId,
+                normalizedDropSleeperPlayerId,
+                normalizedAddSleeperPlayerId is null
                     ? "Call GetMyRoster and choose a player currently on your roster."
                     : "Refresh your roster and available players, then use valid Sleeper player IDs.");
         }
         catch (ArgumentException exception)
         {
-            return Failure("invalid_request", exception.Message, agentId, addSleeperPlayerId, dropSleeperPlayerId, "Correct the roster move arguments, then retry once.");
+            return Failure("invalid_request", exception.Message, agentId, normalizedAddSleeperPlayerId, normalizedDropSleeperPlayerId, "Correct the roster move arguments, then retry once.");
         }
+        catch (Exception exception)
+        {
+            var rootException = exception.GetBaseException();
+            _logger.LogError(
+                exception,
+                "Unexpected MakeRosterMove failure for agent {AgentId}, add player {AddSleeperPlayerId}, drop player {DropSleeperPlayerId}",
+                agentId,
+                normalizedAddSleeperPlayerId,
+                normalizedDropSleeperPlayerId);
+
+            return Failure(
+                "unexpected_error",
+                $"{rootException.GetType().Name}: {rootException.Message}",
+                agentId,
+                normalizedAddSleeperPlayerId,
+                normalizedDropSleeperPlayerId,
+                "Report this error to the league operator and do not retry this roster move.");
+        }
+    }
+
+    private static string? NormalizeSleeperPlayerId(JsonElement? value, string parameterName)
+    {
+        if (value is null || value.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return null;
+
+        return value.Value.ValueKind switch
+        {
+            JsonValueKind.String => value.Value.GetString(),
+            JsonValueKind.Number => value.Value.GetRawText(),
+            _ => throw new ArgumentException($"{parameterName} must be a JSON string or number.", parameterName)
+        };
     }
 
     private static ToolResult<RosterMoveResult, WaiverOperationErrorDetails> Failure(string code, string message, string? agentId, string? addSleeperPlayerId, string? dropSleeperPlayerId, string nextStep, string? ownerAgentId = null, int? currentRosterSize = null, int? maxRosterSize = null, string? requiredPhase = null, string? currentPhase = null, int? season = null, int? week = null, string? lockReason = null)
