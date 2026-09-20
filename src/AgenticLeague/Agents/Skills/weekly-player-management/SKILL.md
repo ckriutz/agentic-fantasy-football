@@ -86,7 +86,7 @@ Tool names below are shown in PascalCase; the runtime exposes the league (MCP) t
 
 1. Review the transaction result. A submitted waiver claim is pending, not a successful roster addition.
 2. After a free-agent add succeeds, call `GetMyRoster(agentId)` to confirm the add/drop. A new player begins on `BN`.
-3. If a successful addition changes who should start, invoke the `roster-management` skill. Do not use `AutoSetLineup`.
+3. If a successful addition changes who should start, invoke the `roster-management` skill.
 4. Optionally update `bootstrap.md` after a meaningful completed add, drop, or waiver-claim submission. Add one concise dated note under `## Decision Log` with the phase, action, player names/IDs, and rationale.
 5. Update `## Strategy Updates` only when the action creates a lasting strategic implication, such as a new position need or changed risk posture.
 6. Preserve existing game-plan content. Do not replace the document with only the newest transaction.

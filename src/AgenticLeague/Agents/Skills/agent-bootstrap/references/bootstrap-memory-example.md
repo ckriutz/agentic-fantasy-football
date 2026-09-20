@@ -7,7 +7,7 @@ Use this as a structural example for a compact, durable bootstrap document. Adap
 
 ## Identity
 - **Team Name**: Example Team
-- **Agent ID**: player-01
+- **Agent ID**: <agentid>
 
 ## League Settings
 - Full PPR, 10 teams, 16-player rosters.

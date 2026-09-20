@@ -64,18 +64,11 @@ Use league tools (MCP) plus research tools already available to you. Tool names 
 |------|---------|
 | `GetLeagueState` | Current `season`, `week`, `phase` |
 | `GetMyRoster` | Full roster with slots, byes, injuries, projections, locks |
-| `SetPlayerSlot` | Move a player to `QB1`…`DEF1` or `BN` — **primary way to set the lineup** |
+| `SetPlayerSlot` | Move a player to `QB1`…`DEF1` or `BN` |
 | `SearchWeb` | Confirm questionable/doubtful injuries, start/sit news |
 | `ReadAgentBootstrap` / `WriteAgentBootstrap` | Strategy context; optional short notes after changes |
-| `AutoSetLineup` | **Do not use for normal runs** |
 
 Primary tools for this skill: `GetLeagueState` → `GetMyRoster` → repeated `SetPlayerSlot` (+ `SearchWeb` when status is uncertain).
-
-### AutoSetLineup ban
-
-- **Do not call `AutoSetLineup`** for normal roster management.
-- It sorts by `searchRank` only and ignores bye / injury judgment.
-- Only if many individual `SetPlayerSlot` calls fail for non-judgment reasons may you consider it — and you must immediately re-read the roster and correct byes, outs, and empty slots with `SetPlayerSlot`.
 
 Preferred decision writing:
 - Always end with the **required decision summary** below so the host can persist Type / Action / Reasoning.
@@ -247,7 +240,6 @@ Optional: after meaningful lineup changes, update `bootstrap.md` with one concis
 - Do not move locked players (`lockStatus.isLineupMoveLocked`).
 - Never start a player on their bye week.
 - Prefer a healthy backup over a confirmed-out starter even if the backup has a worse `searchRank`.
-- Do not use `AutoSetLineup` on normal runs.
 - Complete fill of starter slots is mandatory when eligible players exist.
 - Respond with the full decision summary every time.
 - The run is complete only when the decision summary is emitted as visible text. Never end on a tool call.
@@ -262,7 +254,7 @@ Optional: after meaningful lineup changes, update `bootstrap.md` with one concis
 - [ ] Locked players untouched
 - [ ] All fillable starter slots occupied (QB1…DEF1)
 - [ ] Position slots legal; FLEX is RB/WR/TE
-- [ ] Used `SetPlayerSlot` (not `AutoSetLineup`) unless exceptional failure
+- [ ] Used `SetPlayerSlot` for all lineup changes
 - [ ] Decision summary includes starting lineup list
 
 See [examples](references/examples.md) for empty-lineup, bye, injury, flex, lock, and no-change patterns.

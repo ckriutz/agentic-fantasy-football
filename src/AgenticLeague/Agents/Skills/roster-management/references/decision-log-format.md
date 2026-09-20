@@ -6,7 +6,7 @@ The league stores agent decisions in the **decisions** table via LeagueAPI (`POS
 
 | Field | Required | Guidance for this skill |
 |-------|----------|-------------------------|
-| `AgentId` | yes | Your agent id (e.g. `player-01`) |
+| `AgentId` | yes | Your agent id |
 | `Week` | yes | NFL week from `GetLeagueState` |
 | `Type` | yes | Prefer `start_sit`. Host may also use descriptive types like `Set Lineup for Sunday Games`; match the invoker if they specify a Type |
 | `Action` | yes | Short factual outcome (see templates). Keep under ~200 chars when possible |

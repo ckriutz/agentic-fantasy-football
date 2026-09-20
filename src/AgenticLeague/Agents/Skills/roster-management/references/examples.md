@@ -13,7 +13,7 @@ Illustrative patterns—not live data. Follow the same structure with real tool 
 3. Rank eligible players; call `SetPlayerSlot` for **all nine** starter slots  
 4. End with starting lineup listed  
 
-**Wrong:** Call `AutoSetLineup` then only adjust one TE to BN while starters stay empty.  
+**Wrong:** Only adjust one TE to BN while starters stay empty.  
 **Wrong:** “Benched Kittle successfully” without filling QB1…DEF1.
 
 **Action line:**

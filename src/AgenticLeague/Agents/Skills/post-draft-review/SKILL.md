@@ -17,7 +17,7 @@ Transition the agent from draft mode to in-season management. Preserve its durab
 - Do not add, drop, claim, trade, or otherwise acquire players.
 - Do not invent roster data, injury information, player roles, or draft results.
 - Do not delete the team identity, logo path, league settings, decision history, or meaningful strategy updates.
-- Do not use `AutoSetLineup`; delegate lineup assignment to `roster-management`.
+- Delegate lineup assignment to `roster-management`.
 
 ## Required tools
 
@@ -33,7 +33,7 @@ Transition the agent from draft mode to in-season management. Preserve its durab
 
 1. Call `GetLeagueState`, `ReadAgentBootstrap(agentId)`, and `GetMyRoster(agentId)`.
 2. Confirm the roster is the source of truth for player names, IDs, positions, teams, and slot assignments.
-3. Ask the `roster-management` skill to set and verify the complete initial lineup from the current roster. Do not call `AutoSetLineup`.
+3. Ask the `roster-management` skill to set and verify the complete initial lineup from the current roster.
 4. Re-read `GetMyRoster(agentId)` after lineup management so the game plan reflects the verified final slots.
 5. Build a concise `## Current Roster` table using the verified roster:
 

@@ -150,9 +150,11 @@ public class SeasonRunner
 
         foreach(var agent in activeAgents)
         {
+            var agentId = agent.GetAgentName()!;
             var reflectionPrompt =
             $"""
-            You are {agent.GetAgentName()}. Season {_leagueState.Season} Week {completedWeek} is finalized.
+            You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
+            Season {_leagueState.Season} Week {completedWeek} is finalized.
             Use the `weekly-reflection` tool and review exactly Week {completedWeek}; the current league week is {week}, but do not query it as the completed matchup.
 
             Required calls: `ReadAgentBootstrap({agent.GetAgentName()})`,
@@ -167,9 +169,11 @@ public class SeasonRunner
         // Then we will prompt the agents to evaluate whether they should make waiver claims.
         foreach(var agent in activeAgents)
         {
+            var agentId = agent.GetAgentName()!;
             var prompt =
             $"""
-            You are {agent.GetAgentName()}. Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
+            You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
+            Today is Tuesday, a brand-new week in season {_leagueState.Season} week {week}.
             Use the `weekly-player-management` skill to evaluate whether meaningful waiver claims improve your roster.
             Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
             Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
@@ -217,10 +221,11 @@ public class SeasonRunner
                         claims = group
                     };
 
+                    var agentId = agent.GetAgentName()!;
                     var prompt =
                     $"""
                     Today is Wednesday, and all waiver wire claims have been processed for season {_leagueState.Season} week {_leagueState.Week}.
-                    You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                    You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
                     Use the `waiver-result-review` skill to review your waiver outcomes.
                     Only if the review confirms a successful claim and the roster confirms that it could improve a fillable lineup slot, use the `roster-management` skill to update your lineup.
                     Do not end with a tool call or plan. Return the required decision summary as visible text, even when no changes are made.
@@ -252,8 +257,8 @@ public class SeasonRunner
                 var prompt =
                 $"""
                 Today is Wednesday of season {_leagueState.Season}, week {_leagueState.Week}, and the league is in free agency.
-                You are {agentId}. Use this exact agent ID for every tool call.
-                Use only the `weekly-player-management` skill to decide whether one meaningful free-agent add/drop would improve your roster.
+                You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
+                Use only the `weekly-player-management` skill to decide whether any meaningful free-agent add/drops would improve your roster.
                 A no-change decision is valid. Do not modify agent profiles or bootstrap status.
                 Return the skill's required decision summary as visible text, even when no change is made.
                 """;
@@ -269,8 +274,6 @@ public class SeasonRunner
 
         // Thursday! This is the day when some games start, so we want to make sure the agents have set their lineups correctly for the games that are happening today.
         // Also, later at night, maybe we run this again to get some scores, as well as lock the players who have played.
-        
-
         var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
         if (!weeklyScoresSuccess)
         {
@@ -286,15 +289,15 @@ public class SeasonRunner
             var activeAgents = await GetActiveAgentsAsync();
             foreach(var agent in activeAgents)
             {
+                var agentId = agent.GetAgentName()!;
                 var prompt =
                 $"""
                 Today is Thursday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
                 We are still in the free-agency phase, however some players may have games today.
                 This is your chance to make sure these players are set correctly for their games today.
                 Remember, all your starting roster slots must be filled.
-                Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
-                When you're done, use the `roster-management` skill to update your lineup, if necessary.
+                Use the `roster-management` skill to update your lineup, if necessary.
                 Return the skill's required decision summary as visible text, even when no change is made.
                 """;
 
@@ -327,10 +330,11 @@ public class SeasonRunner
             var activeAgents = await GetActiveAgentsAsync();
             foreach(var agent in activeAgents)
             {
+                var agentId = agent.GetAgentName()!;
                 var prompt =
                 $"""
                 Today is Friday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
                 We are still in the free-agency phase, and while there are no games today, this is a quick oppertunity to make sure your roster is set correctly for the upcoming games on Sunday and Monday.
                 Remember, all your starting roster slots must be filled.
                 Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
@@ -364,11 +368,12 @@ public class SeasonRunner
             var activeAgents = await GetActiveAgentsAsync();
             foreach(var agent in activeAgents)
             {
+                var agentId = agent.GetAgentName()!;
                 var prompt =
                 $"""
                 Today is Saturday. We are in season {_leagueState.Season} week {_leagueState.Week}.
                 Your goal is to ensure you have the best possible roster for the upcoming games on Sunday and Monday. Do not worry about next week.
-                You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+                You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
                 We are still in the free-agency phase, however some players may have had games on Thursday, and if so, they will be locked in their current roster spots.
                 This is one of your last chances to make any roster moves before the games start on Sunday and Monday.
                 Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
@@ -399,10 +404,11 @@ public class SeasonRunner
         var activeAgents = await GetActiveAgentsAsync();
         foreach(var agent in activeAgents)
         {
+            var agentId = agent.GetAgentName()!;
             var prompt =
             $"""
             Today is Sunday. We are in season {_leagueState.Season} week {_leagueState.Week}.
-            You are {agent.GetAgentName()}. Use this exact agent ID for every tool call.
+            You are {agentId}. Use this exact agent ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
             There are games starting today, so this is your last chance to set your lineups for the Sunday games.
             Preserve every player whose `lockStatus.isLineupMoveLocked` is true. Optimize only players who have not played yet.
             This is a lineup-only run. Do not add, drop, or claim players.
@@ -439,10 +445,11 @@ public class SeasonRunner
         var activeAgents = await GetActiveAgentsAsync();
         foreach(var agent in activeAgents)
         {
+            var agentId = agent.GetAgentName()!;
             var prompt =
             $"""
             Today is Monday of season {_leagueState.Season}, Week {_leagueState.Week}.
-            You are {agent.GetAgentName()}; use this exact ID for every tool call.
+            You are {agentId}; use this exact ID for every tool call. Do not use another agent id such as `player-01`. When prompted for the agent id always use {agentId}.
             It's likely most, if not all your players have played, but if any of your players have not played yet, you can still set your lineup for the Monday game.
             Only compare and move players who have not played and are still unlocked.
             Locked starters will not be able to be moved, and locked bench players will not be able to be moved.

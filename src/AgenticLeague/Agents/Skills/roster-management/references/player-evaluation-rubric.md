@@ -87,7 +87,6 @@ Document close calls in the final decision **Why** section.
 |---------|------------------|
 | Starting a bye player because rank is elite | Always bench on bye |
 | Starting Out player "for upside" | Bench; start next best eligible |
-| Blindly trusting `AutoSetLineup` | It ignores injury/bye judgment — verify/fix |
 | Moving locked Thursday starter after kickoff | Leave locked; optimize remaining slots only |
 | Swapping WR1/WR2 with no ranking change | No-op; leave lineup |
 | Empty FLEX while RB3 sits healthy | Promote best remaining flex-eligible player |

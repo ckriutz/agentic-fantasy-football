@@ -378,9 +378,21 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             ?? throw new RosterPlayerNotFoundException(
                 $"Player '{normalizedSleeperPlayerId}' could not be loaded.");
 
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            [normalizedSleeperPlayerId],
-            cancellationToken);
+        RosterAssignmentEntity? occupyingAssignment = null;
+        if (RosterSlotRules.IsStarterSlot(normalizedSlotType))
+        {
+            occupyingAssignment = await dbContext.RosterAssignments
+                .FirstOrDefaultAsync(
+                    a => a.AgentId == normalizedAgentId
+                         && a.SlotType == normalizedSlotType
+                         && a.SleeperPlayerId != normalizedSleeperPlayerId,
+                    cancellationToken);
+        }
+
+        var lockStatusPlayerIds = occupyingAssignment is null
+            ? (IReadOnlyCollection<string>)[normalizedSleeperPlayerId]
+            : [normalizedSleeperPlayerId, occupyingAssignment.SleeperPlayerId];
+        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(lockStatusPlayerIds, cancellationToken);
         var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId);
         var currentSlotType = RosterSlotRules.NormalizeSlotType(targetAssignment.SlotType);
 
@@ -390,6 +402,19 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             currentSlotType,
             normalizedSlotType,
             lockStatus);
+
+        if (occupyingAssignment is not null)
+        {
+            var occupyingPlayer = await dbContext.Players
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.SleeperPlayerId == occupyingAssignment.SleeperPlayerId, cancellationToken);
+            EnsureLineupMoveAllowed(
+                occupyingPlayer?.FullName ?? occupyingAssignment.SleeperPlayerId,
+                occupyingAssignment.SleeperPlayerId,
+                RosterSlotRules.NormalizeSlotType(occupyingAssignment.SlotType),
+                RosterSlotRules.BenchSlot,
+                GetLockStatus(lockStatusBySleeperPlayerId, occupyingAssignment.SleeperPlayerId));
+        }
 
         if (!RosterSlotRules.CanPlayerOccupySlot(normalizedSlotType, player.Position, player.FantasyPositionsTokenized))
         {
@@ -411,20 +436,10 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        if (RosterSlotRules.IsStarterSlot(normalizedSlotType))
+        if (occupyingAssignment is not null)
         {
-            var occupyingAssignment = await dbContext.RosterAssignments
-                .FirstOrDefaultAsync(
-                    a => a.AgentId == normalizedAgentId
-                         && a.SlotType == normalizedSlotType
-                         && a.SleeperPlayerId != normalizedSleeperPlayerId,
-                    cancellationToken);
-
-            if (occupyingAssignment is not null)
-            {
-                occupyingAssignment.SlotType = RosterSlotRules.BenchSlot;
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
+            occupyingAssignment.SlotType = RosterSlotRules.BenchSlot;
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
 
         targetAssignment.SlotType = normalizedSlotType;
@@ -457,102 +472,6 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             RosterSlotRules.IsStarterSlot(normalizedSlotType),
             GetWeeklyPoints(weeklyPointsBySleeperPlayerId, normalizedSleeperPlayerId),
             GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId));
-    }
-
-    public async Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineupAsync(string agentId, CancellationToken cancellationToken)
-    {
-        var normalizedAgentId = NormalizeAgentId(agentId);
-
-        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        var rosterRows = await (
-            from assignment in dbContext.RosterAssignments
-            join player in dbContext.Players.AsNoTracking().Where(entity => entity.Active)
-                on assignment.SleeperPlayerId equals player.SleeperPlayerId
-            where assignment.AgentId == normalizedAgentId
-            select new RosterAssignmentPlayerRow(assignment, player))
-            .ToListAsync(cancellationToken);
-
-        var lockStatusBySleeperPlayerId = await LoadLockStatusBySleeperPlayerIdAsync(
-            rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
-
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        foreach (var row in rosterRows)
-        {
-            var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId);
-            if (lockStatus.IsLineupMoveLocked)
-            {
-               continue;
-            }
-
-            row.Assignment.SlotType = RosterSlotRules.BenchSlot;
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        var remainingPlayers = rosterRows
-            .Where(row => !GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId).IsLineupMoveLocked)
-            .Select(row => new AutoLineupCandidate(
-               row.Assignment,
-               row.Player,
-               PlayerRecordFactory.Map(row.Player)))
-            .OrderBy(candidate => candidate.PlayerRecord.SearchRank ?? int.MaxValue)
-            .ThenBy(candidate => candidate.PlayerRecord.FullName ?? candidate.PlayerRecord.SleeperPlayerId)
-            .ThenBy(candidate => candidate.PlayerRecord.SleeperPlayerId)
-            .ToList();
-
-        var lockedStarterSlots = rosterRows
-            .Where(row =>
-            {
-               var lockStatus = GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId);
-               return lockStatus.IsLineupMoveLocked && RosterSlotRules.IsStarterSlot(row.Assignment.SlotType);
-            })
-            .Select(row => RosterSlotRules.NormalizeSlotType(row.Assignment.SlotType))
-            .ToHashSet(StringComparer.Ordinal);
-
-        foreach (var slotType in RosterSlotRules.StarterSlots.Where(slot => !lockedStarterSlots.Contains(slot)))
-        {
-            var selectedPlayer = remainingPlayers.FirstOrDefault(candidate =>
-               RosterSlotRules.CanPlayerOccupySlot(
-                   slotType,
-                   candidate.Player.Position,
-                    candidate.Player.FantasyPositionsTokenized));
-
-            if (selectedPlayer is null)
-            {
-                continue;
-            }
-
-            selectedPlayer.Assignment.SlotType = slotType;
-            remainingPlayers.Remove(selectedPlayer);
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(
-            dbContext,
-            rosterRows.Select(row => row.Player.SleeperPlayerId).Distinct().ToArray(),
-            cancellationToken);
-
-        return rosterRows
-            .OrderBy(row => RosterSlotRules.IsBenchSlot(row.Assignment.SlotType) ? 1 : 0)
-            .ThenBy(row => GetSlotSortOrder(row.Assignment.SlotType))
-            .ThenBy(row => row.Player.FullName ?? row.Player.SleeperPlayerId)
-            .ThenBy(row => row.Player.SleeperPlayerId)
-            .Select(row => CreateRosterPlayerResult(
-                PlayerRecordFactory.Map(row.Player),
-                normalizedAgentId,
-                isAvailable: false,
-                row.Assignment.AcquiredAtUtc,
-                row.Assignment.AcquisitionSource,
-                row.Assignment.SlotType ?? RosterSlotRules.BenchSlot,
-                RosterSlotRules.IsStarterSlot(row.Assignment.SlotType),
-                GetWeeklyPoints(weeklyPointsBySleeperPlayerId, row.Player.SleeperPlayerId),
-                GetLockStatus(lockStatusBySleeperPlayerId, row.Player.SleeperPlayerId)))
-            .ToList();
     }
 
     private async Task<Dictionary<string, IReadOnlyDictionary<int, decimal>>> LoadWeeklyPointsBySleeperPlayerIdAsync(LeagueApiDbContext dbContext, IReadOnlyCollection<string> sleeperPlayerIds, CancellationToken cancellationToken)
@@ -686,16 +605,6 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         return agentId.Trim();
     }
 
-    private static int GetSlotSortOrder(string? slotType)
-    {
-        var normalizedSlotType = RosterSlotRules.NormalizeSlotType(slotType);
-        var slotIndex = RosterSlotRules.StarterSlots
-            .Select((slot, index) => new { slot, index })
-            .FirstOrDefault(item => string.Equals(item.slot, normalizedSlotType, StringComparison.Ordinal));
-
-        return slotIndex?.index ?? int.MaxValue;
-    }
-
     private static bool IsUniqueViolation(DbUpdateException exception)
     {
         return exception.InnerException is PostgresException postgresException
@@ -765,13 +674,4 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
         DateTimeOffset? AcquiredAtUtc,
         string? AcquisitionSource,
         string? SlotType);
-
-    private sealed record RosterAssignmentPlayerRow(
-        RosterAssignmentEntity Assignment,
-        PlayerEntity Player);
-
-    private sealed record AutoLineupCandidate(
-        RosterAssignmentEntity Assignment,
-        PlayerEntity Player,
-        PlayerRecord PlayerRecord);
 }

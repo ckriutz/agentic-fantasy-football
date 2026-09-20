@@ -60,24 +60,6 @@ public sealed class RosterTools(IRosterReader rosterReader, IRosterWriter roster
         }
     }
 
-    [McpServerTool(UseStructuredContent = true), Description("Automatically set the best valid starting lineup from the agent's current roster using Sleeper search rank. Unused players remain on BN. Check the ok field: when true, read result; when false, read the error object's code, message, and nextStep, then take the action nextStep describes.")]
-    public async Task<ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>> AutoSetLineup([Description("The agent ID, such as player-01.")] string agentId)
-    {
-        try
-        {
-            var roster = await _rosterWriter.AutoSetLineupAsync(agentId, CancellationToken.None);
-            return ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>.Success(roster.Select(RosterToolPlayerResult.FromRosterPlayerResult).ToList());
-        }
-        catch (ArgumentException exception)
-        {
-            return ToolResult<IReadOnlyList<RosterToolPlayerResult>, RosterOperationErrorDetails>.Failure(
-                "invalid_request",
-                exception.Message,
-                new RosterOperationErrorDetails { AgentId = agentId },
-                "Provide a valid agent ID, then retry.");
-        }
-    }
-
     private static RosterMoveErrorDetails CreateRosterMoveErrorDetails(RosterMoveValidationException exception)
     {
         return new RosterMoveErrorDetails

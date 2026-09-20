@@ -20,8 +20,4 @@ public interface IRosterWriter
         string sleeperPlayerId,
         string slotType,
         CancellationToken cancellationToken);
-
-    Task<IReadOnlyList<RosterPlayerResult>> AutoSetLineupAsync(
-        string agentId,
-        CancellationToken cancellationToken);
 }

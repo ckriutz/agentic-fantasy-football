@@ -288,7 +288,19 @@ public class FantasyAgent
                         ToolCalls = run.ToolCalls,
                     };
                 }
-                catch (ClientResultException ex) when (ex.Status == 429 || ex.Status == 503)
+                catch (ClientResultException ex) when (ex.Status == 503)
+                {
+                    if (attempt >= 2)
+                    {
+                        _logger.LogError(ex, "Agent {AgentId} received HTTP 503 three times in a row. Pausing the current operation.", _profile.AgentId);
+                        throw new AgentCapacityException(_profile.AgentId, ex);
+                    }
+
+                    var retryDelay = retryDelays[attempt];
+                    _logger.LogWarning(ex, "Agent {AgentId} received HTTP 503 on attempt {Attempt}. Retrying in {RetryDelaySeconds} seconds.", _profile.AgentId, attempt + 1, retryDelay.TotalSeconds);
+                    await Task.Delay(retryDelay);
+                }
+                catch (ClientResultException ex) when (ex.Status == 429)
                 {
                     if (attempt == retryDelays.Length)
                     {
@@ -377,4 +389,9 @@ public class FantasyAgent
         return value.Substring(0, max) + "... (truncated)";
     }
 
+}
+
+public sealed class AgentCapacityException(string agentId, Exception innerException) : Exception($"Agent '{agentId}' received HTTP 503 three times in a row.", innerException)
+{
+    public string AgentId { get; } = agentId;
 }

@@ -15,7 +15,6 @@ public class DraftRunner
     const int maxDraftPickAttempts = 3;
     const int maxRosterSize = 16;
     const int totalRounds = 16;
-    const int reviewAfterRound = 3;
     private DraftState _draftState = new();
     private BlobStorageTools _blobStorageTools;
 
@@ -53,12 +52,6 @@ public class DraftRunner
             _logger.LogInformation($"Resuming draft from saved state: Round {_draftState.Round}, Pick {_draftState.Pick}");
         }
 
-        if (_draftState.Round > reviewAfterRound)
-        {
-            _logger.LogInformation("Draft is paused after round {ReviewAfterRound} for review.", reviewAfterRound);
-            return _draftState;
-        }
-
         // Okay, now that we have the draft set up, lets do it!
         var orderedAgents = GetOrderedAgents();
 
@@ -75,8 +68,7 @@ public class DraftRunner
 
         // If we've gotten here, we're good!
         // So now, let's loop through every round, giving each agent their chance to pick.
-        // Stop at the review round without marking the full draft complete.
-        for(; _draftState.Round <= totalRounds && _draftState.Round <= reviewAfterRound; _draftState.Round++)
+        for(; _draftState.Round <= totalRounds; _draftState.Round++)
         {
             _logger.LogInformation($"Starting round {_draftState.Round}");
 
@@ -105,7 +97,14 @@ public class DraftRunner
 
                 AgentResponse? response = null;
                 // Step 1: Let the agent try. This includes retries in case of transient errors up to the maximum number of draft pick attempts.
-                response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts);
+                try
+                {
+                    response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts);
+                }
+                catch (AgentCapacityException exception)
+                {
+                    return await PauseDraftForCapacityAsync(exception, agentName, rosterCountBefore);
+                }
 
                 // Step 2: Verify roster actually grew.
                 var rosterCountAfter = await GetAgentRosterCountAsync(agentName);
@@ -113,7 +112,14 @@ public class DraftRunner
                 {
                     // Looks like it did not increase, so we will retry once more according to our retry logic.
                     _logger.LogWarning("Agent {AgentName} did not add a player on first attempt. Retrying...", agentName);
-                    response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts, response?.Text);
+                    try
+                    {
+                        response = await DraftPlayerAsync(agent, _draftState.Round, _draftState.Pick, maxDraftPickAttempts, response?.Text);
+                    }
+                    catch (AgentCapacityException exception)
+                    {
+                        return await PauseDraftForCapacityAsync(exception, agentName, rosterCountBefore);
+                    }
                     rosterCountAfter = await GetAgentRosterCountAsync(agentName);
                 }
 
@@ -139,13 +145,6 @@ public class DraftRunner
             }
         }
 
-        if (_draftState.Round <= totalRounds)
-        {
-            await SaveDraftStateAsync(writeIndented: true);
-            _logger.LogInformation("Draft paused after round {CompletedRound} for review. The next run will resume at round {NextRound}.", reviewAfterRound, _draftState.Round);
-            return _draftState;
-        }
-
         // Draft is complete! Update state and save.
         _draftState.IsDraftComplete = true;
         await SaveDraftStateAsync(writeIndented: true);
@@ -154,6 +153,21 @@ public class DraftRunner
         await RunPostDraftAsync(_agents);
         _logger.LogInformation("Post-draft review complete!");
 
+        return _draftState;
+    }
+
+    async Task<DraftState> PauseDraftForCapacityAsync(AgentCapacityException exception, string agentName, int rosterCountBefore)
+    {
+        var rosterCountAfter = await GetAgentRosterCountAsync(agentName);
+        if (rosterCountAfter > rosterCountBefore)
+        {
+            _logger.LogWarning("Agent {AgentName} added a player before capacity errors paused the draft. Advancing past overall pick {Pick} to avoid drafting twice.", agentName, _draftState.Pick);
+            _draftState.Pick++;
+            _draftState.Round = ((_draftState.Pick - 1) / _agents.Count) + 1;
+        }
+
+        await SaveDraftStateAsync(writeIndented: true);
+        _logger.LogError(exception, "Draft paused because agent {AgentName} received repeated capacity errors. Resume later from Round={Round}, Pick={Pick}.", agentName, _draftState.Round, _draftState.Pick);
         return _draftState;
     }
 
