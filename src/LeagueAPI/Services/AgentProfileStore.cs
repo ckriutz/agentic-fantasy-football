@@ -44,6 +44,8 @@ public sealed class AgentProfileStore(IDbContextFactory<LeagueApiDbContext> dbCo
         var normalizedAgentId = NormalizeAgentId(agentId);
         var normalizedModelName = NormalizeRequired(modelName, nameof(modelName), MaxModelNameLength);
         var normalizedConnection = NormalizeRequired(connection, nameof(connection), MaxConnectionLength);
+        if (normalizedConnection != "OpenRouter")
+            throw new ArgumentException("Only OpenRouter is supported as an agent connection.", nameof(connection));
         var normalizedTeamName = NormalizeOptional(teamName, nameof(teamName), MaxTeamNameLength);
         var now = DateTimeOffset.UtcNow;
 

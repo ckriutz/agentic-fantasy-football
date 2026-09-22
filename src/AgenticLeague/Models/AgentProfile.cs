@@ -23,7 +23,7 @@ public class AgentProfile
     public string ModelName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Model connection/provider being used for this agent (e.g., "OpenRouter" or "MSFoundry").
+    /// Model connection/provider being used for this agent ("OpenRouter").
     /// </summary>
     public string Connection { get; set; } = string.Empty;
 

@@ -85,49 +85,24 @@ public class FantasyAgent
 
     private IChatClient GetChatClient(AgentProfile aProfile)
     {
-        if (aProfile.Connection == "OpenRouter")
+        if (aProfile.Connection != "OpenRouter")
         {
-            var key = EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY");
-            OpenAIClientOptions options = new OpenAIClientOptions
-            {
-                Endpoint = new Uri("https://openrouter.ai/api/v1"),
-                NetworkTimeout = TimeSpan.FromMinutes(5),
-                // OpenRouter can return finish_reason values the OpenAI SDK rejects, so responses are normalized first.
-                // The handler also stamps x-session-id so this agent's requests stick to one provider and stay cache-warm.
-                Transport = new HttpClientPipelineTransport(new HttpClient(new OpenRouterResponseNormalizingHandler(_logger, aProfile.AgentId)) { Timeout = TimeSpan.FromMinutes(5) }),
-            };
-            OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
-            var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();
-
-            return chatClient;
+            throw new InvalidOperationException($"Unsupported connection type '{aProfile.Connection}' for agent '{aProfile.AgentId}'. Set its connection to OpenRouter.");
         }
-        if (aProfile.Connection == "MSFoundry")
+
+        var key = EnvironmentVariableHelper.GetRequired("OPENROUTER_API_KEY");
+        OpenAIClientOptions options = new OpenAIClientOptions
         {
-            var key = EnvironmentVariableHelper.GetRequired("FoundryKey");
-            var foundryEndpoint = EnvironmentVariableHelper.GetRequired("FoundryEndpoint");
-            OpenAIClientOptions options = new OpenAIClientOptions
-            {
-                Endpoint = new Uri(foundryEndpoint),
-                NetworkTimeout = TimeSpan.FromMinutes(5),
-            };
-            OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
-            var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();
+            Endpoint = new Uri("https://openrouter.ai/api/v1"),
+            NetworkTimeout = TimeSpan.FromMinutes(5),
+            // OpenRouter can return finish_reason values the OpenAI SDK rejects, so responses are normalized first.
+            // The handler also stamps x-session-id so this agent's requests stick to one provider and stay cache-warm.
+            Transport = new HttpClientPipelineTransport(new HttpClient(new OpenRouterResponseNormalizingHandler(_logger, aProfile.AgentId)) { Timeout = TimeSpan.FromMinutes(5) }),
+        };
+        OpenAIClient openAIClient = new OpenAIClient(new ApiKeyCredential(key), options);
+        var chatClient = openAIClient.GetChatClient(aProfile.ModelName).AsIChatClient();
 
-            return chatClient;
-        }
-        if (aProfile.Connection == "Meta")
-        {
-            var key = EnvironmentVariableHelper.GetRequired("META_API_KEY");
-            OpenAIClientOptions options = new OpenAIClientOptions
-            {
-                Endpoint = new Uri("https://api.meta.ai/v1"),
-                NetworkTimeout = TimeSpan.FromMinutes(5),
-            };
-            IChatClient chatClient = new ChatClient(aProfile.ModelName, new ApiKeyCredential(key), options).AsIChatClient();
-
-            return chatClient;
-        }
-        throw new InvalidOperationException($"Unsupported connection type '{aProfile.Connection}'.");
+        return chatClient;
     }
 
     private async Task<AIAgent> GetAIAgentAsync(IChatClient chatClient, AgentProfile aProfile)
