@@ -83,10 +83,10 @@ if (string.Equals(mode, "test", StringComparison.OrdinalIgnoreCase))
 {
     logger.LogInformation("Running a test.");
     List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
-    var testAgent = agents.FirstOrDefault(a => a.GetAgentName() == "xai");
+    var testAgent = agents.FirstOrDefault(a => a.GetAgentName() == "poolside");
 
     var agentId = testAgent.GetAgentName();
-    var result = await testAgent.RunAsync($"You are `{agentId}`. This is your authoritative agent ID. Use `{agentId}` for every tool call");
+    var result = await testAgent.RunAsync($"You are `{agentId}`. This is your authoritative agent ID. Use `{agentId}` for every tool call. Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run");
 
     logger.LogInformation("Agent {AgentId} produced response: {Response}", testAgent.GetAgentName(), result.Response);
     return;
