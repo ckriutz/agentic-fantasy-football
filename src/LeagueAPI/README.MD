@@ -149,6 +149,20 @@ Example:
 curl "http://127.0.0.1:5181/api/players?name=patrick%20mahomes&limit=5"
 ```
 
+### Get current roster
+
+`GET /api/rosters/{agentId}`
+
+Returns the team's current players, starter/bench assignments, weekly points for the current league season, and current player lock status. Live matchup pages use this endpoint.
+
+### Get finalized weekly roster
+
+`GET /api/rosters/{agentId}/seasons/{season}/weeks/{week}`
+
+Returns the saved roster from weekly finalization, including the starter/bench assignments and points for the requested season and week. Players remain in the historical roster even if they have since been dropped or marked inactive. Historical lock status reflects the requested week's scores, not the current league week.
+
+Finalized matchup pages use this endpoint instead of the current roster. The finalized team total remains unchanged. If no snapshot exists, the endpoint returns `404 Not Found` and the page reports that the finalized lineup is unavailable; it does not substitute the current lineup. No database migration is required.
+
 ### Get latest sync status
 
 `GET /api/sync/sleeper/latest`

@@ -113,6 +113,7 @@ app.MapGet("/", () => Results.Ok(new
         "/api/players?name=&team=&position=&byeWeek=&sortBy=&sortDescending=&limit=",
         "/api/players/available?name=&team=&position=&byeWeek=&limit=",
         "/api/rosters/{agentId}",
+        "/api/rosters/{agentId}/seasons/{season}/weeks/{week} (GET: finalized roster snapshot and weekly points)",
         "/api/league/roster-moves (POST: agentId, addSleeperPlayerId, dropSleeperPlayerId)",
         "/api/sync/sleeper/latest",
         "/api/sync/sleeper (POST: containerName, blobName, retrievedAtUtc)",
@@ -538,6 +539,21 @@ app.MapGet("/api/rosters/{agentId}", async (
         return Results.Ok(roster);
     }
     catch (ArgumentException ex)
+    {
+        return CreateDomainErrorResult(ex);
+    }
+});
+
+app.MapGet("/api/rosters/{agentId}/seasons/{season:int}/weeks/{week:int}", async (string agentId, int season, int week, IRosterReader rosterReader, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var roster = await rosterReader.GetWeeklyRosterAsync(agentId, season, week, cancellationToken);
+        return roster is null
+            ? Results.NotFound(new { error = $"No finalized roster snapshot exists for agent '{agentId}', season {season}, week {week}." })
+            : Results.Ok(roster);
+    }
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
         return CreateDomainErrorResult(ex);
     }

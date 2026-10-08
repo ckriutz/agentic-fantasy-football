@@ -178,18 +178,24 @@ function MatchupPage() {
           throw new Error('Matchup not found.')
         }
 
+        const rosterSuffix = selectedMatchup.isComplete
+          ? `/seasons/${selectedMatchup.season}/weeks/${selectedMatchup.week}`
+          : ''
         const [homeRosterResponse, awayRosterResponse] = await Promise.all([
-          fetch(`${apiBaseUrl}/api/rosters/${encodeURIComponent(selectedMatchup.homeAgentId)}`, { signal: controller.signal }),
-          fetch(`${apiBaseUrl}/api/rosters/${encodeURIComponent(selectedMatchup.awayAgentId)}`, { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/rosters/${encodeURIComponent(selectedMatchup.homeAgentId)}${rosterSuffix}`, { signal: controller.signal }),
+          fetch(`${apiBaseUrl}/api/rosters/${encodeURIComponent(selectedMatchup.awayAgentId)}${rosterSuffix}`, { signal: controller.signal }),
         ])
         if (!homeRosterResponse.ok || !awayRosterResponse.ok) {
           const response = !homeRosterResponse.ok ? homeRosterResponse : awayRosterResponse
+          if (selectedMatchup.isComplete && response.status === 404) {
+            throw new Error('The finalized lineup is unavailable for this matchup.')
+          }
           throw new Error(`Request failed with status ${response.status}`)
         }
 
         setMatchup(selectedMatchup)
         setProfiles((await profilesResponse.json()) as AgentProfile[])
-        setSeason(season)
+        setSeason(selectedMatchup.season)
         setHomeRoster((await homeRosterResponse.json()) as RosterEntry[])
         setAwayRoster((await awayRosterResponse.json()) as RosterEntry[])
       } catch (fetchError) {

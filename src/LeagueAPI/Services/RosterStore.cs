@@ -52,6 +52,56 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             .ToList();
     }
 
+    public async Task<IReadOnlyList<RosterPlayerResult>?> GetWeeklyRosterAsync(string agentId, int season, int week, CancellationToken cancellationToken)
+    {
+        var normalizedAgentId = NormalizeAgentId(agentId);
+        ScheduleService.ValidateSeasonAndWeek(season, week);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var snapshots = await dbContext.WeeklyRosterSnapshots
+            .AsNoTracking()
+            .Where(snapshot => snapshot.AgentId == normalizedAgentId && snapshot.Season == season && snapshot.Week == week)
+            .ToListAsync(cancellationToken);
+
+        if (snapshots.Count == 0)
+            return null;
+
+        var sleeperPlayerIds = snapshots.Select(snapshot => snapshot.SleeperPlayerId).Distinct().ToArray();
+        var playersBySleeperPlayerId = await dbContext.Players
+            .AsNoTracking()
+            .Where(player => sleeperPlayerIds.Contains(player.SleeperPlayerId))
+            .ToDictionaryAsync(player => player.SleeperPlayerId, cancellationToken);
+        var weeklyPointsBySleeperPlayerId = await LoadWeeklyPointsBySleeperPlayerIdAsync(dbContext, sleeperPlayerIds, cancellationToken, season, week);
+
+        return snapshots.Select(snapshot =>
+        {
+            if (!playersBySleeperPlayerId.TryGetValue(snapshot.SleeperPlayerId, out var player))
+                throw new InvalidOperationException($"Player '{snapshot.SleeperPlayerId}' from the roster snapshot for agent '{normalizedAgentId}', season {season}, week {week} was not found.");
+
+            var weeklyPoints = GetWeeklyPoints(weeklyPointsBySleeperPlayerId, snapshot.SleeperPlayerId);
+            var lockStatus = new PlayerLockStatus(
+                weeklyPoints.ContainsKey(week),
+                true,
+                "This weekly roster is finalized.",
+                true,
+                "This weekly roster is finalized.");
+
+            return CreateRosterPlayerResult(
+                PlayerRecordFactory.Map(player),
+                snapshot.AgentId,
+                isAvailable: false,
+                acquiredAtUtc: null,
+                acquisitionSource: null,
+                snapshot.SlotType,
+                snapshot.IsStarter,
+                weeklyPoints,
+                lockStatus);
+        })
+        .OrderBy(result => result.Player.FullName ?? result.Player.SleeperPlayerId)
+        .ThenBy(result => result.Player.SleeperPlayerId)
+        .ToList();
+    }
+
     public async Task<IReadOnlyList<RosterPlayerResult>> QueryPlayersAsync(PlayerQuery query, CancellationToken cancellationToken)
     {
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -474,19 +524,20 @@ public sealed class RosterStore(IDbContextFactory<LeagueApiDbContext> dbContextF
             GetLockStatus(lockStatusBySleeperPlayerId, normalizedSleeperPlayerId));
     }
 
-    private async Task<Dictionary<string, IReadOnlyDictionary<int, decimal>>> LoadWeeklyPointsBySleeperPlayerIdAsync(LeagueApiDbContext dbContext, IReadOnlyCollection<string> sleeperPlayerIds, CancellationToken cancellationToken)
+    private async Task<Dictionary<string, IReadOnlyDictionary<int, decimal>>> LoadWeeklyPointsBySleeperPlayerIdAsync(LeagueApiDbContext dbContext, IReadOnlyCollection<string> sleeperPlayerIds, CancellationToken cancellationToken, int? season = null, int? week = null)
     {
         if (sleeperPlayerIds.Count == 0)
         {
             return [];
         }
 
-        var season = await ResolveCurrentSeasonAsync(dbContext, cancellationToken);
+        var scoreSeason = season ?? await ResolveCurrentSeasonAsync(dbContext, cancellationToken);
 
         var weeklyPoints = await dbContext.WeeklyPlayerScores
             .AsNoTracking()
             .Where(score =>
-                score.Season == season
+                score.Season == scoreSeason
+                && (week == null || score.Week == week)
                 && score.SleeperPlayerId != null
                 && sleeperPlayerIds.Contains(score.SleeperPlayerId))
             .Select(score => new
