@@ -103,15 +103,26 @@ if(string.Equals(mode, "draft", StringComparison.OrdinalIgnoreCase))
 
 if(string.Equals(mode, "season", StringComparison.OrdinalIgnoreCase))
 {
-    var leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
-    HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
-    logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
-    List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
-    List<FantasyAgent> rndAgents = agents
-        .OrderBy(_ => Random.Shared.Next())
-        .ToList();
-    
-    await RunSeasonAsync(rndAgents, leagueState.Phase, host, _http, _scoresHttp, leagueState);
+    var reporter = new LeagueRunnerReporter(_http, logger);
+    LeagueState? leagueState = null;
+    try
+    {
+        leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, logger);
+        await reporter.StartAsync("season", leagueState.Season, leagueState.Week, leagueState.Phase);
+        HttpClient _scoresHttp = new() { BaseAddress = new Uri(EnvironmentVariableHelper.GetRequired("FANTASYPROS_SYNC_BASE_URL")) };
+        logger.LogInformation("League state is valid. Current league phase: {Phase}", leagueState.Phase);
+        List<FantasyAgent> agents = await LoadAgentsAsync(_http, host, logger);
+        List<FantasyAgent> rndAgents = agents.OrderBy(_ => Random.Shared.Next()).ToList();
+        var result = await RunSeasonAsync(rndAgents, leagueState.Phase, host, _http, _scoresHttp, leagueState, reporter);
+        await reporter.CompleteAsync(result.Status, result.Summary, result.Status == "Failed" ? result.Summary : null);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Season run failed.");
+        if (reporter.RunId is null)
+            await reporter.StartAsync("season", leagueState?.Season, leagueState?.Week, leagueState?.Phase);
+        await reporter.CompleteAsync("Failed", ex.Message, ex.Message);
+    }
 }
 
 static string? GetMode(string[] arguments)
@@ -214,20 +225,21 @@ static async Task RunDraftAsync(List<FantasyAgent> agents, string phase, HttpCli
     }
 }
 
-static async Task RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost host, HttpClient http, HttpClient scoresHttp, LeagueState leagueState)
+static async Task<SeasonRunResult> RunSeasonAsync(List<FantasyAgent> agents, string phase, IHost host, HttpClient http, HttpClient scoresHttp, LeagueState leagueState, LeagueRunnerReporter reporter)
 {
     ILogger seasonLogger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("SeasonRunner");
     // We don't want to run the season runner if we are in the drafting phase, because the draft runner will handle moving the league into the free-agency phase once the draft is complete.
     if (string.Equals(phase, "drafting", StringComparison.OrdinalIgnoreCase))
     {
         seasonLogger.LogInformation("Skipping season runner because league is in drafting phase.");
-        return;
+        return new SeasonRunResult("Skipped", "League is in the drafting phase.");
     }
     seasonLogger.LogInformation("League state is {Phase}. Starting the season runner...", phase);
 
-    SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, scoresHttp, leagueState);
-    await seasonRunner.RunAsync();
-    seasonLogger.LogInformation("🎉 Season runner completed.");
+    SeasonRunner seasonRunner = new SeasonRunner(agents, seasonLogger, http, scoresHttp, leagueState, reporter);
+    var result = await seasonRunner.RunAsync();
+    seasonLogger.LogInformation("🎉 Season runner completed with status {Status}.", result.Status);
+    return result;
 }
 
 static async Task<double> RunCreditCheckAsync(ILogger logger)

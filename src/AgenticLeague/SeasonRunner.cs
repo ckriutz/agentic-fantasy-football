@@ -10,45 +10,49 @@ public class SeasonRunner
     private readonly ILogger _logger;
     private readonly HttpClient _http;
     private readonly HttpClient _scoresHttp;
+    private readonly LeagueRunnerReporter _reporter;
     private LeagueState _leagueState;
+    private string? _blockingError;
 
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp, LeagueRunnerReporter reporter)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
         _scoresHttp = scoresHttp;
+        _reporter = reporter;
         _leagueState = LeagueStateHelper.GetLeagueStateAsync(_http, _logger).Result;
     }
 
     // In case for testing I wanted to pass in a custom league state, I can use this constructor instead of the one above.
-    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp, LeagueState leagueState)
+    public SeasonRunner(List<FantasyAgent> agents, ILogger logger, HttpClient http, HttpClient scoresHttp, LeagueState leagueState, LeagueRunnerReporter reporter)
     {
         _agents = agents;
         _logger = logger;
         _http = http;
         _scoresHttp = scoresHttp;
         _leagueState = leagueState;
+        _reporter = reporter;
     }
 
-    public async Task RunAsync()
+    public async Task<SeasonRunResult> RunAsync()
     {
         _logger.LogInformation("Season runner is starting.");
         if (_leagueState is null)
         {
             // This shouldn't be the case, but whatever.
             _logger.LogError("Season runner cannot continue because league state is unavailable.");
-            return;
+            return new SeasonRunResult("Failed", "League state is unavailable.");
         }
         if (_leagueState.Week <= 0)
         {
             _logger.LogWarning("Season runner cannot continue because the league is in preseason or week 0.");
-            return;
+            return new SeasonRunResult("Skipped", "League is in preseason or week 0.");
         }
         if (string.Equals(_leagueState.SeasonStage, "complete", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Season {Season} is complete. No season tasks will run.", _leagueState.Season);
-            return;
+            return new SeasonRunResult("Skipped", $"Season {_leagueState.Season} is complete.");
         }
 
         // All league-day decisions use US Eastern Time, including daylight-saving transitions.
@@ -99,6 +103,30 @@ public class SeasonRunner
         {
             await RunMondayAsync();
         }
+
+        if (_blockingError is not null)
+            return new SeasonRunResult("Failed", _blockingError);
+        if (_reporter.FailedAttempts > 0)
+            return new SeasonRunResult("Failed", $"{_reporter.FailedAttempts} of {_reporter.Attempts} agent runs failed.");
+        if (_reporter.Attempts == 0)
+            return new SeasonRunResult("Skipped", $"No agent tasks ran on {dayOfWeek} while the league phase was {_leagueState.Phase}.");
+        return new SeasonRunResult("Succeeded", $"{_reporter.Attempts} agent runs succeeded.");
+    }
+
+    private async Task RunAgentTaskAsync(FantasyAgent agent, string prompt, int week, string type, string action)
+    {
+        var agentId = agent.GetAgentName() ?? "unknown";
+        try
+        {
+            var response = (await agent.RunAsync(prompt)).Response;
+            await DecisionLogger.LogDecisionAsync(agentId, week, type, response, action, _logger);
+            await _reporter.RecordAgentAsync(agentId, true, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Agent {AgentId} failed during {Action}.", agentId, action);
+            await _reporter.RecordAgentAsync(agentId, false, ex.Message);
+        }
     }
 
 
@@ -123,14 +151,19 @@ public class SeasonRunner
         var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week, forceRefresh: true);
         if (!weeklyScoresSuccess)
         {
-            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            _blockingError = $"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}.";
+            _logger.LogError(_blockingError + " League state will not advance.");
             return;
         }
 
         // Then, we finalize the matchups for the current week to ensure all results are recorded.
         // This "locks in" the results for the week, ensuring that the matchups are finalized and no further changes can be made to the scores or outcomes.
         var finalization = await FinalizeMatchupsForWeekAsync(_leagueState.Season, _leagueState.Week);
-        if (finalization is null) {return; }
+        if (finalization is null)
+        {
+            _blockingError = $"Failed to finalize matchups for season {_leagueState.Season}, week {_leagueState.Week}.";
+            return;
+        }
         if (finalization.SeasonCompleted)
         {
             _leagueState = await LeagueStateHelper.GetLeagueStateAsync(_http, _logger);
@@ -162,8 +195,7 @@ public class SeasonRunner
 
             Do not use `SearchWeb` for this task. Do not use any other tools. Do not make any roster or lineup changes. Do not make any waiver claims. Do not make any trades. Do not make any draft picks. Do not make any other moves.
             """;
-            var response = (await agent.RunAsync(reflectionPrompt)).Response;
-            await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, completedWeek, "Weekly Reflection", response, $"Weekly Reflection for week {completedWeek}", _logger);
+            await RunAgentTaskAsync(agent, reflectionPrompt, completedWeek, "Weekly Reflection", $"Weekly Reflection for week {completedWeek}");
         }
 
         // Then we will prompt the agents to evaluate whether they should make waiver claims.
@@ -178,8 +210,7 @@ public class SeasonRunner
             Submit waiver claims only when they are justified; a well-supported no-move outcome is valid.
             Do not end with a tool call or plan. Return the required decision summary as visible text, even when no claims are submitted.
             """;
-            var response = (await agent.RunAsync(prompt)).Response;
-            await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, week, "Roster Management", response, "Waiver Claim Attempt", _logger);
+            await RunAgentTaskAsync(agent, prompt, week, "Roster Management", "Waiver Claim Attempt");
         }
     }
 
@@ -203,7 +234,8 @@ public class SeasonRunner
                 var waiverResults = await GetWaiverClaimResults(_leagueState.Season, _leagueState.Week);
                 if (waiverResults is null)
                 {
-                    _logger.LogError("Failed to retrieve waiver claim results for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
+                    _blockingError = $"Failed to retrieve waiver claim results for season {_leagueState.Season} week {_leagueState.Week}.";
+                    _logger.LogError(_blockingError);
                     return;
                 }
 
@@ -234,9 +266,7 @@ public class SeasonRunner
                     {JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true })}
                     """;
 
-                    var response = (await agent.RunAsync(prompt)).Response;
-                    
-                    await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster post Waiver", _logger);
+                    await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster post Waiver");
                 }
 
                 // Then we will set the league state to free-agency, and the agents can start making roster moves outside of the waiver wire if they want to.
@@ -244,7 +274,8 @@ public class SeasonRunner
             }
             else
             {
-                _logger.LogWarning("Failed to process waiver claims for season {Season} week {Week}.", _leagueState.Season, _leagueState.Week);
+                _blockingError = $"Failed to process waiver claims for season {_leagueState.Season} week {_leagueState.Week}.";
+                _logger.LogWarning(_blockingError);
             }
             return;
         }
@@ -262,8 +293,7 @@ public class SeasonRunner
                 A no-change decision is valid. Do not modify agent profiles or bootstrap status.
                 Return the skill's required decision summary as visible text, even when no change is made.
                 """;
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agentId, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+                await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
             }
         }
     }
@@ -277,7 +307,8 @@ public class SeasonRunner
         var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
         if (!weeklyScoresSuccess)
         {
-            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            _blockingError = $"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}.";
+            _logger.LogError(_blockingError + " League state will not advance.");
             return;
         }
 
@@ -301,8 +332,7 @@ public class SeasonRunner
                 Return the skill's required decision summary as visible text, even when no change is made.
                 """;
 
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+                await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
             }
         }
     }
@@ -318,7 +348,8 @@ public class SeasonRunner
         var weeklyScoresSuccess = await ProcessWeeklyScoresAsync(_leagueState.Season, _leagueState.Week);
         if (!weeklyScoresSuccess)
         {
-            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            _blockingError = $"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}.";
+            _logger.LogError(_blockingError + " League state will not advance.");
             return;
         }
 
@@ -342,8 +373,7 @@ public class SeasonRunner
                 Return the skill's required decision summary as visible text, even when no change is made.
                 """;
 
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+                await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
             }
         }
     }
@@ -379,8 +409,7 @@ public class SeasonRunner
                 Use the `weekly-player-management` skill to evaluate whether a meaningful free-agent add/drop improves your roster.
                 When you're done, use the `roster-management` skill to update your lineup.
                 """;
-                var response = (await agent.RunAsync(prompt)).Response;
-                await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+                await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
             }
         }
     }
@@ -414,8 +443,7 @@ public class SeasonRunner
             This is a lineup-only run. Do not add, drop, or claim players.
             Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
             """;
-            var response = (await agent.RunAsync(prompt)).Response;
-            await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+            await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
         }
 
     }
@@ -434,7 +462,8 @@ public class SeasonRunner
         }
         else
         {
-            _logger.LogError($"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}; league state will not advance.");
+            _blockingError = $"Weekly scores sync failed for season {_leagueState.Season}, week {_leagueState.Week}.";
+            _logger.LogError(_blockingError + " League state will not advance.");
             return;
         }
 
@@ -455,8 +484,7 @@ public class SeasonRunner
             Locked starters will not be able to be moved, and locked bench players will not be able to be moved.
             Use the `roster-management` skill to update your lineup. Do not load or use any other skill in this run.
             """;
-            var response = (await agent.RunAsync(prompt)).Response;
-            await DecisionLogger.LogDecisionAsync(agent.GetAgentName()!, _leagueState.Week, "Roster Management", response, "Update Roster", _logger);
+            await RunAgentTaskAsync(agent, prompt, _leagueState.Week, "Roster Management", "Update Roster");
         }
     }
 
