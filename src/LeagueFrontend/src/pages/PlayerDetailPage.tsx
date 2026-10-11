@@ -188,7 +188,7 @@ function PlayerDetailPage() {
     : 0
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
 
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -199,7 +199,7 @@ function PlayerDetailPage() {
         >
           <ArrowLeft className="size-4" />
         </Link>
-        <h2 className="text-3xl font-semibold tracking-tight text-white">
+        <h2 className="text-2xl font-semibold leading-snug tracking-tight text-white sm:text-3xl">
           {state === 'success' && player ? player.fullName : 'Player'}
         </h2>
         {player?.position && (

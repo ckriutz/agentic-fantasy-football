@@ -68,16 +68,16 @@ function MatchupSide({
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
-      {agent && <AgentAvatar agentId={agent.agentId} />}
+      {agent && <AgentAvatar agentId={agent.agentId} sizeClassName="size-9 sm:size-10" iconClassName="size-5 sm:size-6" />}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-white">
+        <p className="text-sm font-semibold leading-snug text-white sm:truncate">
           {agent?.teamName ?? 'Unknown'}
         </p>
-        <p className="truncate text-[10px] text-slate-400">
+        <p className="hidden truncate text-[10px] text-slate-400 sm:block">
           {agent ? `${agent.agentId} | ${agent.modelName}` : ''}
         </p>
       </div>
-      <span className={`font-mono text-base font-semibold ${scoreColor}`}>
+      <span className={`shrink-0 whitespace-nowrap font-mono text-base font-semibold ${scoreColor}`}>
         {points.toFixed(2)}
       </span>
     </div>
@@ -179,7 +179,7 @@ function MatchupsCard({
                 <li key={m.matchupId}>
                   <Link
                     to={`/matchups/${m.matchupId}`}
-                    className="flex items-center gap-3 rounded-lg border border-white/10 bg-slate-950 px-3 py-2 transition-colors hover:border-emerald-300/40 hover:bg-slate-900"
+                    className="flex flex-col gap-1.5 rounded-lg border border-white/10 bg-slate-950 px-3 py-2.5 transition-colors hover:border-emerald-300/40 hover:bg-slate-900 sm:flex-row sm:items-center sm:gap-3 sm:py-2"
                   >
                     <MatchupSide
                       agent={homeAgent}
@@ -187,7 +187,8 @@ function MatchupsCard({
                       isWinning={homeWinning}
                       isLosing={awayWinning}
                     />
-                    <span className="flex shrink-0 flex-col items-center">
+                    <span className="flex items-center gap-2 sm:shrink-0 sm:flex-col sm:gap-0">
+                      <span className="h-px flex-1 bg-white/10 sm:hidden" />
                       <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                         vs
                       </span>
@@ -196,6 +197,7 @@ function MatchupsCard({
                       >
                         {m.isComplete ? 'Final' : 'Live'}
                       </span>
+                      <span className="h-px flex-1 bg-white/10 sm:hidden" />
                     </span>
                     <MatchupSide
                       agent={awayAgent}
@@ -316,7 +318,7 @@ function HomePage() {
   )
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <section className="grid flex-1 items-start gap-6 lg:grid-cols-[1.4fr_0.9fr]">
         <Card className="min-w-0 border-white/10 bg-white/5 text-slate-50 shadow-2xl shadow-slate-950/40">
           <CardHeader>
@@ -340,38 +342,42 @@ function HomePage() {
                 {agentsInStandingOrder.map((agent, index) => (
                   <li
                     key={agent.agentId}
-                    className="flex items-center gap-4 py-3 first:pt-0 last:pb-0"
+                    className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
                   >
-                    <span className="w-6 text-right text-sm font-semibold text-slate-400">
+                    <span className="mt-0.5 w-5 shrink-0 text-right text-sm font-semibold text-slate-400">
                       {index + 1}
                     </span>
                     <AgentAvatar agentId={agent.agentId} />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-base font-semibold text-white">
-                        {agent.teamName}
-                      </p>
-                      <p className="truncate text-xs text-slate-400">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="min-w-0 text-base font-semibold leading-snug text-white">
+                          {agent.teamName}
+                        </p>
+                        <span className="shrink-0 rounded-full border border-white/10 bg-slate-950 px-2.5 py-0.5 font-mono text-sm text-slate-200">
+                          {(() => {
+                            const standing = standingsByAgentId.get(agent.agentId)
+                            if (!standing || standing.ties === 0) {
+                              return `${standing?.wins ?? 0}-${standing?.losses ?? 0}`
+                            }
+                            return `${standing.wins}-${standing.losses}-${standing.ties}`
+                          })()}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs leading-snug text-slate-400">
                         <Link
                           to={`/agents?agentId=${encodeURIComponent(agent.agentId)}`}
                           className="text-emerald-300 hover:underline"
                         >
                           {agent.agentId}
                         </Link>
-                        {' | '}
-                        {agent.modelName}
-                        {' | '}
-                        {agent.connection}
+                        <span className="hidden sm:inline">
+                          {' | '}
+                          {agent.modelName}
+                          {' | '}
+                          {agent.connection}
+                        </span>
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full border border-white/10 bg-slate-950 px-3 py-1 text-sm font-mono text-slate-200">
-                      {(() => {
-                        const standing = standingsByAgentId.get(agent.agentId)
-                        if (!standing || standing.ties === 0) {
-                          return `${standing?.wins ?? 0}-${standing?.losses ?? 0}`
-                        }
-                        return `${standing.wins}-${standing.losses}-${standing.ties}`
-                      })()}
-                    </span>
                   </li>
                 ))}
               </ul>

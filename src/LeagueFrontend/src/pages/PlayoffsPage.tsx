@@ -217,7 +217,7 @@ function Participant({ agentId, seed, source, outcome, points, agentsById }: Par
       </span>
       <div className="min-w-0 flex-1">
         <p className={`flex min-w-0 items-center gap-1.5 text-sm font-semibold ${nameClassName}`}>
-          <span className="truncate">{agent?.teamName ?? agentId ?? source ?? 'To be determined'}</span>
+          <span className="min-w-0 leading-snug sm:truncate">{agent?.teamName ?? agentId ?? source ?? 'To be determined'}</span>
           {outcome === 'winner' && <Check aria-hidden="true" className="size-4 shrink-0 text-emerald-300" />}
         </p>
         <p className="truncate text-xs text-slate-400">
@@ -302,7 +302,7 @@ function PlacementRow({ label, agentId, agentsById }: PlacementRowProps) {
       <AgentAvatar agentId={agentId} sizeClassName="size-9" iconClassName="size-5" />
       <div className="min-w-0 flex-1">
         <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-        <p className="truncate text-sm font-semibold text-white">{agent?.teamName ?? agentId}</p>
+        <p className="text-sm font-semibold leading-snug text-white sm:truncate">{agent?.teamName ?? agentId}</p>
       </div>
     </div>
   )
@@ -334,7 +334,7 @@ function ChampionCard({ placements, season, agentsById }: ChampionCardProps) {
             <AgentAvatar agentId={placements.championAgentId} sizeClassName="size-14" iconClassName="size-8" />
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-200">Champion</p>
-              <p className="truncate text-2xl font-bold text-white">
+              <p className="text-2xl font-bold leading-snug text-white sm:truncate">
                 {champion?.teamName ?? placements.championAgentId}
               </p>
               {champion && <p className="truncate text-xs text-slate-400">{champion.agentId} · {champion.modelName}</p>}
@@ -443,10 +443,10 @@ function PlayoffsPage() {
     : 'Seeds, matchups, and results for the playoff bracket.'
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <div>
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="flex items-center gap-2 text-3xl font-semibold tracking-tight text-white">
+          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
             <Trophy aria-hidden="true" className="size-7 text-emerald-300" />
             Playoffs
           </h2>
@@ -503,7 +503,7 @@ function PlayoffsPage() {
                         <span className="w-7 shrink-0 text-center text-lg font-bold text-emerald-300">#{seed.seed}</span>
                         <AgentAvatar agentId={seed.agentId} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold text-white">{agent?.teamName ?? seed.agentId}</p>
+                          <p className="font-semibold leading-snug text-white sm:truncate">{agent?.teamName ?? seed.agentId}</p>
                           <p className="truncate text-xs text-slate-400">
                             {formatRecord(seed)} · {seed.pointsFor.toFixed(2)} PF
                           </p>

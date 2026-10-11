@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { AlertCircle, CalendarDays, CheckCircle2, Database, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertCircle, CalendarDays, CheckCircle2, Database, Loader2, RefreshCw, XCircle, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
@@ -57,6 +57,27 @@ type SportsDataSyncRun = {
 
 type FantasyProsSyncRun = SportsDataSyncRun
 
+type LeagueRunnerAgentResult = {
+  agentId: string
+  succeeded: boolean
+  errorMessage: string | null
+  recordedAtUtc: string
+}
+
+type LeagueRunnerRun = {
+  runnerRunId: string
+  mode: string
+  status: string
+  season: number | null
+  week: number | null
+  phase: string | null
+  summary: string | null
+  errorMessage: string | null
+  startedAtUtc: string
+  completedAtUtc: string | null
+  agents: LeagueRunnerAgentResult[]
+}
+
 type FantasyProsPointsSyncRun = {
   season: number
   endWeek: number
@@ -97,8 +118,8 @@ const agentColumns: ColumnDef<AgentProfile, unknown>[] = [
     ),
   },
   { accessorKey: 'teamName', header: 'Team Name' },
-  { accessorKey: 'modelName', header: 'Model' },
-  { accessorKey: 'connection', header: 'Connection' },
+  { accessorKey: 'modelName', header: 'Model', meta: { className: 'hidden md:table-cell' } },
+  { accessorKey: 'connection', header: 'Connection', meta: { className: 'hidden lg:table-cell' } },
   {
     accessorKey: 'isEnabled',
     header: 'Enabled',
@@ -112,6 +133,7 @@ const agentColumns: ColumnDef<AgentProfile, unknown>[] = [
   {
     accessorKey: 'isBootstrapped',
     header: 'Bootstrapped',
+    meta: { className: 'hidden sm:table-cell' },
     cell: ({ getValue }) =>
       getValue<boolean>() ? (
         <CheckCircle2 className="size-4 text-emerald-300" />
@@ -122,6 +144,7 @@ const agentColumns: ColumnDef<AgentProfile, unknown>[] = [
   {
     accessorKey: 'lastUpdatedAt',
     header: 'Last Updated',
+    meta: { className: 'hidden lg:table-cell' },
     cell: ({ getValue }) => new Date(getValue<string>()).toLocaleString(),
   },
 ]
@@ -611,14 +634,132 @@ function WeeklyScoresCard() {
   )
 }
 
+function SeasonRunnerCard() {
+  const [state, setState] = useState<FetchState>('loading')
+  const [run, setRun] = useState<LeagueRunnerRun | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const checkRun = useCallback(async () => {
+    setState('loading')
+    setError(null)
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/runner/runs/latest`)
+      if (response.status === 404) {
+        setRun(null)
+        setState('success')
+        return
+      }
+      if (!response.ok) {
+        throw new Error(`Could not load season runner status (${response.status})`)
+      }
+
+      setRun((await response.json()) as LeagueRunnerRun)
+      setState('success')
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Unknown error')
+      setState('error')
+    }
+  }, [])
+
+  useEffect(() => {
+    void checkRun()
+  }, [checkRun])
+
+  const status = run?.status.toLowerCase()
+  const isOk = status === 'succeeded' || status === 'skipped'
+  const isRunning = status === 'running'
+  const succeededAgents = run?.agents.filter((agent) => agent.succeeded).length ?? 0
+  const failedAgents = run?.agents.filter((agent) => !agent.succeeded) ?? []
+  const happenedAt = run?.completedAtUtc ?? run?.startedAtUtc ?? null
+
+  return (
+    <Card className="border-white/10 bg-slate-900 text-slate-50">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-xl text-white">
+            <Activity className="size-5 text-emerald-300" />
+            Season Runner
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void checkRun()}
+            className="text-slate-300 hover:bg-white/5 hover:text-white"
+            aria-label="Refresh season runner status"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {state === 'loading' && (
+          <div className="flex items-center gap-2 text-slate-300">
+            <Loader2 className="size-5 animate-spin" />
+            <span className="text-sm">Checking season runner…</span>
+          </div>
+        )}
+        {state === 'error' && (
+          <div className="flex items-center gap-2 text-red-400">
+            <AlertCircle className="size-5" />
+            <span className="text-sm font-medium">{error ?? 'Could not load season runner status.'}</span>
+          </div>
+        )}
+        {state === 'success' && !run && (
+          <p className="text-sm text-slate-400">The season runner has not recorded a run yet.</p>
+        )}
+        {state === 'success' && run && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-2">
+                {isOk ? (
+                  <CheckCircle2 className="size-5 text-emerald-300" />
+                ) : isRunning ? (
+                  <Loader2 className="size-5 animate-spin text-amber-300" />
+                ) : (
+                  <AlertCircle className="size-5 text-red-400" />
+                )}
+                <span className={`font-medium ${isOk ? 'text-emerald-300' : isRunning ? 'text-amber-300' : 'text-red-400'}`}>
+                  {run.status}
+                </span>
+              </div>
+              <span className="text-sm text-slate-400">
+                {run.mode}
+                {run.season !== null ? `, season ${run.season}` : ''}
+                {run.week !== null ? `, week ${run.week}` : ''}
+                {run.phase ? `, ${run.phase}` : ''}
+              </span>
+              {happenedAt && <span className="text-sm text-slate-400">{timeAgo(happenedAt)}</span>}
+            </div>
+            <p className="text-sm text-slate-300">
+              {succeededAgents}/{run.agents.length} agents succeeded
+            </p>
+            {run.summary && <p className="text-sm text-slate-300">{run.summary}</p>}
+            {run.errorMessage && <p className="text-sm text-red-400">{run.errorMessage}</p>}
+            {failedAgents.length > 0 && (
+              <div className="space-y-1">
+                {failedAgents.map((agent) => (
+                  <p key={agent.agentId} className="text-sm text-red-400">
+                    {agent.agentId}: {agent.errorMessage ?? 'failed'}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function AdminPage() {
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-semibold tracking-tight text-white">Admin</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Admin</h2>
       </div>
 
       <LeagueStateCard />
+      <SeasonRunnerCard />
 
       <section className="grid gap-6 md:grid-cols-[1fr_0.85fr]">
         <DataStatusCard />

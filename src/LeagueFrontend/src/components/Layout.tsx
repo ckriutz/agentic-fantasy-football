@@ -69,16 +69,16 @@ function Layout() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-50">
       <header className="border-b border-white/10 bg-slate-950/95">
-        <div className="flex w-full items-center justify-between px-6 py-4 xl:px-10">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300">
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 xl:px-10">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300 sm:size-10">
               <Trophy className="size-5" />
             </div>
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#BF9264]">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold uppercase tracking-[0.12em] text-[#BF9264] sm:text-sm sm:tracking-[0.2em]">
                 Agentic Fantasy Football
               </p>
-              <h1 className="text-lg font-semibold text-white">Initial frontend scaffold</h1>
+              <h1 className="hidden text-lg font-semibold text-white sm:block">Initial frontend scaffold</h1>
             </div>
           </div>
           <nav aria-label="Primary" className="hidden items-center gap-2 md:flex">
@@ -114,7 +114,7 @@ function Layout() {
           <nav
             id="mobile-primary-navigation"
             aria-label="Mobile primary"
-            className="border-t border-white/10 px-6 py-3 md:hidden"
+            className="border-t border-white/10 px-4 py-3 sm:px-6 md:hidden"
           >
             <div className="flex flex-col gap-1">
               {navItems.map((item) => (

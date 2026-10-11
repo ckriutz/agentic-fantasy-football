@@ -77,25 +77,26 @@ function getBench(roster: RosterEntry[]) {
 }
 
 function PlayerSlot({ entry, week, opponentPoints, align }: { entry: RosterEntry | undefined; week: number; opponentPoints: number | null; align: 'left' | 'right' }) {
+  const mirror = align === 'right'
   if (!entry?.player) {
-    return <p className={`text-sm text-slate-500 ${align === 'right' ? 'text-right' : ''}`}>No player</p>
+    return <p className={`text-sm text-slate-500 ${mirror ? 'sm:text-right' : ''}`}>No player</p>
   }
 
   const points = getWeeklyPoints(entry, week)
   const player = entry.player
 
   return (
-    <div className={`min-w-0 ${align === 'right' ? 'text-right' : ''}`}>
-      <div className={`grid min-w-0 items-center gap-2 ${align === 'right' ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
-        {align === 'right' && (
-          <span className={`shrink-0 font-mono text-sm font-semibold ${scoreColor(points, opponentPoints)}`}>
+    <div className={`min-w-0 ${mirror ? 'sm:text-right' : ''}`}>
+      <div className={`grid min-w-0 items-start gap-2 grid-cols-[minmax(0,1fr)_auto] ${mirror ? 'sm:grid-cols-[auto_minmax(0,1fr)]' : ''}`}>
+        {mirror && (
+          <span className={`col-start-2 row-start-1 shrink-0 whitespace-nowrap font-mono text-sm font-semibold sm:col-start-1 ${scoreColor(points, opponentPoints)}`}>
             {points.toFixed(2)}
           </span>
         )}
-        <div className={`flex min-w-0 items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        <div className={`col-start-1 row-start-1 flex min-w-0 items-center gap-1 ${mirror ? 'sm:col-start-2 sm:justify-end' : ''}`}>
           <Link
             to={`/players/${player.sleeperPlayerId}`}
-            className={`min-w-0 truncate text-sm font-semibold text-white hover:text-emerald-300 ${align === 'right' ? 'text-right' : ''}`}
+            className={`min-w-0 text-sm font-semibold leading-snug text-white hover:text-emerald-300 sm:truncate ${mirror ? 'sm:text-right' : ''}`}
           >
             {player.fullName ?? 'Unknown player'}
           </Link>
@@ -106,8 +107,8 @@ function PlayerSlot({ entry, week, opponentPoints, align }: { entry: RosterEntry
             />
           )}
         </div>
-        {align === 'left' && (
-          <span className={`shrink-0 font-mono text-sm font-semibold ${scoreColor(points, opponentPoints)}`}>
+        {!mirror && (
+          <span className={`shrink-0 whitespace-nowrap font-mono text-sm font-semibold ${scoreColor(points, opponentPoints)}`}>
             {points.toFixed(2)}
           </span>
         )}
@@ -120,14 +121,15 @@ function PlayerSlot({ entry, week, opponentPoints, align }: { entry: RosterEntry
 }
 
 function TeamHeader({ agent, points, opponentPoints, align }: { agent: AgentProfile | undefined; points: number; opponentPoints: number; align: 'left' | 'right' }) {
+  const mirror = align === 'right'
   return (
-    <div className={`flex min-w-0 items-center gap-3 ${align === 'right' ? 'flex-row-reverse text-right' : ''}`}>
+    <div className={`flex min-w-0 items-center gap-3 ${mirror ? 'sm:flex-row-reverse sm:text-right' : ''}`}>
       {agent && <AgentAvatar agentId={agent.agentId} />}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-semibold text-white">{agent?.teamName ?? 'Unknown team'}</p>
+        <p className="text-base font-semibold leading-snug text-white sm:truncate">{agent?.teamName ?? 'Unknown team'}</p>
         <p className="truncate text-xs text-slate-400">{agent?.modelName ?? ''}</p>
       </div>
-      <p className={`font-mono text-2xl font-semibold ${scoreColor(points, opponentPoints)}`}>{points.toFixed(2)}</p>
+      <p className={`shrink-0 whitespace-nowrap font-mono text-xl font-semibold sm:text-2xl ${scoreColor(points, opponentPoints)}`}>{points.toFixed(2)}</p>
     </div>
   )
 }
@@ -222,7 +224,7 @@ function MatchupPage() {
   const awayBench = useMemo(() => getBench(awayRoster), [awayRoster])
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <Link to="/" className="inline-flex w-fit items-center gap-2 text-sm font-medium text-slate-300 hover:text-white">
         <ArrowLeft className="size-4" />
         Back to overview
@@ -245,7 +247,7 @@ function MatchupPage() {
       {matchup && !isLoading && !error && (
         <>
           <div>
-            <h2 className="flex items-center gap-2 text-3xl font-semibold tracking-tight text-white">
+            <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               <Swords className="size-7 text-emerald-300" />
               Matchup
             </h2>
@@ -256,7 +258,7 @@ function MatchupPage() {
 
           <Card className="border-white/10 bg-slate-900 text-slate-50">
             <CardHeader>
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6">
+              <div className="flex flex-col gap-4 sm:grid sm:grid-cols-2 sm:gap-6">
                 <TeamHeader
                   agent={profilesByAgentId.get(matchup.homeAgentId)}
                   points={matchup.homePoints}
@@ -278,14 +280,18 @@ function MatchupPage() {
                   const awayEntry = awayStartersBySlot.get(slot)
 
                   return (
-                    <div key={slot} className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] items-center gap-3 px-4 py-3">
+                    <div key={slot} className="flex flex-col gap-2 px-3 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(0,1fr)] sm:items-center sm:gap-3 sm:px-4">
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:hidden">
+                        {formatSlot(slot)}
+                      </span>
                       <PlayerSlot
                         entry={homeEntry}
                         week={matchup.week}
                         opponentPoints={getWeeklyPoints(awayEntry, matchup.week)}
                         align="left"
                       />
-                      <span className="text-center text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                      <span className="block h-px bg-white/5 sm:hidden" />
+                      <span className="hidden text-center text-[10px] font-semibold uppercase tracking-widest text-slate-500 sm:block">
                         {formatSlot(slot)}
                       </span>
                       <PlayerSlot

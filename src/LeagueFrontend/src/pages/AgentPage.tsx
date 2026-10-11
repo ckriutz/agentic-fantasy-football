@@ -134,7 +134,7 @@ function RosterRow({ entry, currentWeek }: { entry: RosterEntry; currentWeek: nu
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={player ? `/players/${player.sleeperPlayerId}` : '#'}
-            className="truncate text-sm font-semibold text-white hover:text-emerald-300"
+            className="min-w-0 max-w-full break-words text-sm font-semibold leading-snug text-white hover:text-emerald-300"
           >
             {player?.fullName ?? 'Unknown player'}
           </Link>
@@ -215,7 +215,7 @@ function DecisionItem({ decision }: { decision: Decision }) {
       </summary>
       <div className="border-t border-white/5 px-3 py-3 text-sm leading-6 text-slate-200">
         <MarkdownContent content={decision.reasoning ?? 'No reasoning recorded.'} />
-        <p className="mt-3 text-[10px] uppercase tracking-widest text-slate-500">
+        <p className="mt-3 break-words text-[10px] uppercase tracking-widest text-slate-500">
           Tokens · in {formatTokenCount(decision.inputTokenCount)} · out {formatTokenCount(decision.outputTokenCount)} · cached {formatTokenCount(decision.cachedInputTokenCount)} · reasoning {formatTokenCount(decision.reasoningTokenCount)}
         </p>
       </div>
@@ -399,7 +399,7 @@ function AgentPage() {
 
   if (!agentId) {
     return (
-      <main className="flex flex-1 flex-col gap-4 px-6 py-6 xl:px-10">
+      <main className="flex flex-1 flex-col gap-4 px-4 py-6 sm:px-6 xl:px-10">
         <div className="flex items-center gap-2 text-red-400">
           <AlertCircle className="size-5" />
           <span className="text-sm font-medium">Missing agentId query parameter.</span>
@@ -414,7 +414,7 @@ function AgentPage() {
   const currentWeek = leagueState?.week ?? null
 
   return (
-    <main className="flex flex-1 flex-col gap-4 px-6 py-6 xl:px-10">
+    <main className="flex flex-1 flex-col gap-4 px-4 py-6 sm:px-6 xl:px-10">
       <div className="flex items-center gap-3 flex-wrap">
         <Link
           to="/"
@@ -446,8 +446,8 @@ function AgentPage() {
           <CardContent className="flex flex-wrap items-center gap-4 py-3">
             <AgentAvatar agentId={profile.agentId} sizeClassName="size-14" iconClassName="size-9" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-base font-semibold text-white">{profile.teamName}</p>
-              <p className="truncate text-xs text-slate-400">
+              <p className="text-base font-semibold leading-snug text-white">{profile.teamName}</p>
+              <p className="text-xs leading-snug text-slate-400">
                 <span className="font-mono text-slate-200">{profile.agentId}</span>
                 {' · '}
                 {profile.modelName}

@@ -37,14 +37,14 @@ const playerColumns: ColumnDef<Player, unknown>[] = [
   },
   { accessorKey: 'team', header: 'Team' },
   { accessorKey: 'position', header: 'Position' },
-  { accessorKey: 'searchRank', header: 'Search Rank' },
-  { accessorKey: 'rankAverage', header: 'Pros Rank Average' },
+  { accessorKey: 'searchRank', header: 'Search Rank', meta: { className: 'hidden lg:table-cell' } },
+  { accessorKey: 'rankAverage', header: 'Pros Rank Average', meta: { className: 'hidden lg:table-cell' } },
   {
     id: 'status',
     header: 'Status',
     cell: ({ row }) => row.original.injuryStatus ?? row.original.status,
   },
-  { accessorKey: 'byeWeek', header: 'Bye Week' },
+  { accessorKey: 'byeWeek', header: 'Bye Week', meta: { className: 'hidden md:table-cell' } },
 ]
 
 function PlayersPage() {
@@ -80,9 +80,9 @@ function PlayersPage() {
   )
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-semibold tracking-tight text-white">Players</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Players</h2>
         <Button
           variant="ghost"
           size="icon"
@@ -109,7 +109,7 @@ function PlayersPage() {
       {state === 'success' && (
         <>
           <DataTable columns={playerColumns} data={pageData} />
-          <div className="flex items-center justify-between text-sm text-slate-400">
+          <div className="flex flex-col gap-3 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
             <span>
               Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, allPlayers.length)} of {allPlayers.length} players
             </span>

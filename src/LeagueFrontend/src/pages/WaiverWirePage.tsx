@@ -146,10 +146,10 @@ function WaiverWirePage() {
   )
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-6 py-10 xl:px-10">
+    <main className="flex flex-1 flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10 xl:px-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-semibold tracking-tight text-white">Waiver Wire</h2>
+          <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">Waiver Wire</h2>
           <p className="mt-1 text-sm text-slate-400">
             Review claims in their submitted waiver-priority order and revisit completed weeks.
           </p>
@@ -179,7 +179,7 @@ function WaiverWirePage() {
             >
               <ChevronLeft />
             </Button>
-            <span className="min-w-32 text-center text-lg font-semibold text-emerald-300">
+            <span className="min-w-0 px-1 text-center text-base font-semibold text-emerald-300 sm:text-lg">
               Season {leagueState.season} · Week {week}
             </span>
             <Button
@@ -237,8 +237,10 @@ function WaiverWirePage() {
                         {priority.map((entry) => (
                           <li key={entry.agentId} className="flex items-center gap-3 rounded-md bg-slate-950 px-3 py-2">
                             <span className="w-5 text-right font-mono text-sm text-emerald-300">{entry.priority}</span>
-                            <Link to={`/agents?agentId=${encodeURIComponent(entry.agentId)}`} className="text-sm font-medium text-slate-100 hover:text-emerald-300 hover:underline">
-                              {entry.agentId} | {agentsById.get(entry.agentId)?.teamName ?? 'Unknown team'}
+                            <Link to={`/agents?agentId=${encodeURIComponent(entry.agentId)}`} className="min-w-0 flex-1 text-sm font-medium leading-snug text-slate-100 hover:text-emerald-300 hover:underline">
+                              <span className="font-mono text-emerald-300">{entry.agentId}</span>
+                              <span className="text-slate-400"> · </span>
+                              {agentsById.get(entry.agentId)?.teamName ?? 'Unknown team'}
                             </Link>
                           </li>
                         ))}
