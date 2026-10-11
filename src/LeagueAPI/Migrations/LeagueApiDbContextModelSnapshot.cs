@@ -388,6 +388,84 @@ namespace LeagueAPI.Migrations
                     b.ToTable("fantasypros_sync_runs", (string)null);
                 });
 
+            modelBuilder.Entity("LeagueAPI.Models.LeagueRunnerAgentResultEntity", b =>
+                {
+                    b.Property<int>("LeagueRunnerAgentResultId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("LeagueRunnerAgentResultId"));
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RunnerRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("LeagueRunnerAgentResultId");
+
+                    b.HasIndex("RunnerRunId", "AgentId")
+                        .IsUnique();
+
+                    b.ToTable("league_runner_agent_results", (string)null);
+                });
+
+            modelBuilder.Entity("LeagueAPI.Models.LeagueRunnerRunEntity", b =>
+                {
+                    b.Property<Guid>("RunnerRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Phase")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("Season")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("Week")
+                        .HasColumnType("integer");
+
+                    b.HasKey("RunnerRunId");
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.ToTable("league_runner_runs", (string)null);
+                });
+
             modelBuilder.Entity("LeagueAPI.Models.LeagueStateEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -1297,6 +1375,15 @@ namespace LeagueAPI.Migrations
                     b.ToTable("weekly_roster_snapshots", (string)null);
                 });
 
+            modelBuilder.Entity("LeagueAPI.Models.LeagueRunnerAgentResultEntity", b =>
+                {
+                    b.HasOne("LeagueAPI.Models.LeagueRunnerRunEntity", null)
+                        .WithMany("Agents")
+                        .HasForeignKey("RunnerRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LeagueAPI.Models.PlayoffBracketGameEntity", b =>
                 {
                     b.HasOne("LeagueAPI.Models.PlayoffBracketGameEntity", null)
@@ -1337,6 +1424,11 @@ namespace LeagueAPI.Migrations
                         .HasForeignKey("SleeperPlayerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("LeagueAPI.Models.LeagueRunnerRunEntity", b =>
+                {
+                    b.Navigation("Agents");
                 });
 #pragma warning restore 612, 618
         }

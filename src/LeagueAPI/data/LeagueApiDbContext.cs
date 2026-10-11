@@ -47,6 +47,10 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
 
     public DbSet<WaiverProcessRunEntity> WaiverProcessRuns => Set<WaiverProcessRunEntity>();
 
+    public DbSet<LeagueRunnerRunEntity> LeagueRunnerRuns => Set<LeagueRunnerRunEntity>();
+
+    public DbSet<LeagueRunnerAgentResultEntity> LeagueRunnerAgentResults => Set<LeagueRunnerAgentResultEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<PlayerEntity>(entity =>
@@ -480,6 +484,35 @@ public sealed class LeagueApiDbContext(DbContextOptions<LeagueApiDbContext> opti
             entity.Property(run => run.ErrorMessage).HasColumnType("text");
 
             entity.HasIndex(run => new { run.Season, run.Week });
+        });
+
+        modelBuilder.Entity<LeagueRunnerRunEntity>(entity =>
+        {
+            entity.ToTable("league_runner_runs");
+            entity.HasKey(run => run.RunnerRunId);
+
+            entity.Property(run => run.Mode).HasMaxLength(32);
+            entity.Property(run => run.Status).HasMaxLength(32);
+            entity.Property(run => run.Phase).HasMaxLength(32);
+            entity.Property(run => run.Summary).HasColumnType("text");
+            entity.Property(run => run.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(run => run.StartedAtUtc);
+            entity.HasMany(run => run.Agents)
+                .WithOne()
+                .HasForeignKey(agent => agent.RunnerRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LeagueRunnerAgentResultEntity>(entity =>
+        {
+            entity.ToTable("league_runner_agent_results");
+            entity.HasKey(result => result.LeagueRunnerAgentResultId);
+
+            entity.Property(result => result.AgentId).HasMaxLength(100);
+            entity.Property(result => result.ErrorMessage).HasColumnType("text");
+
+            entity.HasIndex(result => new { result.RunnerRunId, result.AgentId }).IsUnique();
         });
     }
 }

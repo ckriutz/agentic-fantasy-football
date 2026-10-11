@@ -59,6 +59,7 @@ builder.Services.AddSingleton<IRosterReader>(serviceProvider =>
 builder.Services.AddSingleton<IRosterWriter>(serviceProvider =>
     serviceProvider.GetRequiredService<RosterStore>());
 
+builder.Services.AddSingleton<LeagueRunnerRunStore>();
 builder.Services.AddSingleton<DecisionStore>();
 builder.Services.AddSingleton<IDecisionReader>(serviceProvider =>
     serviceProvider.GetRequiredService<DecisionStore>());
@@ -135,6 +136,10 @@ app.MapGet("/", () => Results.Ok(new
         "/api/league/seasons/{season}/playoffs/eligibility (GET: active vs eliminated agents for the season)",
         "/api/league/seasons/{season}/weeks/{week}/finalize (POST: finalize the week; locks/advances playoffs and completes the season after the championship week)",
         "/api/league/state",
+        "/api/runner/runs (POST: start a run, GET: recent runs with ?limit=)",
+        "/api/runner/runs/latest",
+        "/api/runner/runs/{runnerRunId}/agents (POST: record one agent result)",
+        "/api/runner/runs/{runnerRunId}/complete (POST: status, summary, errorMessage)",
         "/api/decisions (POST: log a decision, GET: list all with ?agentId=&type=&week=&limit=)",
         "/api/decisions/{agentId} (GET: list decisions for agent)",
         "/api/league/waivers/priority (GET: priority order)",
@@ -482,6 +487,59 @@ app.MapGet("/api/decisions", async (
         cancellationToken);
 
     return Results.Ok(decisions);
+});
+
+// --- League runner ---
+
+app.MapPost("/api/runner/runs", async (StartLeagueRunnerRunRequest request, LeagueRunnerRunStore runnerRunStore, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var run = await runnerRunStore.StartRunAsync(request.Mode, request.Season, request.Week, request.Phase, cancellationToken);
+        return Results.Created($"/api/runner/runs/{run.RunnerRunId}", run);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/runner/runs/latest", async (LeagueRunnerRunStore runnerRunStore, CancellationToken cancellationToken) =>
+{
+    var run = await runnerRunStore.GetLatestRunAsync(cancellationToken);
+    return run is null ? Results.NotFound() : Results.Ok(run);
+});
+
+app.MapGet("/api/runner/runs", async (int? limit, LeagueRunnerRunStore runnerRunStore, CancellationToken cancellationToken) =>
+{
+    var runs = await runnerRunStore.GetRunsAsync(limit ?? 20, cancellationToken);
+    return Results.Ok(runs);
+});
+
+app.MapPost("/api/runner/runs/{runnerRunId:guid}/agents", async (Guid runnerRunId, RecordLeagueRunnerAgentRequest request, LeagueRunnerRunStore runnerRunStore, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var run = await runnerRunStore.RecordAgentAsync(runnerRunId, request.AgentId, request.Succeeded, request.ErrorMessage, cancellationToken);
+        return run is null ? Results.NotFound() : Results.Ok(run);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/runner/runs/{runnerRunId:guid}/complete", async (Guid runnerRunId, CompleteLeagueRunnerRunRequest request, LeagueRunnerRunStore runnerRunStore, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var run = await runnerRunStore.CompleteRunAsync(runnerRunId, request.Status, request.Summary, request.ErrorMessage, cancellationToken);
+        return run is null ? Results.NotFound() : Results.Ok(run);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 static PlayerQuery BuildPlayerQuery(
