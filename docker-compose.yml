@@ -96,6 +96,26 @@ services:
     networks:
       - leagueapi-net
 
+  # One-shot season job. Do not start it with the long-running stack.
+  # Pi cron example: docker compose run --rm agenticleague
+  agenticleague:
+    image: ghcr.io/ckriutz/agenticleague:latest
+    pull_policy: always
+    restart: "no"
+    profiles: ["job"]
+    environment:
+      - TZ=America/New_York
+      - API_BASE_URL=http://leagueapi:8082
+      - FANTASYPROS_SYNC_BASE_URL=http://fantasyprosdatasync:8004
+      - AZURE_STORAGE_CONNECTION_STRING=
+      - AZURE_STORAGE_CONTAINER_NAME=agentdata
+      - OPENROUTER_API_KEY=
+    depends_on:
+      leagueapi:
+        condition: service_healthy
+    networks:
+      - leagueapi-net
+
 networks:
   leagueapi-net:
     driver: bridge
